@@ -1,0 +1,16 @@
+# the updater's protected set - never commit these
+*_token.txt
+*.env
+*.npz
+*.pem
+*.pfx
+*.db-wal
+*.db-shm
+shelf/
+state/
+
+# python cruft
+__pycache__/
+*.py[cod]
+.venv/
+venv/
