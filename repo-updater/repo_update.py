@@ -37,7 +37,7 @@ PROTECTED_PATTERNS = ["token", "secret", "credential", "password",
 def git(repo, *args):
     r = subprocess.run(["git", "-C", repo] + list(args),
                        capture_output=True, text=True)
-    return r.returncode, r.stdout.strip(), r.stderr.strip()
+    return r.returncode, r.stdout.rstrip("\r\n"), r.stderr.strip()
 
 
 def is_protected(relpath):
