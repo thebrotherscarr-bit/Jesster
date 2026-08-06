@@ -1,0 +1,21 @@
+name: prove-updater
+
+on:
+  push:
+    branches: ["main", "smith/**"]
+  pull_request:
+
+jobs:
+  prove:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Prove the repo updater
+        run: python repo-updater/prove_repo_update.py
