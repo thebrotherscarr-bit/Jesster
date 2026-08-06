@@ -1,0 +1,16 @@
+{
+  "name": "tags - immovable",
+  "enforcement": "active",
+  "target": "tag",
+  "conditions": {
+    "ref_name": {
+      "include": ["refs/tags/**"],
+      "exclude": []
+    }
+  },
+  "rules": [
+    {"type": "non_fast_forward"},
+    {"type": "deletion"}
+  ],
+  "bypass_actors": []
+}
