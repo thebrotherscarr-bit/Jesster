@@ -1,0 +1,11 @@
+"C:\Users\novad\Desktop\Archive\Index\docs\HANDOFF NARRATIVE.md"
+
+
+
+python3 Index/links/links.py deposit open "Handoff narrative — estate story mapped" --actor archivist --file "C:\Users\novad\Desktop\Archive\Index\docs\HANDOFF NARRATIVE.md" --cites 5287c4bffb02673a6249d5d47e1cc49a48eb690283258cf7d92cabf290904408 --sign
+
+
+
+python3 links.py deposit open|sealed "SAYS" --actor NAME
+                     (--text "..." | --file PATH)
+                     [--cites HASH,HASH,...] [--sign]   put one thing on the chain 
