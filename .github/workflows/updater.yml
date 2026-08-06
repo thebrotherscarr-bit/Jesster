@@ -3,7 +3,9 @@ name: prove-updater
 on:
   workflow_dispatch:
   push:
-    branches: ["main", "smith/**"]
+    branches:
+      - main
+      - smith/**
   pull_request:
 
 jobs:
