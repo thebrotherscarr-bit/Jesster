@@ -114,6 +114,29 @@ function findExe(dir) {
   return null;
 }
 
+/**
+ * The hand-over script: wait for this app to exit, mirror the new build over
+ * the install folder, start it again, clean up. PowerShell, not cmd: on a PC
+ * with Git installed `find` can be the Unix one, and `timeout` fails without
+ * a console, which left the first version of this looping. Written with a
+ * BOM so Windows PowerShell 5.1 reads non-ASCII paths correctly.
+ * Exercised on Windows in CI by electron/swap.test.cjs.
+ */
+function writeSwapScript(file, { pid, src, dest, exe, work }) {
+  const q = (p) => "'" + String(p).replace(/'/g, "''") + "'";
+  const lines = [
+    "$ErrorActionPreference = 'SilentlyContinue'",
+    `Wait-Process -Id ${pid} -Timeout 60`,
+    `Stop-Process -Id ${pid} -Force`,
+    'Start-Sleep -Milliseconds 800',
+    `robocopy ${q(src)} ${q(dest)} /MIR /R:20 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null`,
+    `Start-Process -FilePath ${q(exe)} -WorkingDirectory ${q(dest)}`,
+  ];
+  if (work) lines.push(`Remove-Item -LiteralPath ${q(work)} -Recurse -Force`);
+  fs.writeFileSync(file, '\ufeff' + lines.join('\r\n') + '\r\n', 'utf8');
+  return file;
+}
+
 /** Download the newest build, then hand over to the swap script and quit. */
 async function apply() {
   const state = await check();
@@ -130,22 +153,22 @@ async function apply() {
   if (!src) throw new Error('the downloaded build has no SecondBrain.exe');
 
   const dest = path.dirname(process.execPath);
-  const exe = path.basename(process.execPath);
-  const script = path.join(work, 'swap.cmd');
-  fs.writeFileSync(
-    script,
-    [
-      '@echo off',
-      ':wait',
-      `tasklist /FI "PID eq ${process.pid}" 2>nul | find "${process.pid}" >nul && (timeout /t 1 /nobreak >nul & goto wait)`,
-      `robocopy "${src}" "${dest}" /MIR /R:10 /W:1 /NFL /NDL /NJH /NJS >nul`,
-      `start "" "${path.join(dest, exe)}"`,
-      '',
-    ].join('\r\n')
-  );
-  spawn('cmd.exe', ['/d', '/c', script], { detached: true, stdio: 'ignore', windowsHide: true }).unref();
+  const script = path.join(work, 'swap.ps1');
+  writeSwapScript(script, {
+    pid: process.pid,
+    src,
+    dest,
+    exe: path.join(dest, path.basename(process.execPath)),
+    work,
+  });
+  spawn(
+    'powershell.exe',
+    ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', script],
+    { detached: true, stdio: 'ignore', windowsHide: true }
+  ).unref();
   setTimeout(() => app.quit(), 300);
+  setTimeout(() => app.exit(0), 5000); // if something holds quit up, leave anyway
   return { updated: true, to: state.latest.build };
 }
 
-module.exports = { buildInfo, check, apply };
+module.exports = { buildInfo, check, apply, writeSwapScript };

@@ -38,6 +38,8 @@ jobs:
       - run: node node_modules/electron/install.js
       - run: npm run lint
       - run: npm test
+      - name: Prove the update hand-over on Windows
+        run: node electron/swap.test.cjs
       - name: Stamp the build number into the app
         run: |
           @{ build = ${{ github.run_number }}; commit = "${{ github.sha }}".Substring(0, 7); branch = "${{ github.ref_name }}" } |
