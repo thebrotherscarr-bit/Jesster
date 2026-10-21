@@ -91,6 +91,11 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
         <span className="font-bold text-xs sm:text-sm tracking-tight text-white whitespace-nowrap">
           SecondBrain <span className="text-neutral-500 font-normal hidden lg:inline">Local</span>
+          {desktopUpdate?.current ? (
+            <span className="ml-1.5 text-[10px] font-normal text-neutral-500" title="Desktop app build">
+              build {desktopUpdate.current}
+            </span>
+          ) : null}
         </span>
       </div>
 
