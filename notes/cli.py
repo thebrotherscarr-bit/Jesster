@@ -17,7 +17,7 @@ NOTES — the command line for the Jesster notes microkernel.
     python notes/cli.py call <method> ['{json params}']   any kernel method
     python notes/cli.py methods                 what the kernel answers
 
-    python notes/cli.py serve [--host H] [--port P] [--token T]   PWA + HTTP
+    python notes/cli.py serve [--host H] [--port P] [--token T] [--ui DIR]   PWA + HTTP
     python notes/cli.py rpc                     JSON-RPC 2.0 on stdio
     python notes/cli.py mcp                     MCP server on stdio
 
@@ -178,7 +178,8 @@ def main(argv):
         from serve import serve
         serve(k, _opt(rest, "--host") or "127.0.0.1",
               int(_opt(rest, "--port") or 8765),
-              _opt(rest, "--token") or os.environ.get("JESSTER_NOTES_TOKEN"))
+              _opt(rest, "--token") or os.environ.get("JESSTER_NOTES_TOKEN"),
+              _opt(rest, "--ui"))
         return 0
     if cmd == "rpc":
         from stdio import serve_rpc

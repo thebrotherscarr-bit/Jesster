@@ -2,7 +2,8 @@
 """
 SERVE — the kernel over HTTP, and the PWA beside it.
 
-  GET  /            the PWA (../pwa), installable, works offline
+  GET  /            the PWA: secondbrain's UI (../secondbrain/dist) once it is
+                    built, otherwise the plain one in ../pwa. --ui picks another.
   POST /rpc         JSON-RPC 2.0 into the kernel — the same door as stdio
   GET  /health      {"ok": true, ...}
 
@@ -25,7 +26,14 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from kernel import VERSION
 from stdio import rpc_one, _err
 
-PWA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "pwa")
+_REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+PWA_DIR = os.path.join(_REPO, "pwa")
+SECONDBRAIN_DIST = os.path.join(_REPO, "secondbrain", "dist")
+
+
+def default_ui():
+    built = os.path.join(SECONDBRAIN_DIST, "index.html")
+    return SECONDBRAIN_DIST if os.path.isfile(built) else PWA_DIR
 MAX_BODY = 8 * 1024 * 1024
 LOOPBACK = ("127.0.0.1", "localhost", "::1")
 
@@ -33,7 +41,23 @@ mimetypes.add_type("application/manifest+json", ".webmanifest")
 mimetypes.add_type("text/javascript", ".js")
 
 
-def make_handler(kernel, token, hosts):
+def _origin(url):
+    """scheme://host:port of a URL, for the CSP — the UI may talk to Ollama."""
+    from urllib.parse import urlsplit
+    u = urlsplit(url or "")
+    return "%s://%s" % (u.scheme, u.netloc) if u.scheme in ("http", "https") and u.netloc else ""
+
+
+def make_handler(kernel, token, hosts, ui_dir=None):
+    ui_dir = os.path.realpath(ui_dir or default_ui())
+    ollama = _origin(kernel.config.get("ollama_url"))
+    csp = ("default-src 'self'; style-src 'self' 'unsafe-inline'; "
+           "img-src 'self' data: blob:; font-src 'self' data:; worker-src 'self'; "
+           # Ollama on any loopback port (the UI lets you change it), plus
+           # the configured host if that is elsewhere
+           "connect-src 'self' http://localhost:* http://127.0.0.1:*%s"
+           % ((" " + ollama) if ollama else ""))
+
     class Handler(BaseHTTPRequestHandler):
         server_version = "jesster-notes/" + VERSION
 
@@ -46,9 +70,7 @@ def make_handler(kernel, token, hosts):
             self.send_header("Cache-Control", cache)
             self.send_header("X-Content-Type-Options", "nosniff")
             self.send_header("Referrer-Policy", "no-referrer")
-            self.send_header("Content-Security-Policy",
-                             "default-src 'self'; style-src 'self' 'unsafe-inline'; "
-                             "img-src 'self' data:; connect-src 'self'")
+            self.send_header("Content-Security-Policy", csp)
             self.end_headers()
             if self.command != "HEAD":
                 self.wfile.write(body)
@@ -66,8 +88,8 @@ def make_handler(kernel, token, hosts):
                                         "auth": bool(token)})
             if path == "/":
                 path = "/index.html"
-            full = os.path.realpath(os.path.join(PWA_DIR, path.lstrip("/")))
-            if not full.startswith(os.path.realpath(PWA_DIR) + os.sep) or not os.path.isfile(full):
+            full = os.path.realpath(os.path.join(ui_dir, path.lstrip("/")))
+            if not full.startswith(ui_dir + os.sep) or not os.path.isfile(full):
                 return self._send(404, {"error": "not found"})
             with open(full, "rb") as f:
                 data = f.read()
@@ -108,15 +130,16 @@ def make_handler(kernel, token, hosts):
     return Handler
 
 
-def serve(kernel, host="127.0.0.1", port=8765, token=None):
+def serve(kernel, host="127.0.0.1", port=8765, token=None, ui_dir=None):
     if host not in LOOPBACK and not token:
         raise SystemExit("refusing to serve %s beyond loopback without a token "
                          "(--token or JESSTER_NOTES_TOKEN)." % host)
     hosts = set(LOOPBACK) | {host.lower()}
-    srv = ThreadingHTTPServer((host, port), make_handler(kernel, token, hosts))
-    print("  jesster notes — http://%s:%d/  (vault %s)"
-          % ("localhost" if host in LOOPBACK else host, port, kernel.vault.root),
-          file=sys.stderr)
+    ui_dir = ui_dir or default_ui()
+    srv = ThreadingHTTPServer((host, port), make_handler(kernel, token, hosts, ui_dir))
+    print("  jesster notes — http://%s:%d/  (vault %s, ui %s)"
+          % ("localhost" if host in LOOPBACK else host, port, kernel.vault.root,
+             ui_dir), file=sys.stderr)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

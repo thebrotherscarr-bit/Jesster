@@ -7,7 +7,9 @@ IMPORTER — bring notes in from another tool.
                  '# heading' or the file name is the title. The sub-folder
                  path becomes a tag, so a folder tree survives as tags.
   import.json    a JSON export: a list of objects (or {"notes": [...]}) with
-                 title / body|content|text / tags.
+                 title / body|content|text / tags. secondbrain's own backup
+                 (Export in its sidebar) is read in full: its ids, PARA
+                 category, pin and createdAt/updatedAt are all kept.
 
 A note whose exact body is already in the vault is skipped, so running an
 import twice is safe. Every imported note goes through notes.create, so it is
@@ -27,11 +29,20 @@ def register(k):
     def seen():
         return {n["body"].strip() for n in k.vault.notes.values()}
 
-    def put(title, body, tags, have, stats):
+    def put(title, body, tags, have, stats, **extra):
         if body.strip() in have:
             stats["skipped"] += 1
             return
-        k.call("notes.create", {"title": title, "body": body, "tags": tags})
+        nid = extra.pop("id", None)
+        if isinstance(nid, str) and nid.lower() == nid and nid not in k.vault.notes:
+            try:
+                k.vault.path(nid)                  # a valid id is kept as is
+                extra["id"] = nid
+            except KernelError:
+                pass
+        params = {"title": title, "body": body, "tags": tags}
+        params.update({key: v for key, v in extra.items() if v is not None})
+        k.call("notes.create", params)
         have.add(body.strip())
         stats["imported"] += 1
 
@@ -97,6 +108,14 @@ def register(k):
             tags = it.get("tags") or []
             if isinstance(tags, str):
                 tags = tags.split(",")
-            put(str(title), str(body), list(tags) + ([tag] if tag else []),
-                have, stats)
+            when = {f: it.get(f) for f in ("createdAt", "updatedAt")
+                    if isinstance(it.get(f), (int, float)) and not isinstance(it.get(f), bool)}
+            try:
+                put(str(title), str(body), list(tags) + ([tag] if tag else []),
+                    have, stats, id=it.get("id"), category=it.get("category"),
+                    pinned=it.get("isPinned", it.get("pinned")) is True,
+                    created=when.get("createdAt"),
+                    updated=when.get("updatedAt", when.get("createdAt")))
+            except KernelError as e:
+                stats["failed"].append("item %d: %s" % (i, e))
         return stats

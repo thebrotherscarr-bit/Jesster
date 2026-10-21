@@ -230,7 +230,7 @@ def prove_http(root):
     k = fresh(root, "web")
     k.call("notes.create", {"title": "Web", "body": "page"})
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), srvmod.make_handler(
-        k, "s3cret", set(srvmod.LOOPBACK)))
+        k, "s3cret", set(srvmod.LOOPBACK), srvmod.PWA_DIR))
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     base = "http://127.0.0.1:%d" % httpd.server_port
 

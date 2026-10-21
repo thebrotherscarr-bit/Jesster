@@ -1,0 +1,6 @@
+{
+  "name": "SecondBrain Local - Ollama GPT-OSS",
+  "description": "A minimal, privacy-first Second Brain note-taking and knowledge synthesis system powered by your local Ollama desktop and GPT-OSS:20B model.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}

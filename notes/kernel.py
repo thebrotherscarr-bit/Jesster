@@ -46,6 +46,10 @@ DEFAULT_CONFIG = {
     "model": "gpt-oss:20b",
 }
 
+# PARA — secondbrain's shelves. Any slug is allowed; these are the usual ones.
+CATEGORIES = ("projects", "areas", "resources", "archives", "inbox")
+DEFAULT_CATEGORY = "inbox"
+
 _ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
 _WIKILINK = re.compile(r"\[\[([^\]|#]+)(?:[#|][^\]]*)?\]\]")
 _TOKEN = re.compile(r"[a-z0-9]{2,}")
@@ -114,10 +118,28 @@ def render(note):
     the hash on the chain — depend on the note and nothing else."""
     tags = ", ".join(note.get("tags") or [])
     title = (note.get("title") or "").replace("\n", " ")
-    return ("---\nid: %s\ntitle: %s\ntags: [%s]\ncreated: %s\nupdated: %s\n"
-            "---\n\n%s" % (note["id"], json.dumps(title, ensure_ascii=False),
-                           tags, note["created"], note["updated"],
-                           note.get("body") or ""))
+    return ("---\nid: %s\ntitle: %s\ncategory: %s\npinned: %s\ntags: [%s]\n"
+            "created: %s\nupdated: %s\n---\n\n%s"
+            % (note["id"], json.dumps(title, ensure_ascii=False),
+               note.get("category") or DEFAULT_CATEGORY,
+               "true" if note.get("pinned") else "false",
+               tags, note["created"], note["updated"], note.get("body") or ""))
+
+
+def _clean_category(c):
+    c = slugify(c) if c else DEFAULT_CATEGORY
+    return DEFAULT_CATEGORY if c == "note" else c
+
+
+def _stamp(v, field):
+    """A caller-supplied time (imports keep their dates): ISO-8601 text, or
+    epoch milliseconds the way secondbrain stores them."""
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        return time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(v / 1000.0))
+    if isinstance(v, str) and re.match(r"^\d{4}-\d\d-\d\dT\d\d:\d\d", v):
+        return v.strip()
+    raise KernelError("bad_params", "%s is ISO-8601 text or epoch ms, not %r"
+                      % (field, v))
 
 
 def _clean_tags(tags):
@@ -176,6 +198,8 @@ class Vault:
             "id": nid,
             "title": meta.get("title") or nid.replace("-", " "),
             "tags": _clean_tags(meta.get("tags")),
+            "category": _clean_category(meta.get("category")),
+            "pinned": str(meta.get("pinned", "")).lower() == "true",
             "created": meta.get("created") or stamp,
             "updated": meta.get("updated") or stamp,
             "body": body,
@@ -307,13 +331,17 @@ class Kernel:
             raise KernelError("not_found", "no note %r" % nid)
         return n
 
-    def search(self, q, limit=20, tag=None):
+    def search(self, q, limit=20, tag=None, category=None, pinned=None):
         """Plain term scoring: title hits weigh triple, body hits are damped
         by length so a long note does not win on size alone."""
         terms = [t for t in tokens(q) if t not in STOP] or tokens(q)
         out = []
         for n in self.vault.notes.values():
             if tag and tag not in n["tags"]:
+                continue
+            if category and n["category"] != category:
+                continue
+            if pinned is not None and n["pinned"] != bool(pinned):
                 continue
             if not terms:
                 out.append((0, n))
@@ -334,6 +362,7 @@ class Kernel:
 def summary(n):
     body = n["body"].strip()
     return {"id": n["id"], "title": n["title"], "tags": n["tags"],
+            "category": n["category"], "pinned": n["pinned"],
             "updated": n["updated"], "excerpt": body[:160]}
 
 
@@ -347,7 +376,12 @@ def links_of(body):
 
 def _core(k):
     S = {"type": "string"}
+    B = {"type": "boolean"}
     TAGS = {"type": "array", "items": {"type": "string"}}
+    CAT = dict(S, description="PARA shelf: %s (default %s)"
+               % (", ".join(CATEGORIES), DEFAULT_CATEGORY))
+    WHEN = {"type": ["string", "number"],
+            "description": "ISO-8601, or epoch milliseconds"}
 
     @k.method("kernel.info", "Version, vault, loaded plugins and note count.")
     def info():
@@ -360,10 +394,14 @@ def _core(k):
     def methods():
         return k.catalog()
 
-    @k.method("notes.list", "List notes, newest first, optionally by tag.",
-              {"tag": S, "limit": {"type": "integer"}})
-    def list_(tag=None, limit=200):
-        return k.search("", limit=limit, tag=tag)
+    @k.method("notes.list", "List notes, newest first, by tag, shelf or pin.",
+              {"tag": S, "category": CAT, "pinned": B, "limit": {"type": "integer"}})
+    def list_(tag=None, category=None, pinned=None, limit=200):
+        return k.search("", limit=limit, tag=tag, category=category, pinned=pinned)
+
+    @k.method("notes.dump", "Every note in full — what a UI loads at start.")
+    def dump():
+        return sorted(k.vault.notes.values(), key=lambda n: n["updated"], reverse=True)
 
     @k.method("notes.get", "One note in full, with the notes linking to it.",
               {"id": S}, ["id"])
@@ -375,23 +413,31 @@ def _core(k):
         return n
 
     @k.method("notes.create", "Write a new note.",
-              {"title": S, "body": S, "tags": TAGS, "id": S}, ["title"])
-    def create(title, body="", tags=None, id=None):
+              {"title": S, "body": S, "tags": TAGS, "id": S, "category": CAT,
+               "pinned": B, "created": WHEN, "updated": WHEN}, ["title"])
+    def create(title, body="", tags=None, id=None, category=None, pinned=False,
+               created=None, updated=None):
         if id and (id in k.vault.notes):
             raise KernelError("exists", "note %r already exists" % id)
         stamp = now()
+        c = _stamp(created, "created") if created is not None else stamp
         n = {"id": id or k.vault.fresh_id(title), "title": title.strip() or "untitled",
              "tags": _clean_tags(tags), "body": body,
-             "created": stamp, "updated": stamp}
+             "category": _clean_category(category), "pinned": bool(pinned),
+             "created": c,
+             "updated": _stamp(updated, "updated") if updated is not None else
+             (c if created is not None else stamp)}
         n, raw = k.vault.write(n)
         k.emit("note.saved", note=n, raw=raw, created=True)
         return summary(n) | {"hash": n["hash"]}
 
     @k.method("notes.update", "Change a note's title, body or tags.",
-              {"id": S, "title": S, "body": S, "tags": TAGS,
+              {"id": S, "title": S, "body": S, "tags": TAGS, "category": CAT,
+               "pinned": B,
                "base": dict(S, description="hash you edited from; refused if "
                             "the note changed since")}, ["id"])
-    def update(id, title=None, body=None, tags=None, base=None):
+    def update(id, title=None, body=None, tags=None, category=None, pinned=None,
+               base=None):
         old = k.note(id)
         if base and base != old["hash"]:
             raise KernelError("conflict", "note %r changed since %s"
@@ -403,7 +449,12 @@ def _core(k):
             n["body"] = body
         if tags is not None:
             n["tags"] = _clean_tags(tags)
-        if (n["title"], n["body"], n["tags"]) == (old["title"], old["body"], old["tags"]):
+        if category is not None:
+            n["category"] = _clean_category(category)
+        if pinned is not None:
+            n["pinned"] = bool(pinned)
+        fields = ("title", "body", "tags", "category", "pinned")
+        if all(n[f] == old[f] for f in fields):
             return summary(old) | {"hash": old["hash"], "unchanged": True}
         n["updated"] = now()
         n, raw = k.vault.write(n)
@@ -419,9 +470,21 @@ def _core(k):
         return {"id": id, "trash": dest}
 
     @k.method("notes.search", "Search titles, tags and bodies.",
-              {"q": S, "tag": S, "limit": {"type": "integer"}}, ["q"])
-    def search(q, tag=None, limit=20):
-        return k.search(q, limit=limit, tag=tag)
+              {"q": S, "tag": S, "category": CAT, "pinned": B,
+               "limit": {"type": "integer"}}, ["q"])
+    def search(q, tag=None, category=None, pinned=None, limit=20):
+        return k.search(q, limit=limit, tag=tag, category=category, pinned=pinned)
+
+    @k.method("notes.stats", "Counts: notes, words, tags, and notes per shelf.")
+    def stats():
+        shelves = dict.fromkeys(CATEGORIES, 0)
+        words, tags = 0, set()
+        for n in k.vault.notes.values():
+            shelves[n["category"]] = shelves.get(n["category"], 0) + 1
+            words += len(n["body"].split())
+            tags.update(n["tags"])
+        return {"notes": len(k.vault.notes), "words": words, "tags": len(tags),
+                "shelves": shelves}
 
     @k.method("notes.tags", "Every tag with its note count.")
     def tags():
