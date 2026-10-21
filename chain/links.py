@@ -96,31 +96,64 @@ def _entry_hash(prev, entry):
     return hashlib.sha256((prev + _canon(body)).encode("utf-8")).hexdigest()
 
 
-def _merkle(leaves):
+# DOMAIN SEPARATION (RFC 9162 §2.1.1). A leaf and an interior node must not
+# hash the same way, or an interior node can be presented as a single leaf —
+# the Kelsey-Schneier second preimage. The odd-node carry below already refuses
+# the OTHER Merkle attack (doubling); these two bytes close the pair.
+#
+# Versioned, not replaced. This chain stood at 14 links and 0 wraps when v2
+# landed, so nothing here was invalidated — but sibling chains elsewhere in the
+# estate had 55 roots already closed under v1, and a tree that silently changes
+# shape is the exact tampering these roots exist to detect. A wrap with no `mv`
+# marker is v1 and stays verifiable as one, forever.
+LEAF, NODE = b"\x00", b"\x01"
+MERKLE_V = 2
+
+
+def _mleaf(hexhash):
+    return hashlib.sha256(LEAF + bytes.fromhex(hexhash)).hexdigest()
+
+
+def _mnode(left, right):
+    return hashlib.sha256(NODE + bytes.fromhex(left) + bytes.fromhex(right)).hexdigest()
+
+
+def _merkle(leaves, mv=MERKLE_V):
     """Root over a list of hex hashes. An odd node is carried up, not doubled —
     doubling lets one leaf stand in for two and is a real attack."""
     if not leaves:
         return GENESIS
-    row = list(leaves)
+    if mv == 1:
+        row = list(leaves)
+        while len(row) > 1:
+            nxt = [_h(row[i], row[i + 1]) for i in range(0, len(row) - 1, 2)]
+            if len(row) % 2:
+                nxt.append(row[-1])
+            row = nxt
+        return row[0]
+    row = [_mleaf(x) for x in leaves]
     while len(row) > 1:
         nxt = []
         for i in range(0, len(row) - 1, 2):
-            nxt.append(_h(row[i], row[i + 1]))
+            nxt.append(_mnode(row[i], row[i + 1]))
         if len(row) % 2:
             nxt.append(row[-1])
         row = nxt
     return row[0]
 
 
-def _path(leaves, i):
-    """The sibling hashes proving leaf i belongs to the root."""
-    row, idx, out = list(leaves), i, []
+def _path(leaves, i, mv=MERKLE_V):
+    """The sibling hashes proving leaf i belongs to the root, in that tree's
+    own version."""
+    row = list(leaves) if mv == 1 else [_mleaf(x) for x in leaves]
+    idx, out = i, []
+    join = (lambda a, b: _h(a, b)) if mv == 1 else _mnode
     while len(row) > 1:
         nxt = []
         for j in range(0, len(row) - 1, 2):
             if j == idx or j + 1 == idx:
                 out.append((row[j + 1], "R") if j == idx else (row[j], "L"))
-            nxt.append(_h(row[j], row[j + 1]))
+            nxt.append(join(row[j], row[j + 1]))
         if len(row) % 2:
             nxt.append(row[-1])
         idx //= 2
@@ -128,12 +161,30 @@ def _path(leaves, i):
     return out
 
 
-def climb(leaf, path):
-    """Walk a path back to a root. This is the whole verifier."""
-    cur = leaf
+def climb(leaf, path, mv=MERKLE_V):
+    """Walk a path back to a root. This is the whole verifier. Under v2 the leaf
+    carries the leaf prefix, so an interior node handed in here cannot pass as
+    a leaf; under v1 it cannot, which is the flaw v2 closes."""
+    if mv == 1:
+        cur = leaf
+        for sib, side in path:
+            cur = _h(sib, cur) if side == "L" else _h(cur, sib)
+        return cur
+    cur = _mleaf(leaf)
     for sib, side in path:
-        cur = _h(sib, cur) if side == "L" else _h(cur, sib)
+        cur = _mnode(sib, cur) if side == "L" else _mnode(cur, sib)
     return cur
+
+
+def wrap_version(wrap_entry):
+    """Which tree a wrap was built with. No marker means v1."""
+    p = (wrap_entry or {}).get("payload") or {}
+    if isinstance(p, str):
+        try:
+            p = json.loads(p)
+        except ValueError:
+            return 1
+    return int(p.get("mv", 1))
 
 
 # --------------------------------------------------------------------------
@@ -260,7 +311,9 @@ class Chain:
         frm, to = self._n - WRAP_SIZE + 1, self._n
         payload = {
             "w": w, "from": frm, "to": to,
-            "root": _merkle(self._leaves),
+            "root": _merkle(self._leaves, MERKLE_V),
+            "mv": MERKLE_V,      # the tree this root was built with. A wrap with
+                                 # no marker is v1 and stays verifiable as one.
             "token": w,
             "says": ("wrap %d seals links %d-%d and IS token %d. Nobody "
                      "closed it; forty links did." % (w, frm, to, w)),
@@ -330,8 +383,13 @@ class Chain:
         i = n - frm
         if i >= len(leaves) or len(leaves) < WRAP_SIZE:
             return None
+        # prove a wrap in ITS OWN tree version, not whatever is current
+        wrap_entry = next((e for e in self.entries("wrap")
+                           if (e.get("payload") or {}).get("w") == w), None)
+        _mv = wrap_version(wrap_entry) if wrap_entry else MERKLE_V
         return {"link": n, "wrap": w, "leaf": leaves[i],
-                "path": _path(leaves, i), "root": _merkle(leaves)}
+                "mv": _mv, "path": _path(leaves, i, _mv),
+                "root": _merkle(leaves, _mv)}
 
 
 def check(proof):
