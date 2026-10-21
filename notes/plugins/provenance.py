@@ -14,11 +14,15 @@ wraps of forty. It is a separate file: notes never land on the estate chain.
 Each version cites the link of the version before it, so a note's history is
 a walk backwards through its own citations.
 """
+import contextlib
 import os
 import sys
+import time
 
 NAME = "provenance"
 CHAIN_FILE = "notes.jsonl"
+LOCK_FILE = "notes.jsonl.lock"
+LOCK_STALE = 30          # seconds; a lock older than this was left by a crash
 
 _CHAIN_DIR = os.path.join(os.path.dirname(os.path.dirname(
     os.path.dirname(os.path.abspath(__file__)))), "chain")
@@ -31,12 +35,54 @@ import links                                          # noqa: E402
 def register(k):
     from kernel import KernelError, digest
 
-    state = {"chain": None, "last": None}
+    state = {"chain": None, "last": None, "seen": None}
+    path = os.path.join(k.vault.meta, CHAIN_FILE)
+
+    def stamp():
+        try:
+            st = os.stat(path)
+            return (st.st_size, st.st_mtime_ns)
+        except OSError:
+            return None
 
     def chain():
-        if state["chain"] is None:
-            state["chain"] = links.Chain(os.path.join(k.vault.meta, CHAIN_FILE))
+        """The chain, re-read if another process appended since we last
+        looked — otherwise our next link would weld onto a stale head and
+        fork the chain."""
+        if state["chain"] is None or stamp() != state["seen"]:
+            state["chain"] = links.Chain(path)
+            state["last"] = None
+            state["seen"] = stamp()
         return state["chain"]
+
+    @contextlib.contextmanager
+    def locked():
+        """One writer at a time across processes: the server, the CLI and an
+        MCP agent may all hold the same vault open."""
+        lock = os.path.join(k.vault.meta, LOCK_FILE)
+        deadline = time.time() + LOCK_STALE
+        while True:
+            try:
+                fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                os.write(fd, str(os.getpid()).encode())
+                os.close(fd)
+                break
+            except FileExistsError:
+                try:
+                    if time.time() - os.path.getmtime(lock) > LOCK_STALE:
+                        os.unlink(lock)
+                        continue
+                except OSError:
+                    continue
+                if time.time() > deadline:
+                    raise KernelError("chain_busy", "another process has held the "
+                                      "chain lock for %ds (%s)" % (LOCK_STALE, lock))
+                time.sleep(0.05)
+        try:
+            yield
+        finally:
+            with contextlib.suppress(OSError):
+                os.unlink(lock)
 
     def note_of(e):
         """The note id rides in `says` as 'note <id> ...', so a stranger can
@@ -69,13 +115,16 @@ def register(k):
             raise KernelError(
                 "no_actor", "provenance needs a name on every deposit. Set "
                 "one: `notes init --actor <name>`, or set provenance to off.")
-        count, prev = last().get(note["id"], (0, None))
-        verb = "removed" if removed else ("created" if created else
-                                          "v%d" % (count + 1))
-        says = "note %s %s — %s" % (note["id"], verb, note["title"])
-        e = chain().deposit(raw, mode, says, actor, cites=[prev] if prev else None)
-        last()[note["id"]] = (count + 1, e["hash"])
-        return e
+        with locked():
+            c = chain()
+            count, prev = last().get(note["id"], (0, None))
+            verb = "removed" if removed else ("created" if created else
+                                              "v%d" % (count + 1))
+            says = "note %s %s — %s" % (note["id"], verb, note["title"])
+            e = c.deposit(raw, mode, says, actor, cites=[prev] if prev else None)
+            state["seen"] = stamp()
+            last()[note["id"]] = (count + 1, e["hash"])
+            return e
 
     k.on("note.saved", lambda note, raw, created: deposit(note, raw, created))
     k.on("note.removed", lambda note: deposit(

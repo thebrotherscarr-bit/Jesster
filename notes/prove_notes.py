@@ -120,6 +120,29 @@ def prove_core(root):
         "notes.list", {"bogus": 1}), "bad_params"))
 
 
+def prove_two_processes(root):
+    print("== two processes, one vault ==")
+    a = fresh(root, "shared")
+    b = fresh(root, "shared")                      # the CLI / an MCP agent beside the server
+    a.call("notes.create", {"title": "From A", "body": "a"})
+    b.call("notes.create", {"title": "From B", "body": "b"})
+    a.call("notes.create", {"title": "From A again", "body": "a2"})
+    b.call("notes.update", {"id": "from-a", "body": "b edited a's note"})
+    v = a.call("provenance.verify")
+    ck("interleaved writers keep one chain", v["intact"] and v["links"] == 4, v)
+    a._scanned = 0
+    body = a.call("notes.get", {"id": "from-a"})["body"]    # the call rescans
+    ck("the server sees the other process's notes",
+       "from-b" in a.vault.notes and body == "b edited a's note")
+    ck("and their history cites across processes",
+       len(a.call("provenance.history", {"id": "from-a"})) == 2)
+    p0 = a.call("live.poll", {"since": 0})
+    os.unlink(b.vault.path("from-b"))
+    a._scanned = 0
+    p1 = a.call("live.poll", {"since": p0["seq"]})
+    ck("files removed outside the kernel are noticed", p1["changed"] == ["from-b"], p1)
+
+
 def prove_import(root):
     print("== imports ==")
     src = os.path.join(root, "src")
@@ -267,6 +290,7 @@ def main():
     root = tempfile.mkdtemp(prefix="prove-notes-")
     try:
         prove_core(root)
+        prove_two_processes(root)
         prove_import(root)
         prove_llm(root)
         prove_stdio(root)

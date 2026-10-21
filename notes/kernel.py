@@ -170,6 +170,7 @@ class Vault:
         self.meta = os.path.join(self.root, META_DIR)
         os.makedirs(self.meta, exist_ok=True)
         self.notes = {}
+        self._stat = {}                      # id -> (mtime_ns, size) as last read or written
         self.reload()
 
     def path(self, nid):
@@ -177,23 +178,44 @@ class Vault:
             raise KernelError("bad_id", "not a note id: %r" % (nid,))
         return os.path.join(self.root, nid + NOTE_EXT)
 
+    def _ids_on_disk(self):
+        out = {}
+        for e in os.scandir(self.root):
+            if e.name.endswith(NOTE_EXT) and e.is_file():
+                nid = e.name[:-len(NOTE_EXT)]
+                if _ID_RE.match(nid):
+                    st = e.stat()
+                    out[nid] = (st.st_mtime_ns, st.st_size)
+        return out
+
     def reload(self):
-        self.notes = {}
-        for name in sorted(os.listdir(self.root)):
-            if not name.endswith(NOTE_EXT):
-                continue
-            nid = name[:-len(NOTE_EXT)]
-            if not _ID_RE.match(nid):
-                continue
+        self.notes, self._stat = {}, {}
+        for nid in sorted(self._ids_on_disk()):
             self.notes[nid] = self._read(nid)
+
+    def rescan(self):
+        """Pick up what other processes did — the CLI, an MCP agent, another
+        editor. Returns the ids that appeared, changed or went away."""
+        disk = self._ids_on_disk()
+        changed = []
+        for nid, st in disk.items():
+            if self._stat.get(nid) != st:
+                self.notes[nid] = self._read(nid)
+                changed.append(nid)
+        for nid in [n for n in self.notes if n not in disk]:
+            del self.notes[nid]
+            self._stat.pop(nid, None)
+            changed.append(nid)
+        return sorted(changed)
 
     def _read(self, nid):
         p = self.path(nid)
         with open(p, "r", encoding="utf-8") as f:
             raw = f.read()
         meta, body = parse(raw)
-        stamp = time.strftime("%Y-%m-%dT%H:%M:%S%z",
-                              time.localtime(os.path.getmtime(p)))
+        st = os.stat(p)
+        self._stat[nid] = (st.st_mtime_ns, st.st_size)
+        stamp = time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(st.st_mtime))
         return {
             "id": nid,
             "title": meta.get("title") or nid.replace("-", " "),
@@ -221,6 +243,8 @@ class Vault:
         with open(tmp, "w", encoding="utf-8", newline="\n") as f:
             f.write(raw)
         os.replace(tmp, p)                   # never a half-written note
+        st = os.stat(p)
+        self._stat[note["id"]] = (st.st_mtime_ns, st.st_size)
         note = dict(note, hash=digest(raw))
         self.notes[note["id"]] = note
         return note, raw
@@ -232,6 +256,7 @@ class Vault:
         os.makedirs(trash, exist_ok=True)
         dest = os.path.join(trash, "%s.%d%s" % (nid, int(time.time()), NOTE_EXT))
         os.replace(p, dest)
+        self._stat.pop(nid, None)
         return self.notes.pop(nid), dest
 
 
@@ -250,6 +275,7 @@ class Kernel:
         self.listeners = {}
         self.plugins = []
         self.restart_requested = False     # set by system.update; the server re-executes
+        self._scanned = 0.0
         self._lock = threading.RLock()       # one caller in the vault at a time
         _core(self)
         for p in plugins:
@@ -318,7 +344,19 @@ class Kernel:
             raise KernelError("bad_params", "%s does not take %s"
                               % (name, ", ".join(extra)))
         with self._lock:
+            self.sync_disk()
             return m["fn"](**params)
+
+    def sync_disk(self, every=1.0):
+        """At most once a second, notice notes other processes wrote."""
+        t = time.monotonic()
+        if t - self._scanned < every:
+            return []
+        self._scanned = t
+        changed = self.vault.rescan()
+        if changed:
+            self.emit("notes.external", ids=changed)
+        return changed
 
     def catalog(self):
         return [{"name": n, "doc": m["doc"], "schema": m["schema"]}

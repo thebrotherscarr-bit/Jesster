@@ -29,6 +29,7 @@ def register(k):
 
     k.on("note.saved", lambda note, raw, created: bump(note["id"], "saved"))
     k.on("note.removed", lambda note: bump(note["id"], "removed"))
+    k.on("notes.external", lambda ids: [bump(i, "external") for i in ids])
 
     S = {"type": "string"}
 
