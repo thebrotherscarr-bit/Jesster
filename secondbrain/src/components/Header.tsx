@@ -1,6 +1,7 @@
 import React from 'react';
 import { OllamaConfig } from '../types/index.ts';
 import { KernelSync } from '../hooks/useKernelSync.ts';
+import { DesktopUpdate } from '../hooks/useDesktopUpdate.ts';
 import { Plus, Brain, MessageSquare, Network, Zap, Cpu, Menu, Monitor, Link2, Download } from 'lucide-react';
 
 export type ActiveTab = 'notes' | 'ask' | 'graph';
@@ -14,6 +15,9 @@ interface HeaderProps {
   onCreateNewNote: () => void;
   ollamaConfig: OllamaConfig;
   storage?: KernelSync;
+  desktopUpdate?: DesktopUpdate | null;
+  onInstallDesktop?: () => void;
+  installingDesktop?: boolean;
   onToggleMobileMenu?: () => void;
 }
 
@@ -64,6 +68,9 @@ export const Header: React.FC<HeaderProps> = ({
   onCreateNewNote,
   ollamaConfig,
   storage,
+  desktopUpdate,
+  onInstallDesktop,
+  installingDesktop,
   onToggleMobileMenu,
 }) => {
   return (
@@ -141,6 +148,28 @@ export const Header: React.FC<HeaderProps> = ({
       {/* Zone 3: Actions */}
       <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
         <StorageBadge storage={storage} />
+        {onInstallDesktop && (
+          <button
+            onClick={onInstallDesktop}
+            disabled={installingDesktop}
+            title="Download the newest SecondBrain.exe from GitHub, install it for this Windows user with Desktop and Start menu shortcuts, and start it. It updates itself after that."
+            className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg border border-emerald-800 bg-emerald-950/60 hover:bg-emerald-900 text-xs text-emerald-300 hover:text-white transition-colors shrink-0 disabled:opacity-60"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>{installingDesktop ? 'Installing…' : 'Install desktop app'}</span>
+          </button>
+        )}
+        {desktopUpdate?.available && (
+          <button
+            onClick={() => desktopUpdate.apply()}
+            disabled={desktopUpdate.updating}
+            title={desktopUpdate.error || `Build ${desktopUpdate.latest} is out (you have ${desktopUpdate.current}): ${desktopUpdate.title}. The app restarts on the new build; notes are kept.`}
+            className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg border border-sky-800 bg-sky-950/60 hover:bg-sky-900 text-xs text-sky-300 hover:text-white transition-colors shrink-0 disabled:opacity-60"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span>{desktopUpdate.updating ? 'Updating…' : 'Update'}</span>
+          </button>
+        )}
         {storage?.version && storage.version.behind > 0 && storage.update && (
           <button
             onClick={() => storage.update?.()}

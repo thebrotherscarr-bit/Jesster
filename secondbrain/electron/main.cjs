@@ -1,7 +1,8 @@
-const { app, BrowserWindow, dialog, shell, session } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, shell, session } = require('electron');
 const path = require('path');
 const http = require('http');
 const express = require('express');
+const updater = require('./updater.cjs');
 
 const isDev = process.env.NODE_ENV === 'development';
 const distDir = path.join(__dirname, '..', 'dist');
@@ -112,6 +113,7 @@ async function createWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       sandbox: true,
+      preload: path.join(__dirname, 'preload.cjs'),
     },
     autoHideMenuBar: true,
   });
@@ -130,6 +132,25 @@ async function createWindow() {
     return { action: 'deny' };
   });
 }
+
+// Only the app's own page may ask about or start an update.
+function fromApp(event) {
+  try {
+    return new URL(event.senderFrame.url).origin === APP_ORIGIN || isDev;
+  } catch {
+    return false;
+  }
+}
+
+ipcMain.handle('desktop:version', (event) => (fromApp(event) ? updater.buildInfo() : null));
+ipcMain.handle('desktop:check-update', (event) => {
+  if (!fromApp(event)) throw new Error('not allowed');
+  return updater.check();
+});
+ipcMain.handle('desktop:apply-update', (event) => {
+  if (!fromApp(event)) throw new Error('not allowed');
+  return updater.apply();
+});
 
 app.setAppUserModelId('com.secondbrain.local');
 

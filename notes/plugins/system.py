@@ -7,17 +7,30 @@ SYSTEM — the running copy and its source.
   system.update    fast-forward to the branch on GitHub, rebuild the UI if it
                    changed, and restart the server so the new code runs
 
+  system.install_desktop   download the newest SecondBrain.exe build from the
+                   repository's releases, install it for this Windows user,
+                   add Desktop and Start menu shortcuts, and start it. From
+                   then on the desktop app updates itself.
+
 Fast-forward only. A copy with local commits or edits is never rewritten; the
 update is refused and says why. Nothing here touches the vault.
 """
+import json
 import os
 import shutil
 import subprocess
+import sys
+import tempfile
+import urllib.request
+import zipfile
 
 NAME = "system"
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 UI = os.path.join(REPO, "secondbrain")
 GIT_TIMEOUT = 120
+RELEASES = "https://api.github.com/repos/thebrotherscarr-bit/Jesster/releases?per_page=30"
+DOWNLOAD_PREFIX = "https://github.com/thebrotherscarr-bit/Jesster/releases/download/"
+ASSET = "SecondBrain-win32-x64.zip"
 BUILD_TIMEOUT = 900
 
 
@@ -93,6 +106,19 @@ def register(k):
         return {"updated": True, "from": before[:12], "to": status(False)["head"],
                 "files": len(changed), "ui": built, "restarting": True}
 
+    @k.method("system.install_desktop", "Install (or reinstall) the newest "
+              "SecondBrain desktop app on this Windows PC, with shortcuts.")
+    def m_install_desktop():
+        return install_desktop()
+
+    @k.method("system.desktop_build", "The newest desktop app build on GitHub.")
+    def m_desktop_build():
+        try:
+            return {"latest": latest_desktop_build(),
+                    "installed": os.path.isfile(os.path.join(desktop_dir(), "SecondBrain.exe"))}
+        except OSError as e:
+            raise KernelError("offline", "could not reach GitHub: %s" % e)
+
     def rebuild_ui(install):
         exe = npm()
         if not exe:
@@ -104,3 +130,92 @@ def register(k):
                 return "npm ci failed: %s" % err[-400:]
         rc, _, err = _run([exe, "run", "build"], UI, BUILD_TIMEOUT)
         return "rebuilt" if rc == 0 else "build failed: %s" % err[-400:]
+
+
+def _http(url, timeout=300):
+    req = urllib.request.Request(url, headers={"User-Agent": "jesster-notes",
+                                               "Accept": "application/vnd.github+json"})
+    return urllib.request.urlopen(req, timeout=timeout)
+
+
+def latest_desktop_build():
+    """The newest secondbrain-b<N> release that carries the Windows zip."""
+    with _http(RELEASES, 60) as r:
+        releases = json.loads(r.read().decode("utf-8"))
+    best = None
+    for rel in releases:
+        tag = rel.get("tag_name") or ""
+        if rel.get("draft") or not tag.startswith("secondbrain-b") or not tag[13:].isdigit():
+            continue
+        asset = next((a for a in rel.get("assets") or [] if a.get("name") == ASSET), None)
+        if asset and (best is None or int(tag[13:]) > best["build"]):
+            best = {"build": int(tag[13:]), "tag": tag, "url": asset["browser_download_url"]}
+    return best
+
+
+def desktop_dir():
+    base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
+    return os.path.join(base, "Programs", "SecondBrain")
+
+
+def _running():
+    r = subprocess.run(["tasklist", "/FI", "IMAGENAME eq SecondBrain.exe"],
+                       capture_output=True, text=True, errors="replace")
+    return "SecondBrain.exe" in (r.stdout or "")
+
+
+def _shortcuts(exe):
+    """Desktop and Start menu shortcuts, through Windows' own shell object."""
+    ps = ("$s = New-Object -ComObject WScript.Shell; "
+          "foreach ($d in @([Environment]::GetFolderPath('Desktop'), "
+          "[Environment]::GetFolderPath('Programs'))) { "
+          "$l = $s.CreateShortcut((Join-Path $d 'SecondBrain.lnk')); "
+          "$l.TargetPath = '%s'; $l.WorkingDirectory = '%s'; $l.Save() }"
+          % (exe.replace("'", "''"), os.path.dirname(exe).replace("'", "''")))
+    subprocess.run(["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ps],
+                   capture_output=True, timeout=60)
+
+
+def install_desktop():
+    from kernel import KernelError
+    if os.name != "nt":
+        raise KernelError("not_windows", "the desktop app installs on Windows only")
+    if _running():
+        raise KernelError("app_running", "SecondBrain.exe is open; close it, then "
+                          "install again (its files can't be replaced while it runs)")
+    try:
+        build = latest_desktop_build()
+    except OSError as e:
+        raise KernelError("offline", "could not reach GitHub: %s" % e)
+    if not build:
+        raise KernelError("no_build", "no desktop build has been published yet")
+    if not build["url"].startswith(DOWNLOAD_PREFIX):
+        raise KernelError("refused", "refusing a download from outside the app repository")
+    work = tempfile.mkdtemp(prefix="secondbrain-install-")
+    try:
+        zpath = os.path.join(work, ASSET)
+        with _http(build["url"]) as r, open(zpath, "wb") as out:
+            shutil.copyfileobj(r, out)
+        with zipfile.ZipFile(zpath) as z:
+            z.extractall(os.path.join(work, "new"))
+        src = None
+        for d, _, files in os.walk(os.path.join(work, "new")):
+            if "SecondBrain.exe" in files:
+                src = d
+                break
+        if not src:
+            raise KernelError("bad_build", "the downloaded build has no SecondBrain.exe")
+        dest = desktop_dir()
+        if os.path.isdir(dest):
+            shutil.rmtree(dest)
+        shutil.copytree(src, dest)
+        exe = os.path.join(dest, "SecondBrain.exe")
+        _shortcuts(exe)
+        subprocess.Popen([exe], cwd=dest, close_fds=True,
+                         creationflags=getattr(subprocess, "DETACHED_PROCESS", 0))
+        return {"installed": build["build"], "path": dest,
+                "detail": "SecondBrain build %d installed in %s, with Desktop and "
+                          "Start menu shortcuts. It updates itself from now on."
+                          % (build["build"], dest)}
+    finally:
+        shutil.rmtree(work, ignore_errors=True)

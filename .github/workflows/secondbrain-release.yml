@@ -1,0 +1,64 @@
+name: secondbrain-release
+
+# Builds SecondBrain.exe on Windows for every change to the app and publishes
+# it as release secondbrain-b<run number>. The packaged app checks these
+# releases and offers an Update button (secondbrain/electron/updater.cjs).
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - claude/serene-edison-64sdmm
+    paths:
+      - secondbrain/**
+      - .github/workflows/secondbrain-release.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: secondbrain-release
+  cancel-in-progress: false
+
+jobs:
+  windows-exe:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: secondbrain
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      # vite@8 vs tsx's esbuild peer pin needs --legacy-peer-deps; scripts are
+      # off, so Electron's runtime is fetched explicitly (see secondbrain/README.md)
+      - run: npm ci --legacy-peer-deps --ignore-scripts
+      - run: node node_modules/electron/install.js
+      - run: npm run lint
+      - run: npm test
+      - name: Stamp the build number into the app
+        run: |
+          @{ build = ${{ github.run_number }}; commit = "${{ github.sha }}".Substring(0, 7); branch = "${{ github.ref_name }}" } |
+            ConvertTo-Json | Set-Content electron/build.json -Encoding utf8
+          Get-Content electron/build.json
+      - run: npm run package:win
+      - name: Check the executable is real
+        run: |
+          $exe = Get-Item dist-desktop/SecondBrain-win32-x64/SecondBrain.exe
+          if ($exe.Length -lt 1MB) { throw "SecondBrain.exe is only $($exe.Length) bytes" }
+          "SecondBrain.exe: $([math]::Round($exe.Length / 1MB, 1)) MB"
+      - name: Zip
+        run: Compress-Archive -Path dist-desktop/SecondBrain-win32-x64 -DestinationPath SecondBrain-win32-x64.zip
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "secondbrain-b${{ github.run_number }}" SecondBrain-win32-x64.zip `
+            --target "${{ github.sha }}" `
+            --title "SecondBrain build ${{ github.run_number }}" `
+            --notes "SecondBrain desktop app, build ${{ github.run_number }} ($("${{ github.sha }}".Substring(0, 7))).
+
+          First install: download SecondBrain-win32-x64.zip, unzip it anywhere, run SecondBrain.exe. Notes live in %APPDATA%\SecondBrain and are kept across versions.
+          After that: the Update button in the app's top bar installs new builds."

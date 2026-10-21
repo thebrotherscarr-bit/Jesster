@@ -30,7 +30,7 @@ import threading
 import time
 import uuid
 
-DENY = ("system.update", "import.*", "ingest.*")
+DENY = ("system.update", "system.install_desktop", "import.*", "ingest.*")
 INTERVAL = 5
 KEEP_SECONDS = 24 * 3600
 

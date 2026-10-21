@@ -23,6 +23,7 @@ import { OllamaSetupModal } from './components/OllamaSetupModal.tsx';
 import { QuickCaptureModal } from './components/QuickCaptureModal.tsx';
 import { WindowsPublishModal } from './components/WindowsPublishModal.tsx';
 import { useKernelSync } from './hooks/useKernelSync.ts';
+import { useDesktopUpdate } from './hooks/useDesktopUpdate.ts';
 import { rpc } from './utils/kernel.ts';
 
 const STORAGE_KEY_NOTES = 'secondbrain_local_notes_v1';
@@ -108,6 +109,31 @@ export default function App() {
       }
     }
   );
+
+  // the packaged .exe updates itself from GitHub releases
+  const desktopUpdate = useDesktopUpdate((text) => setLiveMessage(text));
+
+  // in the browser, served by the kernel: offer to install the desktop app
+  const [desktopBuild, setDesktopBuild] = useState<number | null>(null);
+  const [installing, setInstalling] = useState(false);
+  useEffect(() => {
+    if (storage.mode !== 'kernel' || window.secondbrainDesktop) return;
+    rpc<{ latest: { build: number } | null }>('system.desktop_build')
+      .then((r) => setDesktopBuild(r.latest ? r.latest.build : null))
+      .catch(() => setDesktopBuild(null));
+  }, [storage.mode]);
+  const installDesktop = async () => {
+    setInstalling(true);
+    setLiveMessage('Installing the SecondBrain desktop app… (downloading from GitHub)');
+    try {
+      const r = await rpc<{ detail: string }>('system.install_desktop');
+      setLiveMessage(r.detail);
+    } catch (e) {
+      setLiveMessage(`Install failed: ${e instanceof Error ? e.message : String(e)}`);
+    } finally {
+      setInstalling(false);
+    }
+  };
 
   // tell the kernel what this window has open, so collaborators can see it
   useEffect(() => {
@@ -346,6 +372,9 @@ export default function App() {
         }}
         ollamaConfig={ollamaConfig}
         storage={storage}
+        desktopUpdate={desktopUpdate}
+        onInstallDesktop={desktopBuild ? installDesktop : undefined}
+        installingDesktop={installing}
         onToggleMobileMenu={() => setMobileNotesView((prev) => (prev === 'sidebar' ? 'list' : 'sidebar'))}
       />
 
