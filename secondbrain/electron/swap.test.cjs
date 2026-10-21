@@ -23,15 +23,25 @@ fs.writeFileSync(path.join(dest, 'resources', 'app.asar'), 'old asar');
 fs.writeFileSync(path.join(dest, 'stale.txt'), 'from build 1 only');
 const marker = path.join(root, 'restarted.txt');
 const log = path.join(root, 'update.log');
-
-const old = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 3000)'], { stdio: 'ignore' });
+// The app is "SecondBrain.exe" in both folders (a copy of node, so it can be
+// told what to do). The old one runs FROM the install folder, holding its own
+// exe open the way the real app does; the swap stops leftovers by that name.
+const exeName = process.platform === 'win32' ? 'SecondBrain.exe' : 'SecondBrain';
+fs.copyFileSync(process.execPath, path.join(src, exeName));
+fs.copyFileSync(process.execPath, path.join(dest, exeName));
+if (process.platform !== 'win32') {
+  fs.chmodSync(path.join(src, exeName), 0o755);
+  fs.chmodSync(path.join(dest, exeName), 0o755);
+}
+const appExe = path.join(dest, exeName);
+const old = spawn(appExe, ['-e', 'setTimeout(() => {}, 3000)'], { stdio: 'ignore' });
 const launch = JSON.stringify(['-e', `require('fs').writeFileSync(${JSON.stringify(marker)}, 'restarted')`]);
 (async () => {
 const t0 = Date.now();
 // async, so this process collects the old app when it exits (a lingering
 // zombie would look "alive" on Linux)
 const r = await new Promise((resolve) => {
-  const c = spawn(runner, [path.join(__dirname, 'swap.cjs'), String(old.pid), src, dest, process.execPath, log, launch], {
+  const c = spawn(runner, [path.join(__dirname, 'swap.cjs'), String(old.pid), src, dest, appExe, log, launch], {
     stdio: ['ignore', 'ignore', 'pipe'],
     env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
   });
