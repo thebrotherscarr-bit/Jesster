@@ -3,7 +3,7 @@ import { OllamaConfig } from '../types/index.ts';
 import { KernelSync } from '../hooks/useKernelSync.ts';
 import { DesktopUpdate } from '../hooks/useDesktopUpdate.ts';
 import { DesktopVault } from '../hooks/useDesktopVault.ts';
-import { Plus, Brain, MessageSquare, Network, Zap, Cpu, Menu, Monitor, Link2, Download, FolderOpen, FilePlus2 } from 'lucide-react';
+import { Plus, Brain, MessageSquare, Network, Zap, Cpu, Menu, Monitor, Link2, Download, FolderOpen, FilePlus2, Settings as SettingsIcon } from 'lucide-react';
 
 export type ActiveTab = 'notes' | 'ask' | 'graph';
 
@@ -18,6 +18,7 @@ interface HeaderProps {
   storage?: KernelSync;
   desktopUpdate?: DesktopUpdate | null;
   desktopVault?: DesktopVault | null;
+  onOpenSettings?: () => void;
   onToggleMobileMenu?: () => void;
 }
 
@@ -70,6 +71,7 @@ export const Header: React.FC<HeaderProps> = ({
   storage,
   desktopUpdate,
   desktopVault,
+  onOpenSettings,
   onToggleMobileMenu,
 }) => {
   return (
@@ -181,6 +183,16 @@ export const Header: React.FC<HeaderProps> = ({
           </>
         ) : (
           <StorageBadge storage={storage} />
+        )}
+        {onOpenSettings && (
+          <button
+            onClick={onOpenSettings}
+            title="Settings: inbox, agent, Telegram, terminal, voice"
+            aria-label="Settings"
+            className="p-1.5 rounded-lg border border-neutral-800 bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white transition-colors shrink-0"
+          >
+            <SettingsIcon className="w-3.5 h-3.5" />
+          </button>
         )}
         {desktopUpdate?.available && (
           <button

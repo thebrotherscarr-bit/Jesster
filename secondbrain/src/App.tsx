@@ -22,6 +22,7 @@ import { GraphView } from './components/GraphView.tsx';
 import { OllamaSetupModal } from './components/OllamaSetupModal.tsx';
 import { QuickCaptureModal } from './components/QuickCaptureModal.tsx';
 import { WindowsPublishModal } from './components/WindowsPublishModal.tsx';
+import { SettingsModal } from './components/SettingsModal.tsx';
 import { useKernelSync } from './hooks/useKernelSync.ts';
 import { useDesktopUpdate } from './hooks/useDesktopUpdate.ts';
 import { useDesktopVault } from './hooks/useDesktopVault.ts';
@@ -67,6 +68,7 @@ export default function App() {
   const [isOllamaModalOpen, setIsOllamaModalOpen] = useState(false);
   const [isWindowsModalOpen, setIsWindowsModalOpen] = useState(false);
   const [isQuickCaptureOpen, setIsQuickCaptureOpen] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [, startTransition] = useTransition();
 
   // Ollama Configuration State
@@ -385,6 +387,7 @@ export default function App() {
         ollamaConfig={ollamaConfig}
         storage={storage}
         desktopVault={desktopVault}
+        onOpenSettings={window.secondbrainDesktop?.settings ? () => setIsSettingsOpen(true) : undefined}
         desktopUpdate={desktopUpdate}
         onToggleMobileMenu={() => setMobileNotesView((prev) => (prev === 'sidebar' ? 'list' : 'sidebar'))}
       />
@@ -505,6 +508,7 @@ export default function App() {
         onClose={() => setIsWindowsModalOpen(false)}
         appUrl={typeof window !== 'undefined' ? window.location.origin : ''}
       />
+      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
     </div>
   );
 }

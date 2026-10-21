@@ -5,6 +5,8 @@ const express = require('express');
 const updater = require('./updater.cjs');
 const fs = require('fs');
 const { Vault, importFile, SUPPORTED } = require('./vaultfs.cjs');
+const { Settings } = require('./settings.cjs');
+const inbox = require('./inbox.cjs');
 
 const isDev = process.env.NODE_ENV === 'development';
 const distDir = path.join(__dirname, '..', 'dist');
@@ -144,26 +146,22 @@ function fromApp(event) {
   }
 }
 
+// ---- settings ------------------------------------------------------------
+let settings = null;
+function getSettings() {
+  return settings || (settings = new Settings(app.getPath('userData')));
+}
+
 // ---- notes as files ----------------------------------------------------
-// The notes folder (default Documents\SecondBrain) is remembered in
-// <userData>\vault.json. Changes other programs make there are announced
-// to the window, which reloads them.
+// The notes folder (default Documents\SecondBrain) is remembered in the
+// settings. Changes other programs make there are announced to the window,
+// which reloads them.
 let vault = null;
 let watcher = null;
 let changeTimer = null;
 
-function settingsFile() {
-  return path.join(app.getPath('userData'), 'vault.json');
-}
-
 function vaultDir() {
-  try {
-    const dir = JSON.parse(fs.readFileSync(settingsFile(), 'utf8')).dir;
-    if (dir) return dir;
-  } catch {
-    /* first run */
-  }
-  return path.join(app.getPath('documents'), 'SecondBrain');
+  return getSettings().get('vaultDir') || path.join(app.getPath('documents'), 'SecondBrain');
 }
 
 function openVault(dir) {
@@ -220,7 +218,7 @@ ipcMain.handle('vault:choose', async (event) => {
     properties: ['openDirectory', 'createDirectory'],
   });
   if (r.canceled || !r.filePaths[0]) return { dir: getVault().dir, changed: false };
-  fs.writeFileSync(settingsFile(), JSON.stringify({ dir: r.filePaths[0] }, null, 2));
+  getSettings().set('vaultDir', r.filePaths[0]);
   openVault(r.filePaths[0]);
   return { dir: vault.dir, changed: true };
 });
@@ -260,6 +258,84 @@ ipcMain.handle('vault:import', async (event, dropped) => {
   return { imported, skipped };
 });
 
+// ---- settings for the page (secrets masked) ------------------------------
+const PAGE_SECTIONS = ['inbox', 'agent', 'telegram', 'terminal', 'voice'];
+ipcMain.handle('settings:get', (event) => {
+  guard(event);
+  return getSettings().public();
+});
+ipcMain.handle('settings:set', (event, section, value) => {
+  guard(event);
+  if (!PAGE_SECTIONS.includes(section) || !value || typeof value !== 'object') throw new Error('not a setting');
+  // a masked token coming back from the page means "unchanged"
+  if (section === 'telegram' && typeof value.token === 'string' && value.token.startsWith('••••')) delete value.token;
+  getSettings().set(section, value);
+  for (const fn of settingsListeners) fn(section);
+  return getSettings().public();
+});
+const settingsListeners = [];
+
+// ---- inbox: notes from the private bridge repo ---------------------------
+let inboxState = { last: null, error: null, running: false };
+let inboxTimer = null;
+
+async function syncInbox() {
+  const clone = getSettings().get('inbox').clone;
+  if (!clone || inboxState.running) return inboxState;
+  inboxState = { ...inboxState, running: true };
+  try {
+    const r = await inbox.sync(clone, getVault());
+    inboxState = { last: r, error: null, running: false };
+    if (r.filed.length && mainWindow) mainWindow.webContents.send('vault:changed');
+  } catch (e) {
+    inboxState = { ...inboxState, error: e.message, running: false };
+  }
+  if (mainWindow) mainWindow.webContents.send('inbox:status', inboxStatus());
+  return inboxState;
+}
+
+function inboxStatus() {
+  const s = getSettings().get('inbox');
+  return { clone: s.clone, every: s.every, ...inboxState };
+}
+
+function scheduleInbox() {
+  clearInterval(inboxTimer);
+  const s = getSettings().get('inbox');
+  if (s.clone) inboxTimer = setInterval(syncInbox, Math.max(1, Number(s.every) || 5) * 60000);
+}
+settingsListeners.push((section) => section === 'inbox' && scheduleInbox());
+
+ipcMain.handle('inbox:status', (event) => {
+  guard(event);
+  return inboxStatus();
+});
+ipcMain.handle('inbox:sync', async (event) => {
+  guard(event);
+  await syncInbox();
+  return inboxStatus();
+});
+ipcMain.handle('inbox:connect', async (event) => {
+  guard(event);
+  const r = await dialog.showOpenDialog(mainWindow, {
+    title: 'Where should the secondbrain-bridge folder go? (an existing clone works too)',
+    defaultPath: app.getPath('documents'),
+    properties: ['openDirectory', 'createDirectory'],
+  });
+  if (r.canceled || !r.filePaths[0]) return inboxStatus();
+  const { dir } = await inbox.connect(r.filePaths[0]);
+  getSettings().set('inbox', { clone: dir });
+  scheduleInbox();
+  await syncInbox();
+  return inboxStatus();
+});
+ipcMain.handle('inbox:disconnect', (event) => {
+  guard(event);
+  getSettings().set('inbox', { clone: null });
+  scheduleInbox();
+  return inboxStatus();
+});
+
 ipcMain.handle('desktop:version', (event) => (fromApp(event) ? updater.buildInfo() : null));
 ipcMain.handle('desktop:check-update', (event) => {
   if (!fromApp(event)) throw new Error('not allowed');
@@ -288,6 +364,8 @@ if (!gotSingleInstanceLock) {
 
   app.whenReady().then(() => {
     createWindow();
+    scheduleInbox();
+    setTimeout(syncInbox, 3000);
     // downloads from past updates (the hand-over cannot delete its own exe)
     const asar = process.noAsar;
     process.noAsar = true; // an old build's app.asar is a file to delete
