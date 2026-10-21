@@ -117,8 +117,24 @@ export async function detectKernel(): Promise<boolean> {
   }
 }
 
+/**
+ * Imported chats stay in the vault and its search index (Ask Brain reaches
+ * them through context.for); the note list would drown in thousands of them.
+ */
+export const HIDDEN_TAGS = ['chat'];
+
 export async function loadVault(): Promise<KernelNote[]> {
-  return rpc<KernelNote[]>('notes.dump');
+  return rpc<KernelNote[]>('notes.dump', { exclude_tags: HIDDEN_TAGS });
+}
+
+export interface VaultContext {
+  text: string;
+  sources: string[];
+}
+
+/** The kernel's briefing for a question: recent work plus the best passages. */
+export async function vaultContext(q: string): Promise<VaultContext> {
+  return rpc<VaultContext>('context.for', { q });
 }
 
 /**

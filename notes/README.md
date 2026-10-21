@@ -88,6 +88,76 @@ changed elsewhere in the meantime. It has search, tags, `[[wikilinks]]` and
 backlinks, a Markdown preview, chain status and per-note history, and **Ask**
 for the local model.
 
+## Feeding it everything you do with models
+
+### 1. Past chats: download your data and ingest it
+
+| from | how to download | then |
+|---|---|---|
+| ChatGPT | chatgpt.com, Settings, Data controls, **Export data**. A zip arrives by email. | `python notes/cli.py ingest <the .zip>` |
+| Claude | claude.ai, Settings, Privacy, **Export data** | `python notes/cli.py ingest <the .zip>` |
+| Gemini | takeout.google.com, deselect all, tick **My Activity**, choose **Gemini Apps**, and set the format to **JSON** | `python notes/cli.py ingest <the takeout .zip>` |
+| Claude Code | already on disk, in `%USERPROFILE%\.claude\projects` | `python notes/cli.py watch add %USERPROFILE%\.claude\projects` |
+| voice memos, meetings | any .mp3/.m4a/.wav | set `transcribe_cmd` (below), then `ingest <folder>` |
+
+Each conversation becomes one Markdown note, filed under resources and tagged
+`chat` plus its source. Edits you abandoned in ChatGPT are left out. Ingesting
+the same export again is safe: unchanged chats are skipped, and ones that
+grew are updated. `watch add <folder>` re-ingests a folder every 10 minutes
+while the server runs, so new Claude Code sessions and exports you drop
+there just show up.
+
+Audio is transcribed locally by a command you choose. In
+`<vault>\.jesster\config.json`, for whisper.cpp:
+`"transcribe_cmd": ["whisper-cli", "-m", "C:/models/ggml-base.en.bin", "-np", "-nt", "-f", "{in}"]`.
+For openai-whisper:
+`["whisper", "{in}", "--model", "base", "--output_format", "txt", "--output_dir", "{out_dir}"]`.
+
+### 2. Finding the relevant parts
+
+Every note is cut into passages and indexed in SQLite full-text search
+(`index.search`, `python notes/cli.py context <question>`). To also search by
+meaning, so "that thing about being throttled" finds the chat about 429s,
+pull an embedding model and compute vectors once:
+
+```bash
+ollama pull nomic-embed-text
+python notes/cli.py index embed      # re-run after big imports; it only does new passages
+```
+
+**Ask Brain** in the app, `ask` on the CLI and `llm_ask` over MCP all answer
+from those passages, chats included. Imported chats stay out of the app's note
+list, since there can be thousands of them, but they are always searched.
+
+### 3. Every model you talk to, briefed and remembered
+
+The server is also a model gateway. Point a tool at it instead of at the
+model:
+
+| tool speaks | set its endpoint to |
+|---|---|
+| Ollama (Open WebUI, Continue, Msty, …) | `http://localhost:8765` |
+| OpenAI API, model on local Ollama | base URL `http://localhost:8765/v1`, any API key |
+| OpenAI API, a cloud service | base URL `http://localhost:8765/u/openai/v1`, your real key |
+
+For cloud services, name them in the vault config:
+`"gateway_upstreams": {"openai": "https://api.openai.com", "openrouter": "https://openrouter.ai/api"}`.
+Your API key passes through to the service and is never written down.
+
+On every chat request the gateway adds what you've been working on lately,
+plus the passages most relevant to your message. It forwards the request
+(streaming passes straight through) and appends the exchange to that day's
+capture note for the tool, which is indexed like everything else. So the
+next model knows what the last one discussed. Per request, the header
+`X-SecondBrain: off` turns this off, `X-SecondBrain-Capture: off` stops only
+the capture, and `X-SecondBrain-Source: <name>` names the tool.
+
+Agents on MCP (Claude Code, Cursor, Codex) get the same through the
+`jesster-notes` server in `../.mcp.json`: `context_for`, `context_now`,
+`index_search` and `capture_append`. Claude Code talks to Anthropic's own
+API, which the gateway doesn't proxy. It gets your context over MCP, and its
+sessions come in through `watch`.
+
 ## Running it on Windows
 
 Double-click `start-secondbrain.cmd` in the repo root. The first run builds

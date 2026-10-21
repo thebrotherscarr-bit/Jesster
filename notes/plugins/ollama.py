@@ -110,12 +110,22 @@ def register(k):
               {"q": S, "k": {"type": "integer"}, "model": S}, ["q"])
     def ask(q, model=None, **kw):              # "k" would shadow the kernel
         n = kw.get("k") or 5
-        hits = [h["id"] for h in k.search(q, limit=n)]
-        if not hits:
-            return {"answer": "No note matches that question.", "sources": []}
-        answer = chat(SYSTEM, "Notes:\n\n%s\n\nQuestion: %s" % (context(hits), q),
-                      model)
-        return {"answer": answer, "sources": hits}
+        if k.index_search:
+            # passages, not whole notes: a thousand-message chat contributes
+            # only the parts that answer the question
+            found = k.index_search(q, limit=n * 2)["results"]
+            if not found:
+                return {"answer": "No note matches that question.", "sources": []}
+            ctx = "\n\n".join("### [%s] %s\n%s" % (h["note"], h["title"], h["text"])
+                               for h in found)
+            sources = list(dict.fromkeys(h["note"] for h in found))
+        else:
+            sources = [h["id"] for h in k.search(q, limit=n)]
+            if not sources:
+                return {"answer": "No note matches that question.", "sources": []}
+            ctx = context(sources)
+        answer = chat(SYSTEM, "Notes:\n\n%s\n\nQuestion: %s" % (ctx, q), model)
+        return {"answer": answer, "sources": sources}
 
     @k.method("llm.summarize", "Summarize one note in a few lines.",
               {"id": S, "model": S}, ["id"])

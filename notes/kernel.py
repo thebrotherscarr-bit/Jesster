@@ -276,6 +276,8 @@ class Kernel:
         self.plugins = []
         self.restart_requested = False     # set by system.update; the server re-executes
         self._scanned = 0.0
+        self.searcher = None               # the index plugin puts a better search here
+        self.index_search = None           # passage-level search, when indexed
         self._lock = threading.RLock()       # one caller in the vault at a time
         _core(self)
         for p in plugins:
@@ -374,6 +376,9 @@ class Kernel:
         """Plain term scoring: title hits weigh triple, body hits are damped
         by length so a long note does not win on size alone."""
         terms = [t for t in tokens(q) if t not in STOP] or tokens(q)
+        if terms and self.searcher:
+            return [dict(summary(n), score=s) for s, n in
+                    self.searcher(q, limit=limit, tag=tag, category=category, pinned=pinned)]
         out = []
         for n in self.vault.notes.values():
             if tag and tag not in n["tags"]:
@@ -438,9 +443,13 @@ def _core(k):
     def list_(tag=None, category=None, pinned=None, limit=200):
         return k.search("", limit=limit, tag=tag, category=category, pinned=pinned)
 
-    @k.method("notes.dump", "Every note in full — what a UI loads at start.")
-    def dump():
-        return sorted(k.vault.notes.values(), key=lambda n: n["updated"], reverse=True)
+    @k.method("notes.dump", "Every note in full — what a UI loads at start.",
+              {"exclude_tags": dict(TAGS, description="leave out notes with any of "
+                                    "these tags (imported chats can number thousands)")})
+    def dump(exclude_tags=None):
+        skip = set(exclude_tags or ())
+        return sorted((n for n in k.vault.notes.values() if not skip & set(n["tags"])),
+                      key=lambda n: n["updated"], reverse=True)
 
     @k.method("notes.get", "One note in full, with the notes linking to it.",
               {"id": S}, ["id"])
@@ -546,8 +555,9 @@ def default_plugins():
     here = os.path.dirname(os.path.abspath(__file__))
     if here not in sys.path:
         sys.path.insert(0, here)
-    from plugins import provenance, ollama, importer, live, system
-    return [provenance, ollama, importer, live, system]
+    from plugins import (provenance, index, ollama, importer, ingest, context,
+                         live, system)
+    return [provenance, index, ollama, importer, ingest, context, live, system]
 
 
 def open_kernel(vault_root, config=None, plugins=None):

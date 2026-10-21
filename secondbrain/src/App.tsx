@@ -425,6 +425,7 @@ export default function App() {
           <AskBrainView
             notes={notes}
             ollamaConfig={ollamaConfig}
+            useVault={storage.mode === 'kernel'}
             onOpenNote={(id) => {
               setSelectedNoteId(id);
               setActiveTab('notes');

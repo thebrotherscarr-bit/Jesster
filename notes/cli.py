@@ -12,6 +12,12 @@ NOTES — the command line for the Jesster notes microkernel.
     python notes/cli.py rm <id>                 move to the vault's trash
     python notes/cli.py ask <question>          answered by gpt-oss from your notes
     python notes/cli.py import <folder|file.json> [-t tag]
+    python notes/cli.py ingest <export.zip|folder|file> [-t tag]
+                                                ChatGPT / Claude / Gemini exports,
+                                                Claude Code transcripts, audio
+    python notes/cli.py watch [add|remove <folder>]   re-ingest folders while serving
+    python notes/cli.py index [embed|rebuild]   the search index (embed: local vectors)
+    python notes/cli.py context [question]      what you're working on (+ relevant passages)
     python notes/cli.py history <id>            the note's links on the chain
     python notes/cli.py verify                  walk the vault's chain
     python notes/cli.py call <method> ['{json params}']   any kernel method
@@ -86,6 +92,28 @@ def edit_in_editor(text):
             return f.read()
     finally:
         os.unlink(p)
+
+
+def start_watch(k):
+    """Re-ingest the watched folders (ingest.watch) every few minutes, so
+    exports dropped there and new Claude Code sessions just show up."""
+    import threading
+    import time
+
+    def loop():
+        while True:
+            for p in k.config.get("watch") or []:
+                try:
+                    r = k.call("ingest.path", {"path": p})
+                    if r["created"] or r["updated"]:
+                        print("  watch — %s: %d new, %d updated"
+                              % (p, r["created"], r["updated"]), file=sys.stderr)
+                except Exception as e:
+                    print("  watch — %s: %s" % (p, e), file=sys.stderr)
+            time.sleep(60 * float(k.config.get("watch_minutes") or 10))
+
+    if k.config.get("watch"):
+        threading.Thread(target=loop, daemon=True).start()
 
 
 def main(argv):
@@ -163,6 +191,23 @@ def main(argv):
         m = "import.json" if src.lower().endswith(".json") else "import.folder"
         show(k.call(m, {"path": src, "tag": tag}))
         return 0
+    if cmd == "ingest":
+        tag = _opt(rest, "-t", "--tag")
+        show(k.call("ingest.path", {"path": rest[0], "tag": tag}))
+        return 0
+    if cmd == "watch":
+        if rest and rest[0] in ("add", "remove"):
+            show(k.call("ingest.watch", {rest[0]: rest[1]}))
+        else:
+            show(k.call("ingest.watch"))
+        return 0
+    if cmd == "index":
+        sub = rest[0] if rest else "stats"
+        show(k.call({"embed": "index.embed", "rebuild": "index.rebuild"}.get(sub, "index.stats")))
+        return 0
+    if cmd == "context":
+        print(k.call("context.for", {"q": " ".join(rest)})["text"] or "(nothing yet)")
+        return 0
     if cmd == "history":
         show(k.call("provenance.history", {"id": rest[0]}))
         return 0
@@ -196,6 +241,7 @@ def main(argv):
         if clone:
             import bridge
             bridge.start_thread(k, os.path.abspath(clone))
+        start_watch(k)
         serve(k, _opt(rest, "--host") or "127.0.0.1",
               int(_opt(rest, "--port") or 8765),
               _opt(rest, "--token") or os.environ.get("JESSTER_NOTES_TOKEN"),

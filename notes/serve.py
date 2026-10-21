@@ -6,6 +6,9 @@ SERVE — the kernel over HTTP, and the PWA beside it.
                     built, otherwise the plain one in ../pwa. --ui picks another.
   POST /rpc         JSON-RPC 2.0 into the kernel — the same door as stdio
   GET  /health      {"ok": true, ...}
+  /v1/*, /api/*     the model gateway (gateway.py): OpenAI- and Ollama-style
+                    endpoints that brief each model from the vault and
+                    capture what was said
 
 Loopback by default. It holds your notes, so it is careful about who asks:
 
@@ -24,6 +27,7 @@ import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
+import gateway
 from kernel import VERSION
 from stdio import rpc_one, _err
 
@@ -80,10 +84,27 @@ def make_handler(kernel, token, hosts, ui_dir=None):
             h = (self.headers.get("Host") or "").rsplit(":", 1)[0].strip("[]").lower()
             return h in hosts
 
+        def _gateway(self):
+            """Auth for the gateway: the kernel's token (when set) arrives as
+            X-Jesster-Token, or as the bearer token — then it is not passed on."""
+            strip = False
+            if token:
+                got = self.headers.get("X-Jesster-Token") or ""
+                bearer = (self.headers.get("Authorization") or "").removeprefix("Bearer ").strip()
+                if hmac.compare_digest(bearer.encode(), token.encode()):
+                    strip = True
+                elif not hmac.compare_digest(got.encode(), token.encode()):
+                    return self._send(401, {"error": "token required (X-Jesster-Token)"})
+            if self.command == "POST" and not (self.headers.get("Content-Type") or "").startswith("application/json"):
+                return self._send(415, {"error": "application/json only"})
+            gateway.handle(self, kernel, strip)
+
         def do_GET(self):
             if not self._host_ok():
                 return self._send(421, {"error": "unknown host"})
             path = self.path.split("?", 1)[0]
+            if gateway.is_gateway_path(path):
+                return self._gateway()
             if path == "/health":
                 return self._send(200, {"ok": True, "version": VERSION,
                                         "auth": bool(token)})
@@ -102,6 +123,8 @@ def make_handler(kernel, token, hosts, ui_dir=None):
         def do_POST(self):
             if not self._host_ok():
                 return self._send(421, {"error": "unknown host"})
+            if gateway.is_gateway_path(self.path.split("?", 1)[0]):
+                return self._gateway()
             if self.path != "/rpc":
                 return self._send(404, {"error": "not found"})
             if not (self.headers.get("Content-Type") or "").startswith("application/json"):

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Note, OllamaConfig, ChatMessage } from '../types/index.ts';
 import { buildNotesContextForRag } from '../utils/notes.ts';
+import { vaultContext } from '../utils/kernel.ts';
 import {
   buildOllamaBrainPrompt,
   queryOllama,
@@ -28,11 +29,14 @@ interface AskBrainViewProps {
   onOpenNote: (noteId: string) => void;
   onCreateNoteFromSynthesis: (title: string, content: string) => void;
   onOpenOllamaSetup: () => void;
+  /** served by the notes kernel: search the whole vault, chats included */
+  useVault?: boolean;
 }
 
 export const AskBrainView: React.FC<AskBrainViewProps> = ({
   notes,
   ollamaConfig,
+  useVault = false,
   onOpenNote,
   onCreateNoteFromSynthesis,
   onOpenOllamaSetup,
@@ -74,8 +78,20 @@ Ask any question across your notes, extract cross-project connections, or synthe
     setQuery('');
     setIsSynthesizing(true);
 
-    // Retrieve relevant notes
-    const { contextText, relevantNoteIds } = buildNotesContextForRag(notes, promptText, 5);
+    // Retrieve relevant notes: from the whole vault (imported chats and
+    // captures included) when served by the kernel, else from what is loaded
+    let { contextText, relevantNoteIds } = buildNotesContextForRag(notes, promptText, 5);
+    if (useVault) {
+      try {
+        const v = await vaultContext(promptText);
+        if (v.text) {
+          contextText = v.text;
+          relevantNoteIds = v.sources;
+        }
+      } catch {
+        /* keep the local context */
+      }
+    }
     const retrievedNotes = notes.filter((n) => relevantNoteIds.includes(n.id));
     setActiveSources(retrievedNotes);
 
