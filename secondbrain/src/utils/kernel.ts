@@ -167,7 +167,6 @@ export async function chainStatus(): Promise<ChainStatus> {
 }
 
 export interface LiveCommand {
-  seq: number;
   action: 'open' | 'message';
   id?: string;
   text?: string;

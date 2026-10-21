@@ -184,7 +184,7 @@ export function useKernelSync(
         if (!first && (p.reload || foreign.length) && !pending && !busy.current) {
           await reload();
         }
-        if (!first) p.commands.forEach((c) => commandHandler.current(c));
+        p.commands.forEach((c) => commandHandler.current(c));
         if (!first && foreign.length) refreshChain();
       } catch {
         /* the save path reports connection trouble */
