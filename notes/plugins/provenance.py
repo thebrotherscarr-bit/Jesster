@@ -31,19 +31,34 @@ import links                                          # noqa: E402
 def register(k):
     from kernel import KernelError, digest
 
-    state = {"chain": None}
+    state = {"chain": None, "last": None}
 
     def chain():
         if state["chain"] is None:
             state["chain"] = links.Chain(os.path.join(k.vault.meta, CHAIN_FILE))
         return state["chain"]
 
+    def note_of(e):
+        """The note id rides in `says` as 'note <id> ...', so a stranger can
+        read it without this module."""
+        says = e["payload"]["says"]
+        return says.split(" ", 2)[1] if says.startswith("note ") else None
+
+    def last():
+        """note id -> (count, hash of its latest link). Built once by one walk
+        and moved on every deposit, so a big import is not quadratic."""
+        if state["last"] is None:
+            idx = {}
+            for e in chain().entries("link"):
+                nid = note_of(e)
+                if nid:
+                    idx[nid] = (idx.get(nid, (0, None))[0] + 1, e["hash"])
+            state["last"] = idx
+        return state["last"]
+
     def history(nid):
-        """Links about one note, oldest first. The note id rides in `says`
-        as 'note <id> ...' so a stranger can read it without this module."""
-        tag = "note %s " % nid
-        return [e for e in chain().entries("link")
-                if e["payload"]["says"].startswith(tag)]
+        """Links about one note, oldest first."""
+        return [e for e in chain().entries("link") if note_of(e) == nid]
 
     def deposit(note, raw, created=False, removed=False):
         mode = k.config.get("provenance") or links.SEALED
@@ -54,12 +69,13 @@ def register(k):
             raise KernelError(
                 "no_actor", "provenance needs a name on every deposit. Set "
                 "one: `notes init --actor <name>`, or set provenance to off.")
-        prior = history(note["id"])
+        count, prev = last().get(note["id"], (0, None))
         verb = "removed" if removed else ("created" if created else
-                                          "v%d" % (len(prior) + 1))
+                                          "v%d" % (count + 1))
         says = "note %s %s — %s" % (note["id"], verb, note["title"])
-        return chain().deposit(raw, mode, says, actor,
-                               cites=[prior[-1]["hash"]] if prior else None)
+        e = chain().deposit(raw, mode, says, actor, cites=[prev] if prev else None)
+        last()[note["id"]] = (count + 1, e["hash"])
+        return e
 
     k.on("note.saved", lambda note, raw, created: deposit(note, raw, created))
     k.on("note.removed", lambda note: deposit(

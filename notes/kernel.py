@@ -249,6 +249,7 @@ class Kernel:
         self.methods = {}
         self.listeners = {}
         self.plugins = []
+        self.restart_requested = False     # set by system.update; the server re-executes
         self._lock = threading.RLock()       # one caller in the vault at a time
         _core(self)
         for p in plugins:
@@ -507,8 +508,8 @@ def default_plugins():
     here = os.path.dirname(os.path.abspath(__file__))
     if here not in sys.path:
         sys.path.insert(0, here)
-    from plugins import provenance, ollama, importer
-    return [provenance, ollama, importer]
+    from plugins import provenance, ollama, importer, live, system
+    return [provenance, ollama, importer, live, system]
 
 
 def open_kernel(vault_root, config=None, plugins=None):

@@ -165,3 +165,38 @@ export interface ChainStatus {
 export async function chainStatus(): Promise<ChainStatus> {
   return rpc<ChainStatus>('provenance.verify');
 }
+
+export interface LiveCommand {
+  seq: number;
+  action: 'open' | 'message';
+  id?: string;
+  text?: string;
+}
+
+export interface LivePoll {
+  seq: number;
+  boot: number;
+  reload: boolean;
+  changed: string[];
+  commands: LiveCommand[];
+}
+
+export interface VersionInfo {
+  branch: string;
+  head: string;
+  ahead: number;
+  behind: number;
+  dirty: boolean;
+  latest: string;
+}
+
+/** Wait for the kernel to answer again after it restarts itself. */
+export async function waitForKernel(timeoutMs = 120000): Promise<boolean> {
+  const until = Date.now() + timeoutMs;
+  await new Promise((r) => setTimeout(r, 1500));
+  while (Date.now() < until) {
+    if (await detectKernel()) return true;
+    await new Promise((r) => setTimeout(r, 1500));
+  }
+  return false;
+}

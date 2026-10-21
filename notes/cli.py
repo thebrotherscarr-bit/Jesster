@@ -17,7 +17,11 @@ NOTES — the command line for the Jesster notes microkernel.
     python notes/cli.py call <method> ['{json params}']   any kernel method
     python notes/cli.py methods                 what the kernel answers
 
-    python notes/cli.py serve [--host H] [--port P] [--token T] [--ui DIR]   PWA + HTTP
+    python notes/cli.py serve [--host H] [--port P] [--token T] [--ui DIR]
+                              [--bridge CLONE]   PWA + HTTP (+ the bridge worker)
+    python notes/cli.py bridge [CLONE]          answer requests from a private
+                                                git repo (see notes/bridge.py)
+    python notes/cli.py update                  pull the newest build from GitHub
     python notes/cli.py rpc                     JSON-RPC 2.0 on stdio
     python notes/cli.py mcp                     MCP server on stdio
 
@@ -101,7 +105,8 @@ def main(argv):
         cfg = k.save_config(actor=_opt(rest, "--actor"),
                             provenance=_opt(rest, "--provenance"),
                             model=_opt(rest, "--model"),
-                            ollama_url=_opt(rest, "--ollama"))
+                            ollama_url=_opt(rest, "--ollama"),
+                            bridge_repo=_opt(rest, "--bridge"))
         print("  vault %s" % k.vault.root)
         show(cfg)
         if not k.config.get("actor") and k.config.get("provenance") != "off":
@@ -174,8 +179,23 @@ def main(argv):
         show(k.call(rest[0], params))
         return 0
 
+    if cmd == "update":
+        show(k.call("system.update"))
+        return 0
+    if cmd == "bridge":
+        import bridge
+        clone = rest[0] if rest else k.config.get("bridge_repo")
+        if not clone:
+            raise SystemExit("bridge needs the path of a clone of your PRIVATE "
+                             "bridge repo (or `init --bridge <path>`)")
+        bridge.work(k, os.path.abspath(clone))
+        return 0
     if cmd == "serve":
         from serve import serve
+        clone = _opt(rest, "--bridge") or k.config.get("bridge_repo")
+        if clone:
+            import bridge
+            bridge.start_thread(k, os.path.abspath(clone))
         serve(k, _opt(rest, "--host") or "127.0.0.1",
               int(_opt(rest, "--port") or 8765),
               _opt(rest, "--token") or os.environ.get("JESSTER_NOTES_TOKEN"),

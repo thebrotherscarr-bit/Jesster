@@ -21,6 +21,7 @@ import json
 import mimetypes
 import os
 import sys
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from kernel import VERSION
@@ -121,8 +122,11 @@ def make_handler(kernel, token, hosts, ui_dir=None):
             else:
                 out = rpc_one(kernel, msg)
             if out is None or out == []:              # notifications only
-                return self._send(204, b"")
-            self._send(200, out)
+                self._send(204, b"")
+            else:
+                self._send(200, out)
+            if kernel.restart_requested:            # system.update landed new code
+                threading.Thread(target=self.server.shutdown, daemon=True).start()
 
         def log_message(self, fmt, *args):
             sys.stderr.write("  %s %s\n" % (self.address_string(), fmt % args))
@@ -146,3 +150,6 @@ def serve(kernel, host="127.0.0.1", port=8765, token=None, ui_dir=None):
         pass
     finally:
         srv.server_close()
+    if kernel.restart_requested:
+        print("  updated — restarting on the new code", file=sys.stderr)
+        os.execv(sys.executable, [sys.executable] + sys.argv)

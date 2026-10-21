@@ -1,7 +1,7 @@
 import React from 'react';
 import { OllamaConfig } from '../types/index.ts';
 import { KernelSync } from '../hooks/useKernelSync.ts';
-import { Plus, Brain, MessageSquare, Network, Zap, Cpu, Menu, Monitor, Link2 } from 'lucide-react';
+import { Plus, Brain, MessageSquare, Network, Zap, Cpu, Menu, Monitor, Link2, Download } from 'lucide-react';
 
 export type ActiveTab = 'notes' | 'ask' | 'graph';
 
@@ -141,6 +141,17 @@ export const Header: React.FC<HeaderProps> = ({
       {/* Zone 3: Actions */}
       <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
         <StorageBadge storage={storage} />
+        {storage?.version && storage.version.behind > 0 && storage.update && (
+          <button
+            onClick={() => storage.update?.()}
+            disabled={storage.updating}
+            title={`${storage.version.behind} new commit(s) on ${storage.version.branch}: ${storage.version.latest}`}
+            className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg border border-sky-800 bg-sky-950/60 hover:bg-sky-900 text-xs text-sky-300 hover:text-white transition-colors shrink-0 disabled:opacity-60"
+          >
+            <Download className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">{storage.updating ? 'Updating…' : 'Update'}</span>
+          </button>
+        )}
         {/* Windows .exe Packaging Button */}
         <button
           onClick={onOpenWindowsModal}

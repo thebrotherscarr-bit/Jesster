@@ -23,6 +23,7 @@ import { OllamaSetupModal } from './components/OllamaSetupModal.tsx';
 import { QuickCaptureModal } from './components/QuickCaptureModal.tsx';
 import { WindowsPublishModal } from './components/WindowsPublishModal.tsx';
 import { useKernelSync } from './hooks/useKernelSync.ts';
+import { rpc } from './utils/kernel.ts';
 
 const STORAGE_KEY_NOTES = 'secondbrain_local_notes_v1';
 const STORAGE_KEY_CONFIG = 'secondbrain_ollama_config_v1';
@@ -88,10 +89,36 @@ export default function App() {
 
   // Served by the Jesster notes kernel: the vault is the store and every save
   // lands on its provenance chain. Otherwise this stays in local mode.
-  const storage = useKernelSync(notes, setNotes, (from, to) => {
-    setNotes((prev) => prev.map((n) => (n.id === from ? { ...n, id: to } : n)));
-    setSelectedNoteId((cur) => (cur === from ? to : cur));
-  });
+  const [liveMessage, setLiveMessage] = useState<string | null>(null);
+  const storage = useKernelSync(
+    notes,
+    setNotes,
+    (from, to) => {
+      setNotes((prev) => prev.map((n) => (n.id === from ? { ...n, id: to } : n)));
+      setSelectedNoteId((cur) => (cur === from ? to : cur));
+    },
+    (cmd) => {
+      // sent by another caller (the CLI, an agent, a collaborator on the bridge)
+      if (cmd.action === 'open' && cmd.id) {
+        setSelectedNoteId(cmd.id);
+        setActiveTab('notes');
+        setMobileNotesView('editor');
+      } else if (cmd.action === 'message' && cmd.text) {
+        setLiveMessage(cmd.text);
+      }
+    }
+  );
+
+  // tell the kernel what this window has open, so collaborators can see it
+  useEffect(() => {
+    if (storage.mode !== 'kernel') return;
+    const open = notes.find((n) => n.id === selectedNoteId);
+    rpc('live.report', {
+      view: activeTab,
+      ...(open ? { note: open.id, title: open.title } : {}),
+    }).catch(() => undefined);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storage.mode, selectedNoteId, activeTab]);
 
   // Save notes whenever they change (in kernel mode this is the offline copy)
   useEffect(() => {
@@ -321,6 +348,22 @@ export default function App() {
         storage={storage}
         onToggleMobileMenu={() => setMobileNotesView((prev) => (prev === 'sidebar' ? 'list' : 'sidebar'))}
       />
+
+      {liveMessage && (
+        <div
+          role="status"
+          className="flex items-start gap-3 px-4 sm:px-6 py-2 border-b border-emerald-900 bg-emerald-950/60 text-sm text-emerald-100"
+        >
+          <span className="flex-1 whitespace-pre-wrap break-words">{liveMessage}</span>
+          <button
+            onClick={() => setLiveMessage(null)}
+            className="text-emerald-300 hover:text-white text-xs shrink-0"
+            aria-label="Dismiss message"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* Main Workspace */}
       <main className="flex-1 flex overflow-hidden">
