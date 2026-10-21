@@ -1,0 +1,27 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "jesster-notes": {
+      "type": "local",
+      "command": ["python", "notes/cli.py", "mcp"],
+      "enabled": true
+    }
+  },
+  "provider": {
+    "secondbrain": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "SecondBrain (local, briefed from your vault)",
+      "options": {
+        "baseURL": "http://localhost:8765/v1",
+        "headers": {
+          "X-SecondBrain-Source": "opencode"
+        }
+      },
+      "models": {
+        "gpt-oss:20b": {
+          "name": "gpt-oss 20B via SecondBrain"
+        }
+      }
+    }
+  }
+}

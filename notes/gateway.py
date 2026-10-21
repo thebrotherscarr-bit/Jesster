@@ -183,7 +183,9 @@ def handle(h, kernel, strip_auth=False):
             h.wfile.write(data)
             if capture and body is not None:
                 answer.append(piece(data.decode("utf-8", "replace").replace("\n", " ")))
-    if capture and body is not None and question:
+    # agents (OpenCode, Continue) send many tool-call steps with no text:
+    # only exchanges that said something are worth remembering
+    if capture and body is not None and question and "".join(answer).strip():
         source = hdr.get("x-secondbrain-source") or (hdr.get("user-agent") or "gateway").split("/")[0].split(" ")[0]
         try:
             kernel.call("capture.append", {"source": source or "gateway", "user": question,
