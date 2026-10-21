@@ -143,6 +143,20 @@ export function useKernelSync(
     try {
       const version = await rpc<VersionInfo>('system.version');
       setState((s) => ({ ...s, version }));
+      // say so once when this window is running newer code than last time
+      let seen: string | null = null;
+      try {
+        seen = localStorage.getItem('secondbrain_seen_head');
+        localStorage.setItem('secondbrain_seen_head', version.head);
+      } catch {
+        /* private window: no banner */
+      }
+      if (seen && seen !== version.head) {
+        commandHandler.current({
+          action: 'message',
+          text: `Updated to ${version.head}: ${version.latest}`,
+        });
+      }
     } catch {
       /* not a git checkout, or offline: no update button */
     }
