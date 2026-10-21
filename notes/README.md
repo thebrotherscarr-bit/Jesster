@@ -88,6 +88,50 @@ changed elsewhere in the meantime. It has search, tags, `[[wikilinks]]` and
 backlinks, a Markdown preview, chain status and per-note history, and **Ask**
 for the local model.
 
+## Running it on Windows
+
+Double-click `start-secondbrain.cmd` in the repo root. The first run builds
+the UI (`secondbrain/`) and makes a vault at `%USERPROFILE%\JessterNotes`.
+Then it serves the app at http://localhost:8765 and opens it. You need git,
+Node.js 22 and Python 3.12 on PATH.
+
+## Updating
+
+When the app's branch on GitHub has new commits, an **Update** button shows
+in the header. It fast-forwards this copy, rebuilds the UI if that changed,
+restarts the server, and reloads the page. The CLI does the same with
+`python notes/cli.py update`. A copy with local commits or edited files is
+never overwritten: the update is refused and says why.
+
+## Live: other processes and the open window
+
+The server notices notes written by other processes (the CLI, an MCP agent,
+another editor) within about a second, and the open window reloads them.
+Chain writes take a lock that works across processes, so two writers never
+fork the chain.
+
+- `live.focus`: what the window has open right now
+- `live.send {"action":"open","id":...}` or `{"action":"message","text":...}`:
+  point the window at a note, or show a message banner
+
+## The bridge: working on a running vault from elsewhere
+
+A collaborator who can't connect to your desktop directly (a cloud agent,
+another machine) can still reach it through GitHub. Requests and replies
+travel as files in a **private** repository; see `bridge.py`.
+
+1. Create a private, empty repo (e.g. `secondbrain-bridge`) with a README so
+   it has a branch, and clone it next to your vault.
+2. `python notes/cli.py init --bridge <path-to-that-clone>`. From then on,
+   `serve` also runs the bridge worker, using your normal git credentials.
+3. The collaborator clones the same repo and runs
+   `python notes/bridge.py send <clone> notes.search '{"q":"..."}'`.
+
+Over the bridge, `system.update` and anything that imports from local paths
+are refused unless you list them in the vault config's `bridge_allow`
+(`<vault>/.jesster/config.json`). Replies carry your notes, which is why the
+repo has to be private.
+
 ## Bringing in secondbrain-local (Ollama, gpt-oss)
 
 See [`RECONCILE.md`](RECONCILE.md).
