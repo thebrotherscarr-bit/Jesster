@@ -32,6 +32,18 @@ fs.writeFileSync(path.join(src, 'SecondBrain.cmd'), `@echo restarted> "${marker}
 
 // the old app: a process that lives a few seconds
 const old = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 4000)'], { stdio: 'ignore' });
+// a helper left running from inside the install folder, as Electron's GPU and
+// utility processes can be: it holds its own exe open, which must not stop
+// the update
+const helperExe = path.join(dest, 'helper.exe');
+fs.copyFileSync(process.execPath, helperExe);
+const helper = spawn(helperExe, ['-e', 'setTimeout(() => {}, 120000)'], { stdio: 'ignore' });
+const log = path.join(os.tmpdir(), 'secondbrain-update.log');
+try {
+  fs.unlinkSync(log);
+} catch {
+  /* first run */
+}
 const script = writeSwapScript(path.join(root, 'swap.ps1'), {
   pid: old.pid,
   src,
@@ -53,6 +65,8 @@ const checks = [
   ['new files copied over', fs.readFileSync(path.join(dest, 'version.txt'), 'utf8') === 'build 2', ''],
   ['old-only files removed', !fs.existsSync(path.join(dest, 'stale.txt')), ''],
   ['app started again', fs.existsSync(marker), marker],
+  ['leftover helper stopped and its file removed', helper.exitCode !== null || helper.signalCode !== null || !fs.existsSync(helperExe), ''],
+  ['the update wrote its log', fs.existsSync(log) && /app started/.test(fs.readFileSync(log, 'utf8')), fs.existsSync(log) ? fs.readFileSync(log, 'utf8') : 'no log'],
 ];
 let failed = 0;
 for (const [name, ok, detail] of checks) {

@@ -126,13 +126,28 @@ function findExe(dir) {
  */
 function writeSwapScript(file, { pid, src, dest, exe, work }) {
   const q = (p) => "'" + String(p).replace(/'/g, "''") + "'";
+  const log = path.join(os.tmpdir(), 'secondbrain-update.log');
   const lines = [
-    "$ErrorActionPreference = 'SilentlyContinue'",
-    `Wait-Process -Id ${pid} -Timeout 60`,
-    `Stop-Process -Id ${pid} -Force`,
-    'Start-Sleep -Milliseconds 800',
+    "$ErrorActionPreference = 'Continue'",
+    `$log = ${q(log)}`,
+    "function Log($m) { Add-Content -LiteralPath $log -Value ((Get-Date -Format s) + '  ' + $m) }",
+    `Log 'update: waiting for SecondBrain (pid ${pid}) to close'`,
+    `Wait-Process -Id ${pid} -Timeout 60 -ErrorAction SilentlyContinue`,
+    `Stop-Process -Id ${pid} -Force -ErrorAction SilentlyContinue`,
+    // Electron's helper processes share the exe name and can hold files open
+    `$dest = ${q(dest)}`,
+    '$deadline = (Get-Date).AddSeconds(30)',
+    'do {',
+    "  $left = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($dest, [StringComparison]::OrdinalIgnoreCase) })",
+    '  if ($left.Count -eq 0) { break }',
+    '  Start-Sleep -Milliseconds 500',
+    '} while ((Get-Date) -lt $deadline)',
+    "if ($left.Count) { Log ('update: stopping ' + $left.Count + ' leftover process(es)'); $left | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 1 }",
     `robocopy ${q(src)} ${q(dest)} /MIR /IS /IT /R:20 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null`,
-    `Start-Process -FilePath ${q(exe)} -WorkingDirectory ${q(dest)}`,
+    '$rc = $LASTEXITCODE',
+    "Log ('update: robocopy exit code ' + $rc + $(if ($rc -lt 8) { ' (ok)' } else { ' (FAILED)' }))",
+    // start the app whatever happened: an old build that opens beats nothing
+    `try { Start-Process -FilePath ${q(exe)} -WorkingDirectory ${q(dest)}; Log 'update: app started' } catch { Log ('update: could not start the app: ' + $_) }`,
   ];
   if (work) lines.push(`Remove-Item -LiteralPath ${q(work)} -Recurse -Force`);
   fs.writeFileSync(file, '\ufeff' + lines.join('\r\n') + '\r\n', 'utf8');
