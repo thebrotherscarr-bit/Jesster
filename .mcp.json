@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "jesster-notes": {
+      "command": "python",
+      "args": ["notes/cli.py", "mcp"]
+    },
+    "rea": {
+      "command": "npx",
+      "args": ["-y", "rea-agents@6.7.0", "mcp"]
+    }
+  }
+}

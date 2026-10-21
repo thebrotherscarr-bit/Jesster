@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Jesster Notes</title>
+<meta name="description" content="Local notes with a provenance chain and a local model.">
+<meta name="theme-color" content="#0d1117">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="top">
+  <button id="menu" class="icon only-narrow" aria-label="Notes list">☰</button>
+  <span class="brand">Jesster Notes</span>
+  <span id="status" class="pill" title="Connection to the kernel">…</span>
+  <span id="chain" class="pill" title="The vault's provenance chain"></span>
+  <span class="spacer"></span>
+  <button id="ask-open" class="ghost">Ask</button>
+  <button id="new" class="primary">New</button>
+</header>
+
+<main class="layout">
+  <aside id="side" class="side">
+    <input id="q" type="search" placeholder="Search notes" autocomplete="off" aria-label="Search notes">
+    <div id="tags" class="tags"></div>
+    <ul id="list" class="list" aria-label="Notes"></ul>
+  </aside>
+
+  <section id="pane" class="pane">
+    <div id="empty" class="empty">
+      <p>Pick a note, or make a new one.</p>
+      <p class="muted">Every save is deposited on the vault's Jesster chain.</p>
+    </div>
+
+    <form id="editor" class="editor" hidden>
+      <input id="title" class="title" placeholder="Title" aria-label="Title" required>
+      <input id="tagsin" class="tagsin" placeholder="tags, comma separated" aria-label="Tags">
+      <div class="bar">
+        <button type="button" id="mode" class="ghost">Preview</button>
+        <span class="spacer"></span>
+        <span id="saved" class="muted"></span>
+        <button type="button" id="history" class="ghost">History</button>
+        <button type="button" id="del" class="ghost danger">Remove</button>
+        <button type="submit" class="primary">Save</button>
+      </div>
+      <textarea id="body" class="body" spellcheck="true" aria-label="Note body"></textarea>
+      <article id="preview" class="preview" hidden></article>
+      <div id="meta" class="meta muted"></div>
+    </form>
+  </section>
+</main>
+
+<dialog id="ask">
+  <form method="dialog" class="ask">
+    <h2>Ask your notes</h2>
+    <p class="muted">Answered by the local model from the notes that match.</p>
+    <textarea id="askq" rows="3" placeholder="What did I decide about…?"></textarea>
+    <div class="bar">
+      <span id="askstate" class="muted"></span>
+      <span class="spacer"></span>
+      <button value="cancel" class="ghost">Close</button>
+      <button id="askgo" type="button" class="primary">Ask</button>
+    </div>
+    <div id="answer" class="answer"></div>
+  </form>
+</dialog>
+
+<dialog id="hist">
+  <form method="dialog" class="ask">
+    <h2>Provenance</h2>
+    <div id="histbody"></div>
+    <div class="bar"><span class="spacer"></span><button class="ghost">Close</button></div>
+  </form>
+</dialog>
+
+<script src="app.js"></script>
+</body>
+</html>
