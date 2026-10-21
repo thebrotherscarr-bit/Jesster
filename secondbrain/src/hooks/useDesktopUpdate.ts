@@ -63,11 +63,17 @@ export function useDesktopUpdate(onUpdated: (text: string) => void): DesktopUpda
     apply: async () => {
       setState((s) => ({ ...s, updating: true, error: undefined }));
       try {
+        onUpdated('Downloading the update… the app closes and reopens by itself when it is ready.');
         const r = await bridge.applyUpdate();
-        if (!r.updated) setState((s) => ({ ...s, updating: false, error: r.detail }));
+        if (!r.updated) {
+          setState((s) => ({ ...s, updating: false, error: r.detail }));
+          onUpdated(`Update not applied: ${r.detail}`);
+        }
         // on success the app closes and reopens on the new build
       } catch (e) {
-        setState((s) => ({ ...s, updating: false, error: e instanceof Error ? e.message : String(e) }));
+        const msg = e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': /, '') : String(e);
+        setState((s) => ({ ...s, updating: false, error: msg }));
+        onUpdated(`Update failed: ${msg}. Details: %TEMP%\\secondbrain-update.log`);
       }
     },
   };

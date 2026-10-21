@@ -17,12 +17,65 @@ const fs = require('fs');
 const https = require('https');
 const os = require('os');
 const path = require('path');
-const { execFile, spawn } = require('child_process');
+const { spawn } = require('child_process');
 
 const REPO = 'thebrotherscarr-bit/Jesster';
 const TAG = /^secondbrain-b(\d+)$/;
 const ASSET = 'SecondBrain-win32-x64.zip';
 const DOWNLOAD_PREFIX = `https://github.com/${REPO}/releases/download/`;
+
+const LOG = path.join(os.tmpdir(), 'secondbrain-update.log');
+
+/** Every step of an update, appended to %TEMP%\\secondbrain-update.log. */
+function log(msg) {
+  try {
+    fs.appendFileSync(LOG, `${new Date().toISOString()}  ${msg}\r\n`);
+  } catch {
+    /* logging must never stop an update */
+  }
+}
+
+/** Unpack a zip (as GitHub serves the build) with Node alone. */
+function unzip(zipFile, outDir) {
+  const zlib = require('zlib');
+  const buf = fs.readFileSync(zipFile);
+  let eocd = -1;
+  for (let i = buf.length - 22; i >= Math.max(0, buf.length - 65557); i--) {
+    if (buf.readUInt32LE(i) === 0x06054b50) {
+      eocd = i;
+      break;
+    }
+  }
+  if (eocd < 0) throw new Error('the download is not a zip file');
+  const count = buf.readUInt16LE(eocd + 10);
+  let p = buf.readUInt32LE(eocd + 16);
+  let files = 0;
+  for (let n = 0; n < count; n++) {
+    if (buf.readUInt32LE(p) !== 0x02014b50) throw new Error('damaged zip directory');
+    const method = buf.readUInt16LE(p + 10);
+    const size = buf.readUInt32LE(p + 20);
+    const nameLen = buf.readUInt16LE(p + 28);
+    const extraLen = buf.readUInt16LE(p + 30);
+    const commentLen = buf.readUInt16LE(p + 32);
+    const local = buf.readUInt32LE(p + 42);
+    const name = buf.toString('utf8', p + 46, p + 46 + nameLen).replace(/\\/g, '/');
+    p += 46 + nameLen + extraLen + commentLen;
+    const target = path.resolve(outDir, name);
+    if (!target.startsWith(path.resolve(outDir) + path.sep)) throw new Error(`unsafe path in zip: ${name}`);
+    if (name.endsWith('/')) {
+      fs.mkdirSync(target, { recursive: true });
+      continue;
+    }
+    const start = local + 30 + buf.readUInt16LE(local + 26) + buf.readUInt16LE(local + 28);
+    const data = buf.subarray(start, start + size);
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    if (method === 0) fs.writeFileSync(target, data);
+    else if (method === 8) fs.writeFileSync(target, zlib.inflateRawSync(data));
+    else throw new Error(`zip method ${method} not supported (${name})`);
+    files++;
+  }
+  return files;
+}
 
 function buildInfo() {
   try {
@@ -94,14 +147,6 @@ async function check() {
   };
 }
 
-function powershell(args) {
-  return new Promise((resolve, reject) => {
-    execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', args], { windowsHide: true }, (err, _o, stderr) =>
-      err ? reject(new Error(stderr || err.message)) : resolve()
-    );
-  });
-}
-
 function findExe(dir) {
   for (const name of fs.readdirSync(dir)) {
     const p = path.join(dir, name);
@@ -156,7 +201,18 @@ function writeSwapScript(file, { pid, src, dest, exe, work }) {
 
 /** Download the newest build, then hand over to the swap script and quit. */
 async function apply() {
+  log(`update requested by build ${buildInfo().build} at ${process.execPath}`);
+  try {
+    return await applySteps();
+  } catch (e) {
+    log(`update FAILED: ${e && e.stack ? e.stack : e}`);
+    throw e;
+  }
+}
+
+async function applySteps() {
   const state = await check();
+  log(`latest on GitHub: ${state.latest ? `build ${state.latest.build}` : 'none'}; this is build ${state.current.build}`);
   if (!state.available) return { updated: false, detail: 'already up to date' };
   if (!state.canApply) return { updated: false, detail: 'self-update only runs in the packaged Windows app' };
   if (!state.latest.url.startsWith(DOWNLOAD_PREFIX)) throw new Error('refusing a download from outside the app repository');
@@ -164,9 +220,19 @@ async function apply() {
   const work = fs.mkdtempSync(path.join(os.tmpdir(), 'secondbrain-update-'));
   const zip = path.join(work, ASSET);
   const unpacked = path.join(work, 'new');
+  log(`downloading ${state.latest.url}`);
   await get(state.latest.url, { file: zip });
-  await powershell(`Expand-Archive -LiteralPath '${zip.replace(/'/g, "''")}' -DestinationPath '${unpacked.replace(/'/g, "''")}' -Force`);
-  const src = findExe(unpacked);
+  log(`downloaded ${fs.statSync(zip).size} bytes; unpacking`);
+  // Electron's fs treats .asar files as folders; a build is plain files here
+  const asar = process.noAsar;
+  process.noAsar = true;
+  let src;
+  try {
+    log(`unpacked ${unzip(zip, unpacked)} files`);
+    src = findExe(unpacked);
+  } finally {
+    process.noAsar = asar;
+  }
   if (!src) throw new Error('the downloaded build has no SecondBrain.exe');
 
   const dest = path.dirname(process.execPath);
@@ -178,14 +244,17 @@ async function apply() {
     exe: path.join(dest, path.basename(process.execPath)),
     work,
   });
-  spawn(
+  log(`handing over to ${script}: ${src} -> ${dest}`);
+  const child = spawn(
     'powershell.exe',
     ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', script],
     { detached: true, stdio: 'ignore', windowsHide: true }
-  ).unref();
-  setTimeout(() => app.quit(), 300);
+  );
+  child.on('error', (e) => log(`could not start PowerShell: ${e.message}`));
+  child.unref();
+  setTimeout(() => app.quit(), 500);
   setTimeout(() => app.exit(0), 5000); // if something holds quit up, leave anyway
   return { updated: true, to: state.latest.build };
 }
 
-module.exports = { buildInfo, check, apply, writeSwapScript };
+module.exports = { buildInfo, check, apply, writeSwapScript, unzip, LOG };
