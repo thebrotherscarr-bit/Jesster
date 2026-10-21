@@ -4,6 +4,7 @@ import '../types/desktop.ts';
 export interface DesktopUpdate {
   available: boolean;
   current?: number;
+  commit?: string;
   latest?: number;
   title?: string;
   updating: boolean;
@@ -33,6 +34,7 @@ export function useDesktopUpdate(onUpdated: (text: string) => void): DesktopUpda
           ...s,
           available: r.available && r.canApply,
           current: r.current.build,
+          commit: r.current.commit,
           latest: r.latest?.build,
           title: r.latest?.title,
           error: undefined,
