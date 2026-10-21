@@ -41,6 +41,34 @@ export interface InboxBridge {
   onStatus: (cb: (s: InboxStatus) => void) => () => void;
 }
 
+export type AgentEvent =
+  | { sessionId: string; type: 'user'; text: string; source: string }
+  | { sessionId: string; type: 'step'; step: number }
+  | { sessionId: string; type: 'tool'; name: string; args: Record<string, unknown> }
+  | { sessionId: string; type: 'result'; name: string; text: string }
+  | { sessionId: string; type: 'answer'; text: string }
+  | { sessionId: string; type: 'error'; text: string }
+  | { sessionId: string; type: 'done' };
+
+export interface ApprovalRequest {
+  id: string;
+  sessionId: string;
+  name: string;
+  args: Record<string, unknown>;
+  summary: string;
+}
+
+export interface AgentBridge {
+  send: (text: string, sessionId?: string | null, model?: { host: string; model: string } | null) => Promise<{ sessionId: string }>;
+  sessions: () => Promise<{ id: string; title: string; updatedAt: number; source?: string }[]>;
+  open: (id: string) => Promise<{ sessionId: string; busy: boolean; messages: { role: string; content: string }[] }>;
+  stop: (id: string) => Promise<boolean>;
+  approve: (id: string, allow: boolean, always?: boolean) => Promise<boolean>;
+  tools: () => Promise<{ name: string; description: string }[]>;
+  onEvent: (cb: (e: AgentEvent) => void) => () => void;
+  onApproval: (cb: (r: ApprovalRequest) => void) => () => void;
+}
+
 export interface DesktopBridge {
   version: () => Promise<{ build: number; commit: string } | null>;
   checkUpdate: () => Promise<{
@@ -53,6 +81,7 @@ export interface DesktopBridge {
   vault?: VaultBridge;
   settings?: SettingsBridge;
   inbox?: InboxBridge;
+  agent?: AgentBridge;
 }
 
 declare global {

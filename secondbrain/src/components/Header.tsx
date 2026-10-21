@@ -3,9 +3,9 @@ import { OllamaConfig } from '../types/index.ts';
 import { KernelSync } from '../hooks/useKernelSync.ts';
 import { DesktopUpdate } from '../hooks/useDesktopUpdate.ts';
 import { DesktopVault } from '../hooks/useDesktopVault.ts';
-import { Plus, Brain, MessageSquare, Network, Zap, Cpu, Menu, Monitor, Link2, Download, FolderOpen, FilePlus2, Settings as SettingsIcon } from 'lucide-react';
+import { Plus, Brain, MessageSquare, Network, Zap, Cpu, Menu, Monitor, Link2, Download, FolderOpen, FilePlus2, Settings as SettingsIcon, Bot } from 'lucide-react';
 
-export type ActiveTab = 'notes' | 'ask' | 'graph';
+export type ActiveTab = 'notes' | 'ask' | 'graph' | 'agent';
 
 interface HeaderProps {
   activeTab: ActiveTab;
@@ -127,6 +127,19 @@ export const Header: React.FC<HeaderProps> = ({
           <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
           <span className="hidden md:inline">Ask Brain</span>
         </button>
+
+        {window.secondbrainDesktop?.agent && (
+          <button
+            onClick={() => onSelectTab('agent')}
+            title="Agent: a model that uses tools on your notes and the web"
+            className={`flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-md transition-colors whitespace-nowrap shrink-0 ${
+              activeTab === 'agent' ? 'bg-neutral-800 text-white font-semibold' : 'hover:text-neutral-200 hover:bg-neutral-900'
+            }`}
+          >
+            <Bot className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">Agent</span>
+          </button>
+        )}
 
         <button
           onClick={() => onSelectTab('graph')}

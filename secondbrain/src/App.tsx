@@ -23,6 +23,7 @@ import { OllamaSetupModal } from './components/OllamaSetupModal.tsx';
 import { QuickCaptureModal } from './components/QuickCaptureModal.tsx';
 import { WindowsPublishModal } from './components/WindowsPublishModal.tsx';
 import { SettingsModal } from './components/SettingsModal.tsx';
+import { AgentView } from './components/AgentView.tsx';
 import { useKernelSync } from './hooks/useKernelSync.ts';
 import { useDesktopUpdate } from './hooks/useDesktopUpdate.ts';
 import { useDesktopVault } from './hooks/useDesktopVault.ts';
@@ -476,6 +477,19 @@ export default function App() {
             onCreateNoteFromSynthesis={handleCreateNoteFromSynthesis}
             onOpenOllamaSetup={() => setIsOllamaModalOpen(true)}
           />
+        )}
+
+        {/* kept mounted so a conversation survives switching tabs */}
+        {window.secondbrainDesktop?.agent && (
+          <div className={activeTab === 'agent' ? 'flex flex-1 min-h-0' : 'hidden'}>
+            <AgentView
+              ollamaConfig={ollamaConfig}
+              onOpenNote={(id) => {
+                setSelectedNoteId(id);
+                setActiveTab('notes');
+              }}
+            />
+          </div>
         )}
 
         {activeTab === 'graph' && (

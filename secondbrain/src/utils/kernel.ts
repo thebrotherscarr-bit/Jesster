@@ -121,7 +121,7 @@ export async function detectKernel(): Promise<boolean> {
  * Imported chats stay in the vault and its search index (Ask Brain reaches
  * them through context.for); the note list would drown in thousands of them.
  */
-export const HIDDEN_TAGS = ['chat'];
+export const HIDDEN_TAGS = ['chat', 'agent-session'];
 
 export async function loadVault(): Promise<KernelNote[]> {
   return rpc<KernelNote[]>('notes.dump', { exclude_tags: HIDDEN_TAGS });

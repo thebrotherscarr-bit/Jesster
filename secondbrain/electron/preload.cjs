@@ -21,6 +21,24 @@ contextBridge.exposeInMainWorld('secondbrainDesktop', {
       return () => ipcRenderer.removeListener('inbox:status', fn);
     },
   },
+  agent: {
+    send: (text, sessionId, model) => ipcRenderer.invoke('agent:send', text, sessionId || null, model || null),
+    sessions: () => ipcRenderer.invoke('agent:sessions'),
+    open: (id) => ipcRenderer.invoke('agent:open', id),
+    stop: (id) => ipcRenderer.invoke('agent:stop', id),
+    approve: (id, allow, always) => ipcRenderer.invoke('agent:approve', id, allow, Boolean(always)),
+    tools: () => ipcRenderer.invoke('agent:tools'),
+    onEvent: (cb) => {
+      const fn = (_e, ev) => cb(ev);
+      ipcRenderer.on('agent:event', fn);
+      return () => ipcRenderer.removeListener('agent:event', fn);
+    },
+    onApproval: (cb) => {
+      const fn = (_e, req) => cb(req);
+      ipcRenderer.on('agent:approval', fn);
+      return () => ipcRenderer.removeListener('agent:approval', fn);
+    },
+  },
   vault: {
     info: () => ipcRenderer.invoke('vault:info'),
     load: () => ipcRenderer.invoke('vault:load'),

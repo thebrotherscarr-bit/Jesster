@@ -7,6 +7,7 @@ const fs = require('fs');
 const { Vault, importFile, SUPPORTED } = require('./vaultfs.cjs');
 const { Settings } = require('./settings.cjs');
 const inbox = require('./inbox.cjs');
+const { AgentService } = require('./agent/service.cjs');
 
 const isDev = process.env.NODE_ENV === 'development';
 const distDir = path.join(__dirname, '..', 'dist');
@@ -334,6 +335,57 @@ ipcMain.handle('inbox:disconnect', (event) => {
   getSettings().set('inbox', { clone: null });
   scheduleInbox();
   return inboxStatus();
+});
+
+// ---- the agent -----------------------------------------------------------
+let agent = null;
+function getAgent() {
+  if (!agent) {
+    agent = new AgentService({
+      getVault,
+      getModel: () => getSettings().get('agent'),
+      emit: (channel, payload) => mainWindow && mainWindow.webContents.send(channel, payload),
+      extras: (opts) => Promise.all(agentExtras.map((fn) => fn(opts))).then((xs) => xs.flat()),
+    });
+    for (const fn of agentPlugins) fn(agent);
+  }
+  return agent;
+}
+// later features add tools (agentPlugins) and system prompt parts (agentExtras)
+const agentPlugins = [];
+const agentExtras = [];
+
+ipcMain.handle('agent:send', (event, text, sessionId, model) => {
+  guard(event);
+  if (typeof text !== 'string' || !text.trim()) throw new Error('nothing to send');
+  if (model && typeof model === 'object') {
+    const { host, model: name } = model;
+    if (typeof host === 'string' && typeof name === 'string') getSettings().set('agent', { host, model: name });
+  }
+  const id = sessionId || require('./agent/agent.cjs').newSessionId();
+  getAgent().ask({ text, sessionId: id, source: 'app' });
+  return { sessionId: id };
+});
+ipcMain.handle('agent:sessions', (event) => {
+  guard(event);
+  return getAgent().list();
+});
+ipcMain.handle('agent:open', (event, id) => {
+  guard(event);
+  return getAgent().open(id);
+});
+ipcMain.handle('agent:stop', (event, id) => {
+  guard(event);
+  getAgent().stop(id);
+  return true;
+});
+ipcMain.handle('agent:approve', (event, id, allow, always) => {
+  guard(event);
+  return getAgent().answerApproval(id, allow, always);
+});
+ipcMain.handle('agent:tools', (event) => {
+  guard(event);
+  return getAgent().registry.schemas().map((t) => ({ name: t.function.name, description: t.function.description }));
 });
 
 ipcMain.handle('desktop:version', (event) => (fromApp(event) ? updater.buildInfo() : null));
