@@ -16,8 +16,6 @@ interface HeaderProps {
   ollamaConfig: OllamaConfig;
   storage?: KernelSync;
   desktopUpdate?: DesktopUpdate | null;
-  onInstallDesktop?: () => void;
-  installingDesktop?: boolean;
   onToggleMobileMenu?: () => void;
 }
 
@@ -69,8 +67,6 @@ export const Header: React.FC<HeaderProps> = ({
   ollamaConfig,
   storage,
   desktopUpdate,
-  onInstallDesktop,
-  installingDesktop,
   onToggleMobileMenu,
 }) => {
   return (
@@ -153,17 +149,6 @@ export const Header: React.FC<HeaderProps> = ({
       {/* Zone 3: Actions */}
       <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
         <StorageBadge storage={storage} />
-        {onInstallDesktop && (
-          <button
-            onClick={onInstallDesktop}
-            disabled={installingDesktop}
-            title="Download the newest SecondBrain.exe from GitHub, install it for this Windows user with Desktop and Start menu shortcuts, and start it. It updates itself after that."
-            className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg border border-emerald-800 bg-emerald-950/60 hover:bg-emerald-900 text-xs text-emerald-300 hover:text-white transition-colors shrink-0 disabled:opacity-60"
-          >
-            <Download className="w-3.5 h-3.5" />
-            <span>{installingDesktop ? 'Installing…' : 'Install desktop app'}</span>
-          </button>
-        )}
         {desktopUpdate?.available && (
           <button
             onClick={() => desktopUpdate.apply()}
