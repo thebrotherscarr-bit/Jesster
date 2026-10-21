@@ -2,7 +2,8 @@ import React from 'react';
 import { OllamaConfig } from '../types/index.ts';
 import { KernelSync } from '../hooks/useKernelSync.ts';
 import { DesktopUpdate } from '../hooks/useDesktopUpdate.ts';
-import { Plus, Brain, MessageSquare, Network, Zap, Cpu, Menu, Monitor, Link2, Download } from 'lucide-react';
+import { DesktopVault } from '../hooks/useDesktopVault.ts';
+import { Plus, Brain, MessageSquare, Network, Zap, Cpu, Menu, Monitor, Link2, Download, FolderOpen, FilePlus2 } from 'lucide-react';
 
 export type ActiveTab = 'notes' | 'ask' | 'graph';
 
@@ -16,6 +17,7 @@ interface HeaderProps {
   ollamaConfig: OllamaConfig;
   storage?: KernelSync;
   desktopUpdate?: DesktopUpdate | null;
+  desktopVault?: DesktopVault | null;
   onToggleMobileMenu?: () => void;
 }
 
@@ -67,6 +69,7 @@ export const Header: React.FC<HeaderProps> = ({
   ollamaConfig,
   storage,
   desktopUpdate,
+  desktopVault,
   onToggleMobileMenu,
 }) => {
   return (
@@ -148,7 +151,37 @@ export const Header: React.FC<HeaderProps> = ({
 
       {/* Zone 3: Actions */}
       <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
-        <StorageBadge storage={storage} />
+        {desktopVault ? (
+          <>
+            <button
+              onClick={desktopVault.reveal}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                desktopVault.choose();
+              }}
+              title={
+                desktopVault.error ||
+                `Notes are Markdown files in ${desktopVault.dir}\nClick: open the folder. Right-click: choose a different folder.`
+              }
+              className={`hidden sm:inline-flex items-center gap-1 px-2 py-1 rounded-md border text-[11px] whitespace-nowrap ${
+                desktopVault.error ? 'border-amber-700 text-amber-400' : 'border-emerald-800 text-emerald-400'
+              }`}
+            >
+              <FolderOpen className="w-3 h-3" />
+              Vault · {desktopVault.dir.split(/[\\/]/).filter(Boolean).pop() || 'notes'}
+            </button>
+            <button
+              onClick={() => desktopVault.importFiles()}
+              title="Import documents from anywhere on this PC as notes (Markdown, text, Word, HTML, code). You can also drop files on the window."
+              className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg border border-neutral-800 bg-neutral-900 hover:bg-neutral-800 text-xs text-neutral-300 hover:text-white transition-colors shrink-0"
+            >
+              <FilePlus2 className="w-3.5 h-3.5" />
+              <span className="hidden md:inline">Import files</span>
+            </button>
+          </>
+        ) : (
+          <StorageBadge storage={storage} />
+        )}
         {desktopUpdate?.available && (
           <button
             onClick={() => desktopUpdate.apply()}

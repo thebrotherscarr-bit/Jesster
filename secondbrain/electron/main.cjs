@@ -3,6 +3,8 @@ const path = require('path');
 const http = require('http');
 const express = require('express');
 const updater = require('./updater.cjs');
+const fs = require('fs');
+const { Vault, importFile, SUPPORTED } = require('./vaultfs.cjs');
 
 const isDev = process.env.NODE_ENV === 'development';
 const distDir = path.join(__dirname, '..', 'dist');
@@ -141,6 +143,122 @@ function fromApp(event) {
     return false;
   }
 }
+
+// ---- notes as files ----------------------------------------------------
+// The notes folder (default Documents\SecondBrain) is remembered in
+// <userData>\vault.json. Changes other programs make there are announced
+// to the window, which reloads them.
+let vault = null;
+let watcher = null;
+let changeTimer = null;
+
+function settingsFile() {
+  return path.join(app.getPath('userData'), 'vault.json');
+}
+
+function vaultDir() {
+  try {
+    const dir = JSON.parse(fs.readFileSync(settingsFile(), 'utf8')).dir;
+    if (dir) return dir;
+  } catch {
+    /* first run */
+  }
+  return path.join(app.getPath('documents'), 'SecondBrain');
+}
+
+function openVault(dir) {
+  vault = new Vault(dir);
+  if (watcher) watcher.close();
+  try {
+    watcher = fs.watch(dir, () => {
+      clearTimeout(changeTimer);
+      changeTimer = setTimeout(() => {
+        if (mainWindow) mainWindow.webContents.send('vault:changed');
+      }, 400);
+    });
+  } catch {
+    watcher = null;
+  }
+  return vault;
+}
+
+function getVault() {
+  return vault || openVault(vaultDir());
+}
+
+function guard(event) {
+  if (!fromApp(event)) throw new Error('not allowed');
+}
+
+ipcMain.handle('vault:info', (event) => {
+  guard(event);
+  return { dir: getVault().dir };
+});
+ipcMain.handle('vault:load', (event) => {
+  guard(event);
+  return getVault().load();
+});
+ipcMain.handle('vault:save', (event, note) => {
+  guard(event);
+  getVault().save(note);
+  return true;
+});
+ipcMain.handle('vault:remove', (event, id) => {
+  guard(event);
+  getVault().remove(id);
+  return true;
+});
+ipcMain.handle('vault:reveal', (event) => {
+  guard(event);
+  return shell.openPath(getVault().dir);
+});
+ipcMain.handle('vault:choose', async (event) => {
+  guard(event);
+  const r = await dialog.showOpenDialog(mainWindow, {
+    title: 'Choose the folder SecondBrain keeps notes in',
+    defaultPath: getVault().dir,
+    properties: ['openDirectory', 'createDirectory'],
+  });
+  if (r.canceled || !r.filePaths[0]) return { dir: getVault().dir, changed: false };
+  fs.writeFileSync(settingsFile(), JSON.stringify({ dir: r.filePaths[0] }, null, 2));
+  openVault(r.filePaths[0]);
+  return { dir: vault.dir, changed: true };
+});
+// Documents from anywhere on the PC: the Windows file picker, or paths
+// dropped on the window. Each becomes a note file in the vault.
+ipcMain.handle('vault:import', async (event, dropped) => {
+  guard(event);
+  let files = Array.isArray(dropped) ? dropped.filter((p) => typeof p === 'string' && path.isAbsolute(p)) : [];
+  if (!files.length) {
+    const r = await dialog.showOpenDialog(mainWindow, {
+      title: 'Import documents as notes',
+      defaultPath: app.getPath('documents'),
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        { name: 'Documents', extensions: SUPPORTED.map((e) => e.slice(1)) },
+        { name: 'All files', extensions: ['*'] },
+      ],
+    });
+    if (r.canceled) return { imported: [], skipped: [] };
+    files = r.filePaths;
+  }
+  const imported = [];
+  const skipped = [];
+  for (const f of files) {
+    try {
+      const r = importFile(f);
+      if (r.note) {
+        getVault().save(r.note);
+        imported.push({ id: r.note.id, title: r.note.title });
+      } else {
+        skipped.push({ file: f, why: r.why });
+      }
+    } catch (e) {
+      skipped.push({ file: f, why: e.message });
+    }
+  }
+  return { imported, skipped };
+});
 
 ipcMain.handle('desktop:version', (event) => (fromApp(event) ? updater.buildInfo() : null));
 ipcMain.handle('desktop:check-update', (event) => {

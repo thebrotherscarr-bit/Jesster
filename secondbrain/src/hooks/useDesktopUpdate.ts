@@ -1,22 +1,5 @@
 import { useEffect, useState } from 'react';
-
-/** What the desktop shell (electron/preload.cjs) offers the page. */
-interface DesktopBridge {
-  version: () => Promise<{ build: number; commit: string } | null>;
-  checkUpdate: () => Promise<{
-    current: { build: number; commit: string };
-    latest: { build: number; title: string } | null;
-    available: boolean;
-    canApply: boolean;
-  }>;
-  applyUpdate: () => Promise<{ updated: boolean; detail?: string }>;
-}
-
-declare global {
-  interface Window {
-    secondbrainDesktop?: DesktopBridge;
-  }
-}
+import '../types/desktop.ts';
 
 export interface DesktopUpdate {
   available: boolean;

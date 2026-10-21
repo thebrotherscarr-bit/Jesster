@@ -24,6 +24,7 @@ import { QuickCaptureModal } from './components/QuickCaptureModal.tsx';
 import { WindowsPublishModal } from './components/WindowsPublishModal.tsx';
 import { useKernelSync } from './hooks/useKernelSync.ts';
 import { useDesktopUpdate } from './hooks/useDesktopUpdate.ts';
+import { useDesktopVault } from './hooks/useDesktopVault.ts';
 import { rpc } from './utils/kernel.ts';
 
 const STORAGE_KEY_NOTES = 'secondbrain_local_notes_v1';
@@ -112,6 +113,18 @@ export default function App() {
 
   // the packaged .exe updates itself from GitHub releases
   const desktopUpdate = useDesktopUpdate((text) => setLiveMessage(text));
+
+  // the desktop app keeps notes as Markdown files in a folder on disk
+  const desktopVault = useDesktopVault(
+    notes,
+    setNotes,
+    (from, to) => {
+      setNotes((prev) => prev.map((n) => (n.id === from ? { ...n, id: to } : n)));
+      setSelectedNoteId((cur) => (cur === from ? to : cur));
+    },
+    (text) => setLiveMessage(text)
+  );
+  const [dragging, setDragging] = useState(false);
 
   // tell the kernel what this window has open, so collaborators can see it
   useEffect(() => {
@@ -333,7 +346,28 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col font-sans selection:bg-neutral-800">
+    <div
+      className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col font-sans selection:bg-neutral-800"
+      onDragOver={(e) => {
+        if (!desktopVault || !e.dataTransfer.types.includes('Files')) return;
+        e.preventDefault();
+        setDragging(true);
+      }}
+      onDragLeave={(e) => {
+        if (e.currentTarget === e.target) setDragging(false);
+      }}
+      onDrop={(e) => {
+        if (!desktopVault || !e.dataTransfer.files.length) return;
+        e.preventDefault();
+        setDragging(false);
+        desktopVault.importFiles(Array.from(e.dataTransfer.files));
+      }}
+    >
+      {dragging && (
+        <div className="fixed inset-0 z-50 pointer-events-none flex items-center justify-center bg-emerald-950/70 border-4 border-dashed border-emerald-500 text-emerald-100 text-lg font-semibold">
+          Drop to import as notes
+        </div>
+      )}
       {/* 3-Zone Top Bar */}
       <Header
         activeTab={activeTab}
@@ -350,6 +384,7 @@ export default function App() {
         }}
         ollamaConfig={ollamaConfig}
         storage={storage}
+        desktopVault={desktopVault}
         desktopUpdate={desktopUpdate}
         onToggleMobileMenu={() => setMobileNotesView((prev) => (prev === 'sidebar' ? 'list' : 'sidebar'))}
       />
