@@ -288,6 +288,22 @@ if (!gotSingleInstanceLock) {
 
   app.whenReady().then(() => {
     createWindow();
+    // downloads from past updates (the hand-over cannot delete its own exe)
+    const asar = process.noAsar;
+    process.noAsar = true; // an old build's app.asar is a file to delete
+    try {
+      const tmp = app.getPath('temp');
+      for (const name of fs.readdirSync(tmp)) {
+        const p = path.join(tmp, name);
+        if (name.startsWith('secondbrain-update-') && Date.now() - fs.statSync(p).mtimeMs > 3600000) {
+          fs.rmSync(p, { recursive: true, force: true });
+        }
+      }
+    } catch {
+      /* best effort */
+    } finally {
+      process.noAsar = asar;
+    }
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {

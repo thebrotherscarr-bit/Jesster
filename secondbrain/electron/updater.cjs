@@ -159,46 +159,6 @@ function findExe(dir) {
   return null;
 }
 
-/**
- * The hand-over script: wait for this app to exit, mirror the new build over
- * the install folder, start it again, clean up. PowerShell, not cmd: on a PC
- * with Git installed `find` can be the Unix one, and `timeout` fails without
- * a console, which left the first version of this looping. Written with a
- * BOM so Windows PowerShell 5.1 reads non-ASCII paths correctly.
- * /IS /IT: copy every file, even one robocopy would call unchanged because
- * its size and timestamp match the old copy.
- * Exercised on Windows in CI by electron/swap.test.cjs.
- */
-function writeSwapScript(file, { pid, src, dest, exe, work }) {
-  const q = (p) => "'" + String(p).replace(/'/g, "''") + "'";
-  const log = path.join(os.tmpdir(), 'secondbrain-update.log');
-  const lines = [
-    "$ErrorActionPreference = 'Continue'",
-    `$log = ${q(log)}`,
-    "function Log($m) { Add-Content -LiteralPath $log -Value ((Get-Date -Format s) + '  ' + $m) }",
-    `Log 'update: waiting for SecondBrain (pid ${pid}) to close'`,
-    `Wait-Process -Id ${pid} -Timeout 60 -ErrorAction SilentlyContinue`,
-    `Stop-Process -Id ${pid} -Force -ErrorAction SilentlyContinue`,
-    // Electron's helper processes share the exe name and can hold files open
-    `$dest = ${q(dest)}`,
-    '$deadline = (Get-Date).AddSeconds(30)',
-    'do {',
-    "  $left = @(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($dest, [StringComparison]::OrdinalIgnoreCase) })",
-    '  if ($left.Count -eq 0) { break }',
-    '  Start-Sleep -Milliseconds 500',
-    '} while ((Get-Date) -lt $deadline)',
-    "if ($left.Count) { Log ('update: stopping ' + $left.Count + ' leftover process(es)'); $left | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 1 }",
-    `robocopy ${q(src)} ${q(dest)} /MIR /IS /IT /R:20 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null`,
-    '$rc = $LASTEXITCODE',
-    "Log ('update: robocopy exit code ' + $rc + $(if ($rc -lt 8) { ' (ok)' } else { ' (FAILED)' }))",
-    // start the app whatever happened: an old build that opens beats nothing
-    `try { Start-Process -FilePath ${q(exe)} -WorkingDirectory ${q(dest)}; Log 'update: app started' } catch { Log ('update: could not start the app: ' + $_) }`,
-  ];
-  if (work) lines.push(`Remove-Item -LiteralPath ${q(work)} -Recurse -Force`);
-  fs.writeFileSync(file, '\ufeff' + lines.join('\r\n') + '\r\n', 'utf8');
-  return file;
-}
-
 /** Download the newest build, then hand over to the swap script and quit. */
 async function apply() {
   log(`update requested by build ${buildInfo().build} at ${process.execPath}`);
@@ -235,26 +195,26 @@ async function applySteps() {
   }
   if (!src) throw new Error('the downloaded build has no SecondBrain.exe');
 
+  // The hand-over runs in the NEW build's own exe, in Node mode, from the
+  // download folder: no PowerShell or cmd (a hidden PowerShell script from
+  // %TEMP% never ran on a real PC), and nothing in the install folder is in use.
   const dest = path.dirname(process.execPath);
-  const script = path.join(work, 'swap.ps1');
-  writeSwapScript(script, {
-    pid: process.pid,
-    src,
-    dest,
-    exe: path.join(dest, path.basename(process.execPath)),
-    work,
+  const exeName = path.basename(process.execPath);
+  const swap = path.join(work, 'swap.cjs');
+  fs.writeFileSync(swap, fs.readFileSync(path.join(__dirname, 'swap.cjs')));
+  const runner = path.join(src, exeName);
+  log(`handing over: ${runner} ${swap} (${src} -> ${dest})`);
+  const child = spawn(runner, [swap, String(process.pid), src, dest, path.join(dest, exeName), LOG], {
+    detached: true,
+    stdio: 'ignore',
+    windowsHide: true,
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' },
   });
-  log(`handing over to ${script}: ${src} -> ${dest}`);
-  const child = spawn(
-    'powershell.exe',
-    ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', script],
-    { detached: true, stdio: 'ignore', windowsHide: true }
-  );
-  child.on('error', (e) => log(`could not start PowerShell: ${e.message}`));
+  child.on('error', (e) => log(`could not start the hand-over: ${e.message}`));
   child.unref();
   setTimeout(() => app.quit(), 500);
   setTimeout(() => app.exit(0), 5000); // if something holds quit up, leave anyway
   return { updated: true, to: state.latest.build };
 }
 
-module.exports = { buildInfo, check, apply, writeSwapScript, unzip, LOG };
+module.exports = { buildInfo, check, apply, unzip, LOG };

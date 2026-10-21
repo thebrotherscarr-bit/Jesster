@@ -46,6 +46,10 @@ jobs:
             ConvertTo-Json | Set-Content electron/build.json -Encoding utf8
           Get-Content electron/build.json
       - run: npm run package:win
+      - name: The packaged app itself runs the update hand-over
+        run: |
+          $env:SWAP_RUNNER = (Resolve-Path dist-desktop/SecondBrain-win32-x64/SecondBrain.exe).Path
+          node electron/swap.test.cjs
       - name: Check the executable is real
         run: |
           $exe = Get-Item dist-desktop/SecondBrain-win32-x64/SecondBrain.exe
