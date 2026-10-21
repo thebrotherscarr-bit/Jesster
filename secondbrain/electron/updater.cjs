@@ -120,6 +120,8 @@ function findExe(dir) {
  * with Git installed `find` can be the Unix one, and `timeout` fails without
  * a console, which left the first version of this looping. Written with a
  * BOM so Windows PowerShell 5.1 reads non-ASCII paths correctly.
+ * /IS /IT: copy every file, even one robocopy would call unchanged because
+ * its size and timestamp match the old copy.
  * Exercised on Windows in CI by electron/swap.test.cjs.
  */
 function writeSwapScript(file, { pid, src, dest, exe, work }) {
@@ -129,7 +131,7 @@ function writeSwapScript(file, { pid, src, dest, exe, work }) {
     `Wait-Process -Id ${pid} -Timeout 60`,
     `Stop-Process -Id ${pid} -Force`,
     'Start-Sleep -Milliseconds 800',
-    `robocopy ${q(src)} ${q(dest)} /MIR /R:20 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null`,
+    `robocopy ${q(src)} ${q(dest)} /MIR /IS /IT /R:20 /W:1 /NFL /NDL /NJH /NJS /NP | Out-Null`,
     `Start-Process -FilePath ${q(exe)} -WorkingDirectory ${q(dest)}`,
   ];
   if (work) lines.push(`Remove-Item -LiteralPath ${q(work)} -Recurse -Force`);
