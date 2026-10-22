@@ -5,7 +5,11 @@
  * Cursor use, so an existing block can be pasted in:
  *
  *   { "mcpServers": { "notes": { "command": "python", "args": ["notes/cli.py", "mcp"],
- *                                "env": {}, "trusted": false, "enabled": true } } }
+ *                                "env": {}, "trusted": false, "enabled": true,
+ *                                "include": ["notes_search", "notes_get"] } } }
+ *
+ * "include" (optional) limits which of a server's tools the agent is offered:
+ * a big server's whole catalogue costs the model context on every turn.
  *
  * stdio transport, JSON-RPC 2.0 one message per line. Each server's tools
  * appear as mcp__<server>__<tool>. Calls need the user's OK unless the
@@ -210,7 +214,9 @@ class McpClient {
         } catch {
           return; // status shows the error
         }
+        const include = Array.isArray(spec.include) && spec.include.length ? new Set(spec.include) : null;
         for (const t of s.tools) {
+          if (include && !include.has(t.name)) continue;
           tools.push({
             name: toolName(name, t.name),
             description: `[${name}] ${t.description || t.name}`.slice(0, 1000),
@@ -228,6 +234,7 @@ class McpClient {
   status() {
     return [...this.servers.values()].map((s) => ({
       name: s.name, status: s.status, error: s.error, tools: s.tools.map((t) => t.name), trusted: Boolean(s.spec.trusted),
+      offered: Array.isArray(s.spec.include) && s.spec.include.length ? s.tools.filter((t) => s.spec.include.includes(t.name)).length : s.tools.length,
     }));
   }
 

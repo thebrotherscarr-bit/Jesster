@@ -94,7 +94,7 @@ export interface SchedulesBridge {
 export interface McpState {
   config: string;
   file: string;
-  status: { name: string; status: string; error: string | null; tools: string[]; trusted: boolean }[];
+  status: { name: string; status: string; error: string | null; tools: string[]; trusted: boolean; offered?: number }[];
 }
 
 export interface McpBridge {
@@ -123,6 +123,22 @@ export interface VoiceBridge {
   result: (id: string, text: string, error?: string | null) => Promise<boolean>;
 }
 
+export interface ShareState {
+  enabled: boolean;
+  writes: boolean;
+  url: string;
+  key: string;
+}
+
+export interface AtlasOptions {
+  exe: string;
+  ground: string;
+  python?: string;
+  engine?: boolean;
+  trusted?: boolean;
+  all?: boolean;
+}
+
 export interface DesktopBridge {
   version: () => Promise<{ build: number; commit: string } | null>;
   checkUpdate: () => Promise<{
@@ -140,6 +156,9 @@ export interface DesktopBridge {
   mcp?: McpBridge;
   telegram?: TelegramBridge;
   voice?: VoiceBridge;
+  share?: { get: (reveal?: boolean) => Promise<ShareState>; set: (patch: { enabled?: boolean; writes?: boolean; rotate?: boolean }) => Promise<ShareState> };
+  atlas?: { connect: (opts: AtlasOptions) => Promise<McpState> };
+  pick?: (kind: 'file' | 'folder' | 'exe', title: string) => Promise<string | null>;
 }
 
 declare global {

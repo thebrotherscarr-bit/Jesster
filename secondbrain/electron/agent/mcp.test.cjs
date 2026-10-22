@@ -47,6 +47,18 @@ test('servers connect; their tools become agent tools; calls need approval unles
   }
 });
 
+test('include limits which tools of a server the agent is offered', async () => {
+  const { c } = client({ echo: { command: process.execPath, args: [fixture], include: ['echo'] } });
+  const tools = await c.connect();
+  try {
+    assert.deepEqual(tools.map((t) => t.name), ['mcp__echo__echo']);
+    assert.equal(c.status()[0].offered, 1);
+    assert.equal(c.status()[0].tools.length, 2);
+  } finally {
+    c.stopAll();
+  }
+});
+
 test('bad config is refused before anything is written', () => {
   const { c } = client({});
   assert.throws(() => c.writeConfig('{nope'), SyntaxError);

@@ -7,6 +7,7 @@ const fs = require('fs');
 const { Vault, importFile, SUPPORTED } = require('./vaultfs.cjs');
 const { Settings } = require('./settings.cjs');
 const inbox = require('./inbox.cjs');
+const atlas = require('./atlas.cjs');
 const { AgentService } = require('./agent/service.cjs');
 const memory = require('./agent/memory.cjs');
 const sched = require('./agent/schedules.cjs');
@@ -43,6 +44,8 @@ function startLocalServer() {
     }
 
     const server = express();
+    // SecondBrain's notes over MCP, for Atlas and Manjuel (Settings → Share)
+    server.post('/mcp', express.json({ limit: '2mb' }), (req, res) => serveMcp(req, res));
     server.use(express.static(distDir, { index: 'index.html' }));
     server.get('*', (req, res) => {
       res.sendFile(path.join(distDir, 'index.html'));
@@ -579,6 +582,65 @@ ipcMain.handle('voice:result', (event, id, text, error) => {
   if (error) job.reject(new Error(error));
   else job.resolve(String(text || ''));
   return true;
+});
+
+// ---- the Atlas bridge ---------------------------------------------------------
+// SecondBrain → Atlas: atlas-mcp in the MCP client. Atlas/Manjuel → SecondBrain:
+// POST /mcp on this app's loopback origin, with a bearer key.
+async function serveMcp(req, res) {
+  const share = getSettings().get('share');
+  if (!share.enabled) return res.status(404).json({ error: 'sharing is off (SecondBrain → Settings → Share with Atlas)' });
+  const host = String(req.headers.host || '').split(':')[0];
+  if (!['127.0.0.1', 'localhost', '[::1]'].includes(host)) return res.status(421).json({ error: 'loopback only' });
+  if (!atlas.keyOk(req.headers.authorization, share.key)) return res.status(401).json({ error: 'a bearer key is required' });
+  try {
+    const ctx = { vault: getVault(), source: 'atlas', touched: () => mainWindow && mainWindow.webContents.send('vault:changed') };
+    const out = await atlas.handleMcp(req.body, { registry: getAgent().registry, ctx, writes: Boolean(share.writes) });
+    if (out === null) return res.status(202).end();
+    res.json(out);
+  } catch (e) {
+    res.status(500).json({ jsonrpc: '2.0', id: req.body?.id ?? null, error: { code: -32603, message: e.message } });
+  }
+}
+
+function shareView(reveal = false) {
+  const s = getSettings().get('share');
+  return {
+    enabled: Boolean(s.enabled),
+    writes: Boolean(s.writes),
+    url: `${APP_ORIGIN}/mcp`,
+    key: reveal ? s.key : s.key ? `••••${s.key.slice(-4)}` : '',
+  };
+}
+
+ipcMain.handle('share:get', (event, reveal) => {
+  guard(event);
+  return shareView(Boolean(reveal));
+});
+ipcMain.handle('share:set', (event, patch) => {
+  guard(event);
+  const s = getSettings().get('share');
+  const next = {};
+  if (patch && typeof patch.enabled === 'boolean') next.enabled = patch.enabled;
+  if (patch && typeof patch.writes === 'boolean') next.writes = patch.writes;
+  if ((next.enabled && !s.key) || (patch && patch.rotate)) next.key = require('crypto').randomBytes(24).toString('hex');
+  getSettings().set('share', next);
+  return shareView(Boolean(patch && patch.rotate));
+});
+ipcMain.handle('dialog:pick', async (event, kind, title) => {
+  guard(event);
+  const r = await dialog.showOpenDialog(mainWindow, {
+    title: String(title || 'Choose'),
+    properties: kind === 'folder' ? ['openDirectory'] : ['openFile'],
+    filters: kind === 'exe' ? [{ name: 'Programs', extensions: ['exe'] }, { name: 'All files', extensions: ['*'] }] : undefined,
+  });
+  return r.canceled ? null : r.filePaths[0] || null;
+});
+ipcMain.handle('atlas:connect', async (event, opts) => {
+  guard(event);
+  const entry = atlas.atlasServer(opts || {});
+  getMcp().writeConfig(atlas.withAtlas(getMcp().rawConfig(), entry));
+  return { config: getMcp().rawConfig(), file: getMcp().file(), status: await connectMcp() };
 });
 
 ipcMain.handle('desktop:version', (event) => (fromApp(event) ? updater.buildInfo() : null));

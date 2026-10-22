@@ -13,6 +13,7 @@ const DEFAULTS = {
   telegram: { token: '', allowedChats: [], enabled: false },
   terminal: { enabled: false, shell: null, alwaysAllow: [] },
   voice: { speakReplies: false, whisperModel: 'onnx-community/whisper-base.en' },
+  share: { enabled: false, writes: false, key: '' }, // the notes over MCP for Atlas/Manjuel
 };
 
 function merge(base, over) {
@@ -61,6 +62,7 @@ class Settings {
   public() {
     const d = JSON.parse(JSON.stringify(this.data));
     d.telegram.token = d.telegram.token ? '••••••' + d.telegram.token.slice(-4) : '';
+    d.share.key = d.share.key ? '••••' + d.share.key.slice(-4) : '';
     return d;
   }
 }

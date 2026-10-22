@@ -6,6 +6,7 @@ import { McpSection } from './settings/McpSection.tsx';
 import { TelegramSection } from './settings/TelegramSection.tsx';
 import { TerminalSection } from './settings/TerminalSection.tsx';
 import { VoiceSection } from './settings/VoiceSection.tsx';
+import { AtlasSection } from './settings/AtlasSection.tsx';
 import { VoiceSettings } from '../voice/useVoice.ts';
 
 interface SettingsModalProps {
@@ -110,6 +111,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
         </section>
 
         <TelegramSection />
+        <AtlasSection />
         <AutomationsSection />
         <McpSection />
         <TerminalSection />

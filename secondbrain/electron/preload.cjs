@@ -69,6 +69,14 @@ contextBridge.exposeInMainWorld('secondbrainDesktop', {
     },
     result: (id, text, error) => ipcRenderer.invoke('voice:result', id, text || '', error || null),
   },
+  share: {
+    get: (reveal) => ipcRenderer.invoke('share:get', Boolean(reveal)),
+    set: (patch) => ipcRenderer.invoke('share:set', patch),
+  },
+  atlas: {
+    connect: (opts) => ipcRenderer.invoke('atlas:connect', opts),
+  },
+  pick: (kind, title) => ipcRenderer.invoke('dialog:pick', kind, title),
   vault: {
     info: () => ipcRenderer.invoke('vault:info'),
     load: () => ipcRenderer.invoke('vault:load'),
