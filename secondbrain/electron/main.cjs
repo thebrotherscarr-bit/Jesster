@@ -9,6 +9,7 @@ const { Settings } = require('./settings.cjs');
 const inbox = require('./inbox.cjs');
 const report = require('./report.cjs');
 const atlas = require('./atlas.cjs');
+const atlasGlass = require('./atlasglass.cjs');
 const archive = require('./archive.cjs');
 const integrations = require('./integrations.cjs');
 const whisper = require('./whisper.cjs');
@@ -740,6 +741,9 @@ ipcMain.handle('atlas:connect', async (event, opts) => {
   getMcp().writeConfig(atlas.withAtlas(getMcp().rawConfig(), entry));
   return { config: getMcp().rawConfig(), file: getMcp().file(), status: await connectMcp() };
 });
+
+// ---- the Atlas button: Atlas's door and web app, started when it is clicked ----------
+atlasGlass.register({ app, ipcMain, guard, getSettings, vaultDir, shell });
 
 // ---- the archive digger (Settings → Archive), run by the notes kernel ----------
 archive.register({ ipcMain, guard, getSettings, vaultDir, send: (ch, data) => mainWindow && mainWindow.webContents.send(ch, data) });

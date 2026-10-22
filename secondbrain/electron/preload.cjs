@@ -78,6 +78,7 @@ contextBridge.exposeInMainWorld('secondbrainDesktop', {
   },
   atlas: {
     connect: (opts) => ipcRenderer.invoke('atlas:connect', opts),
+    open: () => ipcRenderer.invoke('atlas:open'),
   },
   integrations: {
     get: () => ipcRenderer.invoke('integrations:get'),

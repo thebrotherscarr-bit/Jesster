@@ -220,7 +220,11 @@ export interface DesktopBridge {
   telegram?: TelegramBridge;
   voice?: VoiceBridge;
   share?: { get: (reveal?: boolean) => Promise<ShareState>; set: (patch: { enabled?: boolean; writes?: boolean; rotate?: boolean }) => Promise<ShareState> };
-  atlas?: { connect: (opts: AtlasOptions) => Promise<McpState> };
+  atlas?: {
+    connect: (opts: AtlasOptions) => Promise<McpState>;
+    /** launch the Atlas web app in its own window, starting Atlas when it is not running */
+    open?: () => Promise<{ url?: string; window?: string; error?: string }>;
+  };
   integrations?: {
     get: () => Promise<IntegrationsState>;
     set: (provider: ProviderId | 'capture', patch: { key?: string; model?: string } | boolean) => Promise<IntegrationsState>;
