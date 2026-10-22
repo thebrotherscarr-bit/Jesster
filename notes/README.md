@@ -25,6 +25,7 @@ same door, so any other system can use it as its notes plugin.
 | `plugins/provenance.py` | deposits every save on the vault's chain (sealed by default) |
 | `plugins/ollama.py` | `llm.ask`, `llm.summarize`, `llm.suggest_tags` against local Ollama |
 | `plugins/importer.py` | `import.folder` and `import.json` to bring notes in from other tools |
+| `plugins/archive.py` | the archive digger: `archive.dig`, `archive.distill`, `archive.write` |
 | `cli.py` | the command line, plus `serve`, `rpc` and `mcp` |
 | `serve.py` | HTTP: `/rpc` and the PWA in `../pwa` |
 | `stdio.py` | JSON-RPC 2.0 and MCP on stdio |
@@ -112,6 +113,41 @@ Audio is transcribed locally by a command you choose. In
 `"transcribe_cmd": ["whisper-cli", "-m", "C:/models/ggml-base.en.bin", "-np", "-nt", "-f", "{in}"]`.
 For openai-whisper:
 `["whisper", "{in}", "--model", "base", "--output_format", "txt", "--output_dir", "{out_dir}"]`.
+
+### Digging the whole archive into usable notes
+
+The archive digger reads everything from the start of development, then has
+the local model distill it into topic notes, a timeline, decisions (with the
+why), ideas and open threads.
+
+```bash
+python notes/cli.py rpc        # or over MCP: archive_sources, archive_dig, ...
+{"jsonrpc":"2.0","id":1,"method":"archive.sources","params":{"add":"C:/Users/me/Desktop/Archive"}}
+{"jsonrpc":"2.0","id":2,"method":"archive.dig"}
+{"jsonrpc":"2.0","id":3,"method":"archive.distill","params":{"steps":20}}
+{"jsonrpc":"2.0","id":4,"method":"archive.write"}
+```
+
+- **dig** brings each source in as raw notes tagged `archive`:
+  - chat exports, Claude Code sessions and audio, as above
+  - Markdown and text notes
+  - every git repository's history, one note per month
+  - docs and code from folders and zips, one note per file
+  It skips `node_modules`, `.git` and build folders. A ledger in
+  `.jesster/archive-ledger.json` means a second dig reads only what changed.
+- **distill** sends the raw notes, oldest first, about 6,000 characters at a
+  time (`archive_chunk` in the config), to the local model with a JSON
+  schema. It saves its state in `.jesster/distill.json` after every step, so
+  calling it again resumes, and stopping is just not calling.
+  `{"restart": true}` starts again from the top.
+- **write** writes `archive-overview`, one `archive-topic-<name>` note per
+  topic, `archive-timeline`, `archive-decisions`, `archive-ideas` and
+  `archive-open-threads`, each citing its sources as `[[note-id]]`. Writing
+  again replaces them, so keep your own words in other notes.
+- **status** shows the sources and how far distilling has got.
+
+`archive.dig` and `archive.sources` read paths on this machine, so the
+bridge refuses them unless `bridge_allow` names them.
 
 ### 2. Finding the relevant parts
 

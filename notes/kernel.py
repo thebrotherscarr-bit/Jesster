@@ -556,8 +556,9 @@ def default_plugins():
     if here not in sys.path:
         sys.path.insert(0, here)
     from plugins import (provenance, index, ollama, importer, ingest, context,
-                         live, system)
-    return [provenance, index, ollama, importer, ingest, context, live, system]
+                         live, system, archive)
+    return [provenance, index, ollama, importer, ingest, context, live, system,
+            archive]
 
 
 def open_kernel(vault_root, config=None, plugins=None):

@@ -16,6 +16,7 @@ Asserts, in scratch vaults:
  11. ChatGPT, Claude, Gemini and Claude Code exports become notes; again is a no-op
  12. the index finds passages by keyword, and by meaning once vectors exist
  13. the gateway briefs the model from the vault, streams, and captures the exchange
+ 14. the archive digger: git, docs, code and chats in; distilled, resumable, written
 Run:  python notes/prove_notes.py   (exit 0 = the kernel is safe to use)
 """
 import json
@@ -480,6 +481,175 @@ def prove_ingest_index_gateway(root):
         srv.shutdown()
 
 
+class FakeDistiller(BaseHTTPRequestHandler):
+    """Ollama for the archive digger: answers the JSON schema it is sent, citing
+    the first note in the chunk. A chunk about the done thread closes it."""
+    seen = []
+    down = False
+
+    def do_POST(self):
+        body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+        FakeDistiller.seen.append(body)
+        user = body["messages"][-1]["content"]
+        import re as _re
+        src = _re.search(r"### \[([a-z0-9-]+)\]", user).group(1)
+        out = {"topics": [{"name": "Atlas", "summary": "seen in " + src, "source": src}],
+               "decisions": [{"text": "Keep it local", "why": "privacy", "topic": "Atlas",
+                              "source": src}],
+               "ideas": [{"text": "A glass UI", "topic": "atlas", "source": "made-up-id"}],
+               "threads": [{"text": "wire the door to the notes", "topic": "Atlas",
+                            "done": "door wired" in user, "source": src}],
+               "events": [{"date": "2026-01-05", "text": "first commit", "source": src}]}
+        if "not json please" in user:
+            content = "this is not json"
+        else:
+            content = json.dumps(out)
+        data = json.dumps({"message": {"role": "assistant", "content": content}}).encode()
+        self.send_response(200)
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def log_message(self, *a):
+        pass
+
+
+def make_archive(d):
+    """A repository with history in two months, docs, code, a zip and exports."""
+    repo = os.path.join(d, "atlas")
+    os.makedirs(os.path.join(repo, "src"))
+    env = dict(os.environ, GIT_AUTHOR_NAME="Kyle", GIT_AUTHOR_EMAIL="k@example",
+               GIT_COMMITTER_NAME="Kyle", GIT_COMMITTER_EMAIL="k@example")
+
+    def git(*args, when=None):
+        e = dict(env)
+        if when:
+            e["GIT_AUTHOR_DATE"] = e["GIT_COMMITTER_DATE"] = when
+        subprocess.run(["git", "-C", repo] + list(args), env=e, check=True,
+                       capture_output=True)
+    git("init", "-q")
+    open(os.path.join(repo, "src", "door.py"), "w").write("def door():\n    return 'glass'\n")
+    git("add", "-A")
+    git("commit", "-q", "-m", "first commit", "-m", "the glass starts", when="2026-01-05T10:00:00")
+    open(os.path.join(repo, "README.md"), "w").write("# Atlas\n\nthe control layer\n")
+    git("add", "-A")
+    git("commit", "-q", "-m", "readme", when="2026-01-20T10:00:00")
+    open(os.path.join(repo, "src", "door.py"), "a").write("# door wired\n")
+    git("add", "-A")
+    git("commit", "-q", "-m", "door wired to the notes", when="2026-02-02T10:00:00")
+    os.makedirs(os.path.join(repo, "node_modules", "x"))
+    open(os.path.join(repo, "node_modules", "x", "index.js"), "w").write("junk")
+    import zipfile
+    with zipfile.ZipFile(os.path.join(d, "old.zip"), "w") as z:
+        z.writestr("old/plan.py", "# the old plan\nPLAN = 1\n")
+        z.writestr("old/node_modules/y.js", "junk")
+    write_exports(os.path.join(d, "exports"))
+    return repo
+
+
+def prove_archive(root):
+    print("== the archive digger ==")
+    src = os.path.join(root, "archive-src")
+    repo = make_archive(src)
+    srv = HTTPServer(("127.0.0.1", 0), FakeDistiller)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    url = "http://127.0.0.1:%d" % srv.server_port
+    k = fresh(root, "dig", ollama_url=url, archive_chunk=400)
+    try:
+        ck("a missing source is refused",
+           refused(lambda: k.call("archive.sources", {"add": os.path.join(root, "nope")}),
+                   "not_found"))
+        ck("no sources, no dig", refused(lambda: k.call("archive.dig"), "bad_params"))
+        k.call("archive.sources", {"add": src})
+        ck("sources are kept in the config", k.call("archive.sources")["sources"] == [src])
+
+        r = k.call("archive.dig")["sources"][0]
+        ids = set(k.vault.notes)
+        ck("git history, one note per month",
+           {"archive-git-atlas-2026-01", "archive-git-atlas-2026-02"} <= ids and r["repos"] == 1, r)
+        jan = k.vault.notes["archive-git-atlas-2026-01"]
+        ck("a month note holds its commits, files and date",
+           "first commit" in jan["body"] and "src/door.py" in jan["body"]
+           and jan["created"].startswith("2026-01-05") and "archive" in jan["tags"], jan)
+        files = [n for n in k.vault.notes.values() if "file" in n["tags"]]
+        titles = sorted(n["title"] for n in files)
+        ck("docs and code from folders and zips",
+           any("door.py" in t for t in titles) and any("plan.py" in t for t in titles), titles)
+        ck("node_modules is never read", not any("node_modules" in t for t in titles), titles)
+        chats = [n for n in k.vault.notes.values() if "chat" in n["tags"]]
+        ck("chat exports come in tagged archive",
+           len(chats) == 4 and all("archive" in n["tags"] for n in chats), len(chats))
+        ck("Markdown notes come in through import.folder",
+           any(n["title"] == "Atlas" and "archive" in n["tags"] for n in k.vault.notes.values()))
+
+        links = k.call("provenance.verify")["links"]
+        r2 = k.call("archive.dig")["sources"][0]
+        ck("digging again reads only what changed",
+           r2["created"] == 0 and r2["updated"] == 0 and r2["unchanged"] >= 3, r2)
+        ck("and deposits nothing", k.call("provenance.verify")["links"] == links)
+
+        ck("nothing to write before distilling", refused(lambda: k.call("archive.write"),
+                                                          "not_ready"))
+        p = k.call("archive.distill", {"steps": 1})
+        ck("one step reads the oldest notes first",
+           p["steps"] == 1 and 0 < p["notes_done"] < p["notes_total"], p)
+        sent = FakeDistiller.seen[-1]
+        ck("the model gets the JSON schema, on loopback, gpt-oss",
+           sent["format"]["required"][0] == "topics" and sent["model"].startswith("gpt-oss")
+           and sent["stream"] is False)
+        ck("chunks stay small", len(sent["messages"][-1]["content"]) < 7000)
+
+        dead = fresh(root, "dig", ollama_url="http://127.0.0.1:9", archive_chunk=400)
+        before = dead.call("archive.status")["distill"]["notes_done"]
+        ck("Ollama down is said plainly",
+           refused(lambda: dead.call("archive.distill"), "llm_unreachable"))
+        ck("and the cursor does not move",
+           dead.call("archive.status")["distill"]["notes_done"] == before)
+
+        again = fresh(root, "dig", ollama_url=url, archive_chunk=400)
+        while not again.call("archive.distill", {"steps": 3})["finished"]:
+            pass
+        st = again.call("archive.status")["distill"]
+        ck("a new process resumes and finishes", st["finished"] and st["notes_done"] == st["notes_total"], st)
+        ck("topics merge under one name", st["topics"] == 1, st)
+        ck("repeated findings are kept once", st["decisions"] == 1 and st["ideas"] == 1, st)
+        ck("a later note closes an open thread", st["threads_open"] == 0, st)
+
+        w = again.call("archive.write")
+        notes = again.vault.notes
+        topic = notes.get("archive-topic-atlas")
+        ck("one note per topic, linked to its sources",
+           topic is not None and "[[archive-git-atlas-2026-" in topic["body"]
+           and "Keep it local" in topic["body"] and "privacy" in topic["body"], w)
+        ck("timeline, decisions, ideas, threads and overview",
+           all(i in notes for i in ("archive-timeline", "archive-decisions", "archive-ideas",
+                                    "archive-open-threads", "archive-overview")))
+        ck("a made-up source is replaced by a real one",
+           "made-up-id" not in notes["archive-ideas"]["body"])
+        ck("the closed thread is ticked", "- [x] wire the door" in notes["archive-open-threads"]["body"])
+        ck("the timeline is grouped by month", "## 2026-01" in notes["archive-timeline"]["body"])
+        w2 = again.call("archive.write")
+        ck("writing again changes nothing", w2["created"] == 0 and w2["updated"] == 0, w2)
+        ck("distilled notes are never distilled again",
+           again.call("archive.distill")["steps"] == 0)
+
+        again.call("notes.create", {"title": "Garbled", "body": "not json please",
+                                    "tags": ["archive"]})
+        p = again.call("archive.distill")
+        ck("a reply that is not JSON is logged and skipped",
+           p["failed_chunks"] == 1 and p["finished"] and p["errors"], p)
+        re_ = again.call("archive.distill", {"restart": True, "steps": 1})
+        ck("restart starts from the top", re_["notes_done"] < re_["notes_total"]
+           and re_["failed_chunks"] == 0, re_)
+
+        import bridge
+        ck("the bridge refuses digging paths on this machine",
+           not bridge.allowed("archive.dig", {}) and not bridge.allowed("archive.sources", {})
+           and bridge.allowed("archive.distill", {}) and bridge.allowed("archive.status", {}))
+    finally:
+        srv.shutdown()
+
+
 def main():
     root = tempfile.mkdtemp(prefix="prove-notes-")
     try:
@@ -490,6 +660,7 @@ def main():
         prove_stdio(root)
         prove_http(root)
         prove_ingest_index_gateway(root)
+        prove_archive(root)
     finally:
         shutil.rmtree(root, ignore_errors=True)
     print()

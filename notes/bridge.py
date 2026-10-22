@@ -17,7 +17,7 @@ as files in a PRIVATE git repository:
 The repository MUST be private: replies carry your notes. Anyone who can push
 to it can call the kernel, so the worker refuses a set of methods unless the
 vault's config allows them (bridge_allow): updating this copy's code, and
-importing from paths on this machine.
+importing or digging from paths on this machine.
 
 Only git is used — your existing git credentials, no tokens to manage.
 """
@@ -30,7 +30,8 @@ import threading
 import time
 import uuid
 
-DENY = ("system.update", "system.install_desktop", "import.*", "ingest.*")
+DENY = ("system.update", "system.install_desktop", "import.*", "ingest.*",
+        "archive.dig", "archive.sources")
 INTERVAL = 5
 KEEP_SECONDS = 24 * 3600
 
