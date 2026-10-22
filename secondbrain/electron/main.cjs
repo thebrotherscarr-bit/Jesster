@@ -8,6 +8,7 @@ const { Vault, importFile, SUPPORTED } = require('./vaultfs.cjs');
 const { Settings } = require('./settings.cjs');
 const inbox = require('./inbox.cjs');
 const { AgentService } = require('./agent/service.cjs');
+const memory = require('./agent/memory.cjs');
 
 const isDev = process.env.NODE_ENV === 'development';
 const distDir = path.join(__dirname, '..', 'dist');
@@ -245,6 +246,15 @@ ipcMain.handle('vault:import', async (event, dropped) => {
   const skipped = [];
   for (const f of files) {
     try {
+      // an agentskills.io skill (SKILL.md) becomes a skill the agent can use
+      if (path.basename(f).toLowerCase() === 'skill.md') {
+        const skill = memory.fromSkillMd(fs.readFileSync(f, 'utf8'));
+        if (skill) {
+          getVault().save(skill);
+          imported.push({ id: skill.id, title: `skill: ${skill.title}` });
+          continue;
+        }
+      }
       const r = importFile(f);
       if (r.note) {
         getVault().save(r.note);
@@ -352,8 +362,8 @@ function getAgent() {
   return agent;
 }
 // later features add tools (agentPlugins) and system prompt parts (agentExtras)
-const agentPlugins = [];
-const agentExtras = [];
+const agentPlugins = [(a) => a.registry.add(memory.tools)];
+const agentExtras = [() => memory.extras(getVault())];
 
 ipcMain.handle('agent:send', (event, text, sessionId, model) => {
   guard(event);
