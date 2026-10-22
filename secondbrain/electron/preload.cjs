@@ -77,6 +77,22 @@ contextBridge.exposeInMainWorld('secondbrainDesktop', {
   atlas: {
     connect: (opts) => ipcRenderer.invoke('atlas:connect', opts),
   },
+  archive: {
+    get: () => ipcRenderer.invoke('archive:get'),
+    set: (patch) => ipcRenderer.invoke('archive:set', patch),
+    status: () => ipcRenderer.invoke('archive:status'),
+    sources: (change) => ipcRenderer.invoke('archive:sources', change || {}),
+    dig: () => ipcRenderer.invoke('archive:dig'),
+    distill: (opts) => ipcRenderer.invoke('archive:distill', opts || {}),
+    write: () => ipcRenderer.invoke('archive:write'),
+    pause: () => ipcRenderer.invoke('archive:pause'),
+    stop: () => ipcRenderer.invoke('archive:stop'),
+    onState: (cb) => {
+      const fn = (_e, s) => cb(s);
+      ipcRenderer.on('archive:state', fn);
+      return () => ipcRenderer.removeListener('archive:state', fn);
+    },
+  },
   computer: {
     models: () => ipcRenderer.invoke('computer:models'),
   },

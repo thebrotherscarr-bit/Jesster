@@ -9,6 +9,7 @@ const { Settings } = require('./settings.cjs');
 const inbox = require('./inbox.cjs');
 const report = require('./report.cjs');
 const atlas = require('./atlas.cjs');
+const archive = require('./archive.cjs');
 const { AgentService } = require('./agent/service.cjs');
 const memory = require('./agent/memory.cjs');
 const sched = require('./agent/schedules.cjs');
@@ -722,6 +723,9 @@ ipcMain.handle('atlas:connect', async (event, opts) => {
   getMcp().writeConfig(atlas.withAtlas(getMcp().rawConfig(), entry));
   return { config: getMcp().rawConfig(), file: getMcp().file(), status: await connectMcp() };
 });
+
+// ---- the archive digger (Settings → Archive), run by the notes kernel ----------
+archive.register({ ipcMain, guard, getSettings, vaultDir, send: (ch, data) => mainWindow && mainWindow.webContents.send(ch, data) });
 
 ipcMain.handle('desktop:version', (event) => (fromApp(event) ? updater.buildInfo() : null));
 ipcMain.handle('desktop:check-update', (event) => {

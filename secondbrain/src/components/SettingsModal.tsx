@@ -7,6 +7,7 @@ import { TelegramSection } from './settings/TelegramSection.tsx';
 import { TerminalSection } from './settings/TerminalSection.tsx';
 import { VoiceSection } from './settings/VoiceSection.tsx';
 import { AtlasSection } from './settings/AtlasSection.tsx';
+import { ArchiveSection } from './settings/ArchiveSection.tsx';
 import { BrowserSection } from './settings/BrowserSection.tsx';
 import { ComputerSection } from './settings/ComputerSection.tsx';
 import { ReportBack } from './settings/ReportBack.tsx';
@@ -116,6 +117,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
 
         <TelegramSection />
         <AtlasSection />
+        <ArchiveSection />
         <AutomationsSection />
         <McpSection />
         <TerminalSection />
