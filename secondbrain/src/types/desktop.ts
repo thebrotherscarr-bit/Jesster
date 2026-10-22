@@ -69,6 +69,28 @@ export interface AgentBridge {
   onApproval: (cb: (r: ApprovalRequest) => void) => () => void;
 }
 
+export interface ScheduleView {
+  id: string;
+  name: string;
+  prompt: string;
+  whenText: string;
+  whenLabel: string;
+  deliver: string[];
+  enabled: boolean;
+  next: number | null;
+  lastRun: number | null;
+  lastResult: string | null;
+  running?: boolean;
+}
+
+export interface SchedulesBridge {
+  list: () => Promise<ScheduleView[]>;
+  add: (spec: { name: string; prompt: string; when: string; deliver?: string[] }) => Promise<ScheduleView[]>;
+  update: (id: string, patch: { enabled?: boolean }) => Promise<ScheduleView[]>;
+  remove: (id: string) => Promise<ScheduleView[]>;
+  run: (id: string) => Promise<{ note: string; ok: boolean; schedules: ScheduleView[] }>;
+}
+
 export interface DesktopBridge {
   version: () => Promise<{ build: number; commit: string } | null>;
   checkUpdate: () => Promise<{
@@ -82,6 +104,7 @@ export interface DesktopBridge {
   settings?: SettingsBridge;
   inbox?: InboxBridge;
   agent?: AgentBridge;
+  schedules?: SchedulesBridge;
 }
 
 declare global {

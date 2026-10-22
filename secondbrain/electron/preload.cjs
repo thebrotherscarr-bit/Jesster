@@ -39,6 +39,13 @@ contextBridge.exposeInMainWorld('secondbrainDesktop', {
       return () => ipcRenderer.removeListener('agent:approval', fn);
     },
   },
+  schedules: {
+    list: () => ipcRenderer.invoke('schedules:list'),
+    add: (spec) => ipcRenderer.invoke('schedules:add', spec),
+    update: (id, patch) => ipcRenderer.invoke('schedules:update', id, patch),
+    remove: (id) => ipcRenderer.invoke('schedules:remove', id),
+    run: (id) => ipcRenderer.invoke('schedules:run', id),
+  },
   vault: {
     info: () => ipcRenderer.invoke('vault:info'),
     load: () => ipcRenderer.invoke('vault:load'),

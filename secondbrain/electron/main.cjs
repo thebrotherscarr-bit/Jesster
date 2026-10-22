@@ -9,6 +9,7 @@ const { Settings } = require('./settings.cjs');
 const inbox = require('./inbox.cjs');
 const { AgentService } = require('./agent/service.cjs');
 const memory = require('./agent/memory.cjs');
+const sched = require('./agent/schedules.cjs');
 
 const isDev = process.env.NODE_ENV === 'development';
 const distDir = path.join(__dirname, '..', 'dist');
@@ -362,7 +363,7 @@ function getAgent() {
   return agent;
 }
 // later features add tools (agentPlugins) and system prompt parts (agentExtras)
-const agentPlugins = [(a) => a.registry.add(memory.tools)];
+const agentPlugins = [(a) => a.registry.add(memory.tools), (a) => a.registry.add(sched.tools(getSchedules))];
 const agentExtras = [() => memory.extras(getVault())];
 
 ipcMain.handle('agent:send', (event, text, sessionId, model) => {
@@ -398,6 +399,65 @@ ipcMain.handle('agent:tools', (event) => {
   return getAgent().registry.schemas().map((t) => ({ name: t.function.name, description: t.function.description }));
 });
 
+// ---- scheduled automations ------------------------------------------------
+let schedules = null;
+function getSchedules() {
+  return schedules || (schedules = new sched.Schedules(getVault));
+}
+// other features register ways to deliver a result (Telegram)
+const deliverers = {};
+let schedulerTimer = null;
+let schedulerBusy = false;
+
+async function schedulerTick() {
+  if (schedulerBusy) return;
+  schedulerBusy = true;
+  try {
+    for (const s of getSchedules().due()) {
+      await sched.runSchedule(s, { schedules: getSchedules(), agent: getAgent(), vault: getVault(), deliverers });
+      if (mainWindow) mainWindow.webContents.send('vault:changed');
+    }
+  } catch (e) {
+    console.error('[SecondBrain] scheduler:', e);
+  } finally {
+    schedulerBusy = false;
+  }
+}
+
+function schedulesView() {
+  return getSchedules().all().map((s) => ({ ...s, whenLabel: sched.describeWhen(s.when) }));
+}
+
+ipcMain.handle('schedules:list', (event) => {
+  guard(event);
+  return schedulesView();
+});
+ipcMain.handle('schedules:add', (event, spec) => {
+  guard(event);
+  getSchedules().add(spec || {});
+  return schedulesView();
+});
+ipcMain.handle('schedules:update', (event, id, patch) => {
+  guard(event);
+  const allowed = {};
+  if (patch && typeof patch.enabled === 'boolean') allowed.enabled = patch.enabled;
+  getSchedules().update(id, allowed);
+  return schedulesView();
+});
+ipcMain.handle('schedules:remove', (event, id) => {
+  guard(event);
+  getSchedules().remove(id);
+  return schedulesView();
+});
+ipcMain.handle('schedules:run', async (event, id) => {
+  guard(event);
+  const s = getSchedules().all().find((x) => x.id === id);
+  if (!s) throw new Error('no such schedule');
+  const r = await sched.runSchedule(s, { schedules: getSchedules(), agent: getAgent(), vault: getVault(), deliverers });
+  if (mainWindow) mainWindow.webContents.send('vault:changed');
+  return { note: r.id, ok: r.ok, schedules: schedulesView() };
+});
+
 ipcMain.handle('desktop:version', (event) => (fromApp(event) ? updater.buildInfo() : null));
 ipcMain.handle('desktop:check-update', (event) => {
   if (!fromApp(event)) throw new Error('not allowed');
@@ -428,6 +488,9 @@ if (!gotSingleInstanceLock) {
     createWindow();
     scheduleInbox();
     setTimeout(syncInbox, 3000);
+    // automations: check every 30s; missed runs catch up shortly after start
+    schedulerTimer = setInterval(schedulerTick, 30000);
+    setTimeout(schedulerTick, 15000);
     // downloads from past updates (the hand-over cannot delete its own exe)
     const asar = process.noAsar;
     process.noAsar = true; // an old build's app.asar is a file to delete

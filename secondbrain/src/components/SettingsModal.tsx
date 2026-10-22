@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { X, Inbox, RefreshCw, FolderGit2, Unplug } from 'lucide-react';
 import { InboxStatus } from '../types/desktop.ts';
+import { AutomationsSection } from './settings/AutomationsSection.tsx';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -101,6 +102,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
           )}
         </section>
 
+        <AutomationsSection />
         {children}
       </div>
     </div>
