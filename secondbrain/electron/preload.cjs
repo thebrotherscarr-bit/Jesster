@@ -69,6 +69,8 @@ contextBridge.exposeInMainWorld('secondbrainDesktop', {
       return () => ipcRenderer.removeListener('voice:transcribe', fn);
     },
     result: (id, text, error) => ipcRenderer.invoke('voice:result', id, text || '', error || null),
+    local: (samples) => ipcRenderer.invoke('voice:local', samples),
+    where: () => ipcRenderer.invoke('voice:where'),
   },
   share: {
     get: (reveal) => ipcRenderer.invoke('share:get', Boolean(reveal)),

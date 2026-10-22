@@ -122,6 +122,10 @@ export interface TelegramBridge {
 export interface VoiceBridge {
   onTranscribe: (cb: (job: { id: string; bytes: string; mime: string }) => void) => () => void;
   result: (id: string, text: string, error?: string | null) => Promise<boolean>;
+  /** 16 kHz mono samples -> text, on this machine's whisper.cpp (electron/whisper.cjs) */
+  local?: (samples: Float32Array) => Promise<string>;
+  /** where whisper.cpp was found, or why not */
+  where?: () => Promise<{ bin?: string; model?: string; error?: string }>;
 }
 
 export interface ArchiveProgress {

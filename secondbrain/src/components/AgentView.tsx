@@ -38,7 +38,7 @@ export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice }) => 
   speakRef.current = Boolean(voice?.speakReplies);
   const [voiceError, setVoiceError] = useState<string | null>(null);
   const recorder = useRecorder(
-    voice?.whisperModel || 'onnx-community/whisper-base.en',
+    voice?.whisperModel || '',
     (text) => setInput((x) => (x ? `${x} ${text}` : text)),
     setVoiceError
   );

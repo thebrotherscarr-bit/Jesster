@@ -10,6 +10,7 @@ const inbox = require('./inbox.cjs');
 const report = require('./report.cjs');
 const atlas = require('./atlas.cjs');
 const archive = require('./archive.cjs');
+const whisper = require('./whisper.cjs');
 const { AgentService } = require('./agent/service.cjs');
 const memory = require('./agent/memory.cjs');
 const sched = require('./agent/schedules.cjs');
@@ -663,6 +664,20 @@ ipcMain.handle('voice:result', (event, id, text, error) => {
   if (error) job.reject(new Error(error));
   else job.resolve(String(text || ''));
   return true;
+});
+
+// Speech-to-text on this machine's own whisper.cpp (whisper.cjs), never a download: the
+// page decodes the audio to 16 kHz samples and hands them over.
+function voiceWhere() {
+  return { voice: getSettings().get('voice') || {}, vaultDir: getVault().dir, appDir: path.dirname(process.execPath) };
+}
+ipcMain.handle('voice:local', (event, samples) => {
+  guard(event);
+  return whisper.transcribe(Float32Array.from(samples || []), voiceWhere());
+});
+ipcMain.handle('voice:where', (event) => {
+  guard(event);
+  return whisper.find(voiceWhere());
 });
 
 // ---- the Atlas bridge ---------------------------------------------------------

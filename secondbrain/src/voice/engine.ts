@@ -1,59 +1,36 @@
 /**
- * Speech-to-text with Whisper, running inside the app (transformers.js on
- * ONNX Runtime WebAssembly). The model downloads once from Hugging Face on
- * first use, then works offline. Tests replace the engine with setEngine.
+ * Speech-to-text on this machine's own whisper.cpp, through the desktop app's main
+ * process (electron/whisper.cjs): the page decodes the audio to 16 kHz mono samples and
+ * hands them over. Nothing is downloaded -- Kyle's word, 2026-10-22: "swap out that fetch
+ * for our local model we already have" (it used to fetch a Whisper model from Hugging
+ * Face). Outside the desktop app there is no whisper.cpp to reach, and it says so.
+ * Tests replace the engine with setEngine.
  */
 import { decodeTo16k } from './audio.ts';
-// ONNX Runtime's WebAssembly, bundled with the app (no CDN, works offline);
-// its JavaScript half is already inside the bundled runtime
-import ortWasm from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url';
+import '../types/desktop.ts';
 
 export type Engine = (samples: Float32Array) => Promise<string>;
 export type Progress = (p: { status: string; file?: string; progress?: number }) => void;
 
-export const DEFAULT_MODEL = 'onnx-community/whisper-base.en';
+/** '' = whisper.cpp's model as the desktop app finds it (Settings -> Voice can name a ggml .bin). */
+export const DEFAULT_MODEL = '';
 
 let engine: Engine | null = null;
-let loading: Promise<Engine> | null = null;
-let loadedModel = '';
 
 export function setEngine(e: Engine | null) {
   engine = e;
-  loading = null;
 }
 
-export async function getEngine(model = DEFAULT_MODEL, onProgress?: Progress): Promise<Engine> {
-  if (engine && (loadedModel === model || !loadedModel)) return engine;
-  if (loading && loadedModel === model) return loading;
-  loadedModel = model;
-  loading = (async () => {
-    const tf = await import('@huggingface/transformers');
-    const onnx = tf.env.backends.onnx as unknown as { wasm: { wasmPaths: unknown; numThreads: number } };
-    onnx.wasm.wasmPaths = { wasm: new URL(ortWasm, window.location.href).href };
-    onnx.wasm.numThreads = 1; // threads need cross-origin isolation, which this page does not have
-    tf.env.allowLocalModels = false;
-    const asr = await tf.pipeline('automatic-speech-recognition', model, {
-      device: 'wasm',
-      dtype: 'q8',
-      progress_callback: onProgress as never,
-    });
-    const run: Engine = async (samples) => {
-      const out = (await asr(samples, { chunk_length_s: 30, stride_length_s: 5 })) as { text: string } | { text: string }[];
-      return (Array.isArray(out) ? out.map((o) => o.text).join(' ') : out.text).trim();
-    };
-    engine = run;
-    return run;
-  })();
-  try {
-    return await loading;
-  } catch (e) {
-    loading = null;
-    loadedModel = '';
-    throw e;
-  }
+/** The engine: the desktop app's local whisper.cpp. `model` and `onProgress` are kept for
+ * callers; there is nothing to download, so there is no progress to report. */
+export async function getEngine(_model = DEFAULT_MODEL, _onProgress?: Progress): Promise<Engine> {
+  if (engine) return engine;
+  const local = typeof window !== 'undefined' ? window.secondbrainDesktop?.voice?.local : undefined;
+  if (!local) throw new Error('Speech-to-text runs in the SecondBrain desktop app, on its local whisper.cpp.');
+  return (samples) => local(samples);
 }
 
-/** Audio bytes (any format the browser can decode) → text. */
+/** Audio bytes (any format the browser can decode) -> text. */
 export async function transcribe(bytes: ArrayBuffer, model?: string, onProgress?: Progress): Promise<string> {
   const samples = await decodeTo16k(bytes);
   const run = await getEngine(model, onProgress);
