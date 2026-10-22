@@ -16,6 +16,8 @@ const { Telegram } = require('./agent/telegram.cjs');
 const subagents = require('./agent/subagents.cjs');
 const terminal = require('./agent/terminal.cjs');
 const browser = require('./agent/browser.cjs');
+const computer = require('./agent/computer.cjs');
+const { ComputerRuntime } = require('./computer/desktop.cjs');
 
 const isDev = process.env.NODE_ENV === 'development';
 const distDir = path.join(__dirname, '..', 'dist');
@@ -288,7 +290,7 @@ ipcMain.handle('vault:import', async (event, dropped) => {
 });
 
 // ---- settings for the page (secrets masked) ------------------------------
-const PAGE_SECTIONS = ['inbox', 'agent', 'telegram', 'terminal', 'voice', 'browser'];
+const PAGE_SECTIONS = ['inbox', 'agent', 'telegram', 'terminal', 'voice', 'browser', 'computer'];
 ipcMain.handle('settings:get', (event) => {
   guard(event);
   return getSettings().public();
@@ -387,6 +389,7 @@ const agentPlugins = [
   (a) => a.registry.add(subagents.tools(getAgent)),
   () => applyTerminal(),
   () => applyBrowser(),
+  () => applyComputer(),
 ];
 
 // terminal access: the tool exists only while the user has it switched on
@@ -405,6 +408,34 @@ function applyBrowser() {
   if (cfg().enabled) a.registry.add(browser.tools(getBrowser, cfg));
   else agentBrowser?.close();
 }
+// computer use: screen, mouse and keyboard through a vision model
+let computerRuntime = null;
+const getComputer = () =>
+  (computerRuntime ||= new ComputerRuntime(require('electron'), {
+    getConfig: () => getSettings().get('computer'),
+    getHost: () => getSettings().get('agent').host,
+    getMainWindow: () => mainWindow,
+  }));
+function applyComputer() {
+  const a = getAgent();
+  a.registry.remove('computer_');
+  a.registry.remove('screen_');
+  const cfg = () => getSettings().get('computer');
+  if (cfg().enabled) a.registry.add(computer.tools(getComputer, cfg));
+  else computerRuntime?.stop();
+}
+
+// the Ollama models that can see (Ollama lists "vision" among a model's capabilities)
+ipcMain.handle('computer:models', async (event) => {
+  guard(event);
+  const host = String(getSettings().get('agent').host || 'http://localhost:11434').replace(/\/+$/, '');
+  const r = await fetch(`${host}/api/tags`, { signal: AbortSignal.timeout(5000) });
+  const { models = [] } = await r.json();
+  return models
+    .filter((m) => (Array.isArray(m.capabilities) ? m.capabilities.includes('vision') : /vl\b|-vl|vision|llava|gemma3|qwen3\.5|minicpm-v|moondream/i.test(m.name)))
+    .map((m) => m.name);
+});
+
 const agentExtras = [() => memory.extras(getVault())];
 
 ipcMain.handle('agent:send', (event, text, sessionId, model) => {
@@ -552,6 +583,7 @@ async function restartTelegram() {
 settingsListeners.push((section) => section === 'telegram' && restartTelegram());
 settingsListeners.push((section) => section === 'terminal' && agent && applyTerminal());
 settingsListeners.push((section) => section === 'browser' && agent && applyBrowser());
+settingsListeners.push((section) => section === 'computer' && agent && applyComputer());
 
 ipcMain.handle('telegram:state', (event) => {
   guard(event);

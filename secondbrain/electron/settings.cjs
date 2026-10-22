@@ -14,6 +14,7 @@ const DEFAULTS = {
   terminal: { enabled: false, shell: null, alwaysAllow: [] },
   voice: { speakReplies: false, whisperModel: 'onnx-community/whisper-base.en' },
   browser: { enabled: false, askEachAction: true }, // the agent's own browser window
+  computer: { enabled: false, askEachAction: true, model: 'qwen3-vl:8b', maxSteps: 25 }, // screen, mouse and keyboard
   share: { enabled: false, writes: false, key: '' }, // the notes over MCP for Atlas/Manjuel
 };
 

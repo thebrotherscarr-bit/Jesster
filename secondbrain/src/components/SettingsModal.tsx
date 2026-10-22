@@ -8,6 +8,7 @@ import { TerminalSection } from './settings/TerminalSection.tsx';
 import { VoiceSection } from './settings/VoiceSection.tsx';
 import { AtlasSection } from './settings/AtlasSection.tsx';
 import { BrowserSection } from './settings/BrowserSection.tsx';
+import { ComputerSection } from './settings/ComputerSection.tsx';
 import { VoiceSettings } from '../voice/useVoice.ts';
 
 interface SettingsModalProps {
@@ -117,6 +118,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
         <McpSection />
         <TerminalSection />
         <BrowserSection />
+        <ComputerSection />
         {voice && onVoiceChange && <VoiceSection voice={voice} onChange={onVoiceChange} />}
         {children}
       </div>

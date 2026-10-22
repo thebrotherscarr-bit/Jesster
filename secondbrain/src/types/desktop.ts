@@ -158,6 +158,7 @@ export interface DesktopBridge {
   voice?: VoiceBridge;
   share?: { get: (reveal?: boolean) => Promise<ShareState>; set: (patch: { enabled?: boolean; writes?: boolean; rotate?: boolean }) => Promise<ShareState> };
   atlas?: { connect: (opts: AtlasOptions) => Promise<McpState> };
+  computer?: { models: () => Promise<string[]> };
   pick?: (kind: 'file' | 'folder' | 'exe', title: string) => Promise<string | null>;
 }
 

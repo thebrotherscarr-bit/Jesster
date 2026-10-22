@@ -1,0 +1,43 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'">
+<title>SecondBrain is using the computer</title>
+<style>
+  html, body { margin: 0; height: 100%; background: transparent; font: 13px/1.4 "Segoe UI", system-ui, sans-serif; color: #e5e5e5; overflow: hidden; user-select: none; }
+  .box { box-sizing: border-box; height: 100%; padding: 10px 12px; background: rgba(12,12,14,.96); border: 1px solid #f59e0b; border-radius: 12px; display: flex; flex-direction: column; gap: 6px; }
+  .top { display: flex; justify-content: space-between; align-items: center; font-size: 11px; color: #fbbf24; }
+  .task { font-size: 11px; color: #a3a3a3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .what { flex: 1; white-space: pre-wrap; overflow: auto; color: #fff; }
+  .warn { color: #fca5a5; }
+  .row { display: flex; gap: 6px; }
+  button { flex: 1; border: 0; border-radius: 8px; padding: 6px 0; font: inherit; cursor: pointer; color: #fff; background: #404040; }
+  #allow { background: #16a34a; } #deny { background: #525252; } #stop { background: #b91c1c; flex: .8; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+<div class="box">
+  <div class="top"><span>● SecondBrain is using the computer</span><span>Ctrl+Alt+Q stops</span></div>
+  <div class="task" id="task"></div>
+  <div class="what" id="what">Starting…</div>
+  <div class="row">
+    <button id="allow" class="hidden">Allow</button>
+    <button id="deny" class="hidden">Deny</button>
+    <button id="stop">Stop</button>
+  </div>
+</div>
+<script>
+  const $ = (id) => document.getElementById(id);
+  for (const id of ['allow', 'deny', 'stop']) $(id).onclick = () => window.panel.answer(id);
+  window.panel.onState((s) => {
+    $('task').textContent = s.task || '';
+    $('what').textContent = s.text || '';
+    $('what').classList.toggle('warn', /^⚠/.test(s.text || ''));
+    $('allow').classList.toggle('hidden', !s.asking);
+    $('deny').classList.toggle('hidden', !s.asking);
+  });
+</script>
+</body>
+</html>

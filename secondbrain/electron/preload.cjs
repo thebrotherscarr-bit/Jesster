@@ -76,6 +76,9 @@ contextBridge.exposeInMainWorld('secondbrainDesktop', {
   atlas: {
     connect: (opts) => ipcRenderer.invoke('atlas:connect', opts),
   },
+  computer: {
+    models: () => ipcRenderer.invoke('computer:models'),
+  },
   pick: (kind, title) => ipcRenderer.invoke('dialog:pick', kind, title),
   vault: {
     info: () => ipcRenderer.invoke('vault:info'),

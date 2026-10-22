@@ -77,7 +77,7 @@ class AgentService {
         model,
         messages: s.messages,
         registry: this.registry,
-        ctx: { vault, service: this, sessionId: id, source, approve: approve || this.approveInWindow(id) },
+        ctx: { vault, service: this, sessionId: id, source, signal: s.abort.signal, approve: approve || this.approveInWindow(id) },
         onEvent: send,
         maxSteps: maxSteps || defaultSteps || 12,
         signal: s.abort.signal,
