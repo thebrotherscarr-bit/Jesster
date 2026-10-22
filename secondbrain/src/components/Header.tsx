@@ -5,9 +5,9 @@ import { KernelSync } from '../hooks/useKernelSync.ts';
 import { DesktopUpdate } from '../hooks/useDesktopUpdate.ts';
 import { DesktopVault } from '../hooks/useDesktopVault.ts';
 import { AtlasButton } from './AtlasButton.tsx';
-import { Plus, Brain, MessageSquare, Network, Zap, Cpu, Menu, Link2, Download, FilePlus2, RefreshCw, Plug, Settings as SettingsIcon, Bot } from 'lucide-react';
+import { Plus, Brain, MessageSquare, Network, Zap, Cpu, Menu, Link2, Download, FilePlus2, RefreshCw, Plug, Workflow, Settings as SettingsIcon, Bot } from 'lucide-react';
 
-export type ActiveTab = 'notes' | 'ask' | 'graph' | 'agent';
+export type ActiveTab = 'notes' | 'ask' | 'graph' | 'agent' | 'flows';
 
 interface HeaderProps {
   activeTab: ActiveTab;
@@ -195,6 +195,17 @@ export const Header: React.FC<HeaderProps> = ({
         >
           <Network className="w-3.5 h-3.5" />
           <span className="hidden md:inline">Graph</span>
+        </button>
+
+        <button
+          onClick={() => onSelectTab('flows')}
+          title="Flows: wire blocks output to input (notes, search, models, save)"
+          className={`flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-md transition-colors whitespace-nowrap shrink-0 ${
+            activeTab === 'flows' ? 'bg-neutral-800 text-white font-semibold' : 'hover:text-neutral-200 hover:bg-neutral-900'
+          }`}
+        >
+          <Workflow className="w-3.5 h-3.5 text-sky-400" />
+          <span className="hidden md:inline">Flows</span>
         </button>
 
         <AtlasButton />
