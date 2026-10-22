@@ -12,7 +12,7 @@ const DEFAULTS = {
   agent: { host: 'http://localhost:11434', model: 'gpt-oss:20b', maxSteps: 12 },
   telegram: { token: '', allowedChats: [], enabled: false },
   terminal: { enabled: false, shell: null, alwaysAllow: [] },
-  voice: { speakReplies: false, whisperModel: 'Xenova/whisper-base.en' },
+  voice: { speakReplies: false, whisperModel: 'onnx-community/whisper-base.en' },
 };
 
 function merge(base, over) {

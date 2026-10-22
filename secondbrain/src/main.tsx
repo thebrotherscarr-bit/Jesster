@@ -5,6 +5,7 @@ import '@fontsource/jetbrains-mono/600.css';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
+import './types/desktop.ts';
 
 // When an installed PWA is updated, the new service worker can activate while
 // the old page is still running. Reload once so the user gets the new assets.
@@ -17,6 +18,12 @@ if ('serviceWorker' in navigator) {
     reloading = true;
     window.location.reload();
   });
+}
+
+// In the desktop app the service worker is cleared at every launch; drop its
+// precache too (but keep other caches: the speech model lives there).
+if (window.secondbrainDesktop && 'caches' in window) {
+  caches.keys().then((keys) => keys.filter((k) => /workbox|precache/i.test(k)).forEach((k) => caches.delete(k)));
 }
 
 createRoot(document.getElementById('root')!).render(<App />);

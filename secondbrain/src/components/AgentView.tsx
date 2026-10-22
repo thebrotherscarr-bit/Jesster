@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Bot, Plus, Send, Square, Wrench, ShieldAlert, Check, X, MessageSquare } from 'lucide-react';
+import { Bot, Plus, Send, Square, Wrench, ShieldAlert, Check, X, MessageSquare, Mic, Loader2 } from 'lucide-react';
+import { VoiceSettings, useRecorder, speak } from '../voice/useVoice.ts';
 import { AgentEvent, ApprovalRequest } from '../types/desktop.ts';
 import { OllamaConfig } from '../types/index.ts';
 import { renderMarkdown } from '../utils/markdown.ts';
@@ -12,6 +13,7 @@ interface Turn {
 
 interface AgentViewProps {
   ollamaConfig: OllamaConfig;
+  voice?: VoiceSettings;
   onOpenNote: (id: string) => void;
 }
 
@@ -20,7 +22,7 @@ interface AgentViewProps {
  * as features add them). Runs in the desktop app; every conversation is
  * saved as a session note.
  */
-export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig }) => {
+export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice }) => {
   const agent = window.secondbrainDesktop?.agent;
   const [sessions, setSessions] = useState<{ id: string; title: string; updatedAt: number; source?: string }[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -31,7 +33,15 @@ export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig }) => {
   const [tools, setTools] = useState<{ name: string; description: string }[]>([]);
   const current = useRef<string | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
+  const speakRef = useRef(false);
   current.current = sessionId;
+  speakRef.current = Boolean(voice?.speakReplies);
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const recorder = useRecorder(
+    voice?.whisperModel || 'onnx-community/whisper-base.en',
+    (text) => setInput((x) => (x ? `${x} ${text}` : text)),
+    setVoiceError
+  );
 
   const refresh = () => agent?.sessions().then(setSessions);
 
@@ -56,7 +66,10 @@ export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig }) => {
           }
           return last;
         }
-        if (e.type === 'answer') return [...t, { role: 'assistant', text: e.text }];
+        if (e.type === 'answer') {
+          if (speakRef.current) speak(e.text);
+          return [...t, { role: 'assistant', text: e.text }];
+        }
         if (e.type === 'error') return [...t, { role: 'error', text: e.text }];
         return t;
       });
@@ -198,6 +211,8 @@ export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig }) => {
             </div>
           ))}
           {busy && <div className="text-xs text-neutral-500 animate-pulse">Working…</div>}
+          {voiceError && <div role="alert" className="text-xs text-amber-400">{voiceError}</div>}
+          {recorder.progress && <div className="text-xs text-neutral-500">Preparing speech model: {recorder.progress}</div>}
           <div ref={bottom} />
         </div>
         <div className="border-t border-neutral-800 p-3 flex gap-2 items-end">
@@ -215,6 +230,14 @@ export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig }) => {
             aria-label="Message the agent"
             className="flex-1 resize-none rounded-xl bg-neutral-900 border border-neutral-800 px-3 py-2 text-sm text-white placeholder:text-neutral-500 focus:outline-none focus:border-neutral-600"
           />
+          <button
+            onClick={() => (recorder.state === 'recording' ? recorder.stop() : recorder.state === 'idle' && (setVoiceError(null), recorder.start()))}
+            aria-label={recorder.state === 'recording' ? 'Stop recording' : 'Speak'}
+            title={recorder.state === 'recording' ? 'Stop and transcribe' : recorder.state === 'idle' ? 'Speak (Whisper, on this PC)' : recorder.progress || 'Transcribing…'}
+            className={`p-2.5 rounded-xl border ${recorder.state === 'recording' ? 'border-rose-500 bg-rose-950 text-rose-300 animate-pulse' : 'border-neutral-700 text-neutral-200 hover:bg-neutral-800'}`}
+          >
+            {recorder.state === 'idle' || recorder.state === 'recording' ? <Mic className="w-4 h-4" /> : <Loader2 className="w-4 h-4 animate-spin" />}
+          </button>
           {busy ? (
             <button onClick={() => sessionId && agent.stop(sessionId)} aria-label="Stop" className="p-2.5 rounded-xl border border-neutral-700 text-neutral-200 hover:bg-neutral-800">
               <Square className="w-4 h-4" />

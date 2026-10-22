@@ -104,9 +104,11 @@ async function createWindow() {
   // a rebuilt .exe is visible on the very next launch. The PWA in a regular
   // browser keeps its own service worker -- this only affects Electron.
   try {
+    // service workers only: Cache Storage also holds the downloaded speech
+    // model, and the page drops the stale app-shell caches itself
     await session.defaultSession.clearStorageData({
       origin: APP_ORIGIN,
-      storages: ['serviceworkers', 'cachestorage'],
+      storages: ['serviceworkers'],
     });
   } catch (err) {
     console.warn('[SecondBrain] Could not clear cached app shell:', err);
@@ -127,6 +129,12 @@ async function createWindow() {
       preload: path.join(__dirname, 'preload.cjs'),
     },
     autoHideMenuBar: true,
+  });
+
+  // the microphone (voice input), for the app's own page only
+  session.defaultSession.setPermissionRequestHandler((wc, permission, callback, details) => {
+    const own = (details.requestingUrl || '').startsWith(APP_ORIGIN) || isDev;
+    callback(own && (permission === 'media' || permission === 'clipboard-sanitized-write'));
   });
 
   mainWindow.loadURL(url).catch((err) => {
@@ -546,6 +554,30 @@ ipcMain.handle('telegram:pair', (event, chatId, allow) => {
 ipcMain.handle('telegram:test', async (event) => {
   guard(event);
   await getTelegram().broadcast('SecondBrain is connected to this chat.');
+  return true;
+});
+
+// ---- voice: Telegram voice notes are transcribed by the page (Whisper) ----------
+const voiceJobs = new Map();
+telegramTranscriber = (buf, mime) =>
+  new Promise((resolve, reject) => {
+    if (!mainWindow) return reject(new Error('the SecondBrain window is closed'));
+    const id = require('crypto').randomBytes(6).toString('hex');
+    const timer = setTimeout(() => {
+      voiceJobs.delete(id);
+      reject(new Error('transcription timed out'));
+    }, 300000);
+    voiceJobs.set(id, { resolve, reject, timer });
+    mainWindow.webContents.send('voice:transcribe', { id, bytes: buf.toString('base64'), mime });
+  });
+ipcMain.handle('voice:result', (event, id, text, error) => {
+  guard(event);
+  const job = voiceJobs.get(id);
+  if (!job) return false;
+  voiceJobs.delete(id);
+  clearTimeout(job.timer);
+  if (error) job.reject(new Error(error));
+  else job.resolve(String(text || ''));
   return true;
 });
 

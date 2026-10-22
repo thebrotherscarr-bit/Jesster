@@ -118,6 +118,11 @@ export interface TelegramBridge {
   onState: (cb: (s: TelegramState) => void) => () => void;
 }
 
+export interface VoiceBridge {
+  onTranscribe: (cb: (job: { id: string; bytes: string; mime: string }) => void) => () => void;
+  result: (id: string, text: string, error?: string | null) => Promise<boolean>;
+}
+
 export interface DesktopBridge {
   version: () => Promise<{ build: number; commit: string } | null>;
   checkUpdate: () => Promise<{
@@ -134,6 +139,7 @@ export interface DesktopBridge {
   schedules?: SchedulesBridge;
   mcp?: McpBridge;
   telegram?: TelegramBridge;
+  voice?: VoiceBridge;
 }
 
 declare global {

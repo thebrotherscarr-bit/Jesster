@@ -24,6 +24,7 @@ import { QuickCaptureModal } from './components/QuickCaptureModal.tsx';
 import { WindowsPublishModal } from './components/WindowsPublishModal.tsx';
 import { SettingsModal } from './components/SettingsModal.tsx';
 import { AgentView } from './components/AgentView.tsx';
+import { useVoiceSettings } from './voice/useVoice.ts';
 import { useKernelSync } from './hooks/useKernelSync.ts';
 import { useDesktopUpdate } from './hooks/useDesktopUpdate.ts';
 import { useDesktopVault } from './hooks/useDesktopVault.ts';
@@ -128,6 +129,8 @@ export default function App() {
     (text) => setLiveMessage(text)
   );
   const [dragging, setDragging] = useState(false);
+  // voice settings; also transcribes Telegram voice notes while the app runs
+  const [voice, setVoice] = useVoiceSettings();
 
   // tell the kernel what this window has open, so collaborators can see it
   useEffect(() => {
@@ -484,6 +487,7 @@ export default function App() {
           <div className={activeTab === 'agent' ? 'flex flex-1 min-h-0' : 'hidden'}>
             <AgentView
               ollamaConfig={ollamaConfig}
+              voice={voice}
               onOpenNote={(id) => {
                 setSelectedNoteId(id);
                 setActiveTab('notes');
@@ -522,7 +526,12 @@ export default function App() {
         onClose={() => setIsWindowsModalOpen(false)}
         appUrl={typeof window !== 'undefined' ? window.location.origin : ''}
       />
-      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        voice={window.secondbrainDesktop ? voice : undefined}
+        onVoiceChange={setVoice}
+      />
     </div>
   );
 }

@@ -61,6 +61,14 @@ contextBridge.exposeInMainWorld('secondbrainDesktop', {
       return () => ipcRenderer.removeListener('telegram:state', fn);
     },
   },
+  voice: {
+    onTranscribe: (cb) => {
+      const fn = (_e, job) => cb(job);
+      ipcRenderer.on('voice:transcribe', fn);
+      return () => ipcRenderer.removeListener('voice:transcribe', fn);
+    },
+    result: (id, text, error) => ipcRenderer.invoke('voice:result', id, text || '', error || null),
+  },
   vault: {
     info: () => ipcRenderer.invoke('vault:info'),
     load: () => ipcRenderer.invoke('vault:load'),
