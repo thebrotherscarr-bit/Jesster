@@ -4,6 +4,7 @@ import { InboxStatus } from '../types/desktop.ts';
 import { AutomationsSection } from './settings/AutomationsSection.tsx';
 import { McpSection } from './settings/McpSection.tsx';
 import { TelegramSection } from './settings/TelegramSection.tsx';
+import { TerminalSection } from './settings/TerminalSection.tsx';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -107,6 +108,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
         <TelegramSection />
         <AutomationsSection />
         <McpSection />
+        <TerminalSection />
         {children}
       </div>
     </div>

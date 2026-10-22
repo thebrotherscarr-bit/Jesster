@@ -13,6 +13,7 @@ const sched = require('./agent/schedules.cjs');
 const { McpClient } = require('./agent/mcp.cjs');
 const { Telegram } = require('./agent/telegram.cjs');
 const subagents = require('./agent/subagents.cjs');
+const terminal = require('./agent/terminal.cjs');
 
 const isDev = process.env.NODE_ENV === 'development';
 const distDir = path.join(__dirname, '..', 'dist');
@@ -371,7 +372,15 @@ const agentPlugins = [
   (a) => a.registry.add(sched.tools(getSchedules)),
   () => connectMcp().catch((e) => console.error("[SecondBrain] mcp:", e)),
   (a) => a.registry.add(subagents.tools(getAgent)),
+  () => applyTerminal(),
 ];
+
+// terminal access: the tool exists only while the user has it switched on
+function applyTerminal() {
+  const a = getAgent();
+  a.registry.remove('terminal_');
+  if (getSettings().get('terminal').enabled) a.registry.add(terminal.tools(() => getSettings().get('terminal')));
+}
 const agentExtras = [() => memory.extras(getVault())];
 
 ipcMain.handle('agent:send', (event, text, sessionId, model) => {
@@ -517,6 +526,7 @@ async function restartTelegram() {
   return getTelegram().start();
 }
 settingsListeners.push((section) => section === 'telegram' && restartTelegram());
+settingsListeners.push((section) => section === 'terminal' && agent && applyTerminal());
 
 ipcMain.handle('telegram:state', (event) => {
   guard(event);
