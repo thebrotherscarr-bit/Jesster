@@ -13,6 +13,7 @@ const DEFAULTS = {
   telegram: { token: '', allowedChats: [], enabled: false },
   terminal: { enabled: false, shell: null, alwaysAllow: [] },
   voice: { speakReplies: false, whisperModel: 'onnx-community/whisper-base.en' },
+  browser: { enabled: false, askEachAction: true }, // the agent's own browser window
   share: { enabled: false, writes: false, key: '' }, // the notes over MCP for Atlas/Manjuel
 };
 

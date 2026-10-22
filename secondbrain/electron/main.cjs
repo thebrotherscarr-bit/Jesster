@@ -15,6 +15,7 @@ const { McpClient } = require('./agent/mcp.cjs');
 const { Telegram } = require('./agent/telegram.cjs');
 const subagents = require('./agent/subagents.cjs');
 const terminal = require('./agent/terminal.cjs');
+const browser = require('./agent/browser.cjs');
 
 const isDev = process.env.NODE_ENV === 'development';
 const distDir = path.join(__dirname, '..', 'dist');
@@ -146,6 +147,7 @@ async function createWindow() {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
+    agentBrowser?.close(); // the agent's browser goes with the app
   });
 
   // Handle external links safely
@@ -286,7 +288,7 @@ ipcMain.handle('vault:import', async (event, dropped) => {
 });
 
 // ---- settings for the page (secrets masked) ------------------------------
-const PAGE_SECTIONS = ['inbox', 'agent', 'telegram', 'terminal', 'voice'];
+const PAGE_SECTIONS = ['inbox', 'agent', 'telegram', 'terminal', 'voice', 'browser'];
 ipcMain.handle('settings:get', (event) => {
   guard(event);
   return getSettings().public();
@@ -384,6 +386,7 @@ const agentPlugins = [
   () => connectMcp().catch((e) => console.error("[SecondBrain] mcp:", e)),
   (a) => a.registry.add(subagents.tools(getAgent)),
   () => applyTerminal(),
+  () => applyBrowser(),
 ];
 
 // terminal access: the tool exists only while the user has it switched on
@@ -391,6 +394,16 @@ function applyTerminal() {
   const a = getAgent();
   a.registry.remove('terminal_');
   if (getSettings().get('terminal').enabled) a.registry.add(terminal.tools(() => getSettings().get('terminal')));
+}
+// browser control: its own window, tools only while switched on
+let agentBrowser = null;
+const getBrowser = () => (agentBrowser ||= new browser.AgentBrowser(require('electron')));
+function applyBrowser() {
+  const a = getAgent();
+  a.registry.remove('browser_');
+  const cfg = () => getSettings().get('browser');
+  if (cfg().enabled) a.registry.add(browser.tools(getBrowser, cfg));
+  else agentBrowser?.close();
 }
 const agentExtras = [() => memory.extras(getVault())];
 
@@ -538,6 +551,7 @@ async function restartTelegram() {
 }
 settingsListeners.push((section) => section === 'telegram' && restartTelegram());
 settingsListeners.push((section) => section === 'terminal' && agent && applyTerminal());
+settingsListeners.push((section) => section === 'browser' && agent && applyBrowser());
 
 ipcMain.handle('telegram:state', (event) => {
   guard(event);
