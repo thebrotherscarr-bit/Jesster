@@ -10,6 +10,7 @@ const inbox = require('./inbox.cjs');
 const report = require('./report.cjs');
 const atlas = require('./atlas.cjs');
 const archive = require('./archive.cjs');
+const integrations = require('./integrations.cjs');
 const whisper = require('./whisper.cjs');
 const { AgentService } = require('./agent/service.cjs');
 const memory = require('./agent/memory.cjs');
@@ -742,6 +743,8 @@ ipcMain.handle('atlas:connect', async (event, opts) => {
 
 // ---- the archive digger (Settings → Archive), run by the notes kernel ----------
 archive.register({ ipcMain, guard, getSettings, vaultDir, send: (ch, data) => mainWindow && mainWindow.webContents.send(ch, data) });
+// ---- integrations (Live → Integrations): Claude, ChatGPT, Gemini in; their apps out ----
+integrations.register({ ipcMain, guard, getSettings, getVault, vaultDir, send: (ch, data) => mainWindow && mainWindow.webContents.send(ch, data) });
 
 ipcMain.handle('desktop:version', (event) => (fromApp(event) ? updater.buildInfo() : null));
 ipcMain.handle('desktop:check-update', (event) => {

@@ -22,6 +22,7 @@ import { GraphView } from './components/GraphView.tsx';
 import { OllamaSetupModal } from './components/OllamaSetupModal.tsx';
 import { QuickCaptureModal } from './components/QuickCaptureModal.tsx';
 import { SettingsModal } from './components/SettingsModal.tsx';
+import { IntegrationsModal } from './components/IntegrationsModal.tsx';
 import { AgentView } from './components/AgentView.tsx';
 import { useVoiceSettings } from './voice/useVoice.ts';
 import { useKernelSync } from './hooks/useKernelSync.ts';
@@ -69,6 +70,8 @@ export default function App() {
   const [isOllamaModalOpen, setIsOllamaModalOpen] = useState(false);
   const [isQuickCaptureOpen, setIsQuickCaptureOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isIntegrationsOpen, setIsIntegrationsOpen] = useState(false);
+  const [integrationsVersion, setIntegrationsVersion] = useState(0);
   const [, startTransition] = useTransition();
 
   // Ollama Configuration State
@@ -380,6 +383,7 @@ export default function App() {
           if (tab === 'notes') setMobileNotesView('list');
         }}
         onOpenQuickCapture={() => setIsQuickCaptureOpen(true)}
+        onOpenIntegrations={window.secondbrainDesktop?.integrations ? () => setIsIntegrationsOpen(true) : undefined}
         onOpenOllamaModal={() => setIsOllamaModalOpen(true)}
         onCreateNewNote={() => {
           handleCreateNewNote();
@@ -476,6 +480,8 @@ export default function App() {
             }}
             onCreateNoteFromSynthesis={handleCreateNoteFromSynthesis}
             onOpenOllamaSetup={() => setIsOllamaModalOpen(true)}
+            integrationsVersion={integrationsVersion}
+            onOpenIntegrations={() => setIsIntegrationsOpen(true)}
           />
         )}
 
@@ -519,11 +525,13 @@ export default function App() {
         whisperModel={voice.whisperModel}
       />
 
-      <SettingsModal
-        isOpen={isSettingsOpen}
-        onClose={() => setIsSettingsOpen(false)}
+      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+      <IntegrationsModal
+        isOpen={isIntegrationsOpen}
+        onClose={() => setIsIntegrationsOpen(false)}
         voice={window.secondbrainDesktop ? voice : undefined}
         onVoiceChange={setVoice}
+        onChanged={() => setIntegrationsVersion((v) => v + 1)}
       />
     </div>
   );

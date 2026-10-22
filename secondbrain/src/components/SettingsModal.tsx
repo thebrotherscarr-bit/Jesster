@@ -5,25 +5,21 @@ import { AutomationsSection } from './settings/AutomationsSection.tsx';
 import { McpSection } from './settings/McpSection.tsx';
 import { TelegramSection } from './settings/TelegramSection.tsx';
 import { TerminalSection } from './settings/TerminalSection.tsx';
-import { VoiceSection } from './settings/VoiceSection.tsx';
 import { AtlasSection } from './settings/AtlasSection.tsx';
 import { ArchiveSection } from './settings/ArchiveSection.tsx';
 import { BrowserSection } from './settings/BrowserSection.tsx';
 import { ComputerSection } from './settings/ComputerSection.tsx';
 import { ReportBack } from './settings/ReportBack.tsx';
-import { VoiceSettings } from '../voice/useVoice.ts';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   /** extra sections other features add */
   children?: React.ReactNode;
-  voice?: VoiceSettings;
-  onVoiceChange?: (v: Partial<VoiceSettings>) => void;
 }
 
 /** Desktop settings. Each feature is one section; the inbox comes first. */
-export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, children, voice, onVoiceChange }) => {
+export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, children }) => {
   const bridge = window.secondbrainDesktop;
   const [inbox, setInbox] = useState<InboxStatus | null>(null);
   const [busy, setBusy] = useState(false);
@@ -132,7 +128,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
         <TerminalSection />
         <BrowserSection />
         <ComputerSection />
-        {voice && onVoiceChange && <VoiceSection voice={voice} onChange={onVoiceChange} />}
         {children}
       </div>
     </div>

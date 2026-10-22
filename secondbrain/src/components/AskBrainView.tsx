@@ -9,6 +9,7 @@ import {
   generateSimulatedResponse,
 } from '../utils/ollama.ts';
 import { renderMarkdown } from '../utils/markdown.ts';
+import { IntegrationsState, ProviderId } from '../types/desktop.ts';
 import {
   Brain,
   Send,
@@ -32,12 +33,17 @@ interface AskBrainViewProps {
   onOpenOllamaSetup: () => void;
   /** served by the notes kernel: search the whole vault, chats included */
   useVault?: boolean;
+  /** bumps when keys or models change in Integrations */
+  integrationsVersion?: number;
+  onOpenIntegrations?: () => void;
 }
 
 export const AskBrainView: React.FC<AskBrainViewProps> = ({
   notes,
   ollamaConfig,
   useVault = false,
+  integrationsVersion = 0,
+  onOpenIntegrations,
   onOpenNote,
   onCreateNoteFromSynthesis,
   onOpenOllamaSetup,
@@ -55,6 +61,22 @@ Ask any question across your notes, extract cross-project connections, or synthe
     },
   ]);
   const [activeSources, setActiveSources] = useState<Note[]>([]);
+
+  // Who answers: the local model, or Claude / ChatGPT / Gemini with a key (Integrations)
+  const integrations = typeof window !== 'undefined' ? window.secondbrainDesktop?.integrations : undefined;
+  const [cloud, setCloud] = useState<IntegrationsState['providers']>([]);
+  const [brain, setBrain] = useState<'local' | ProviderId>('local');
+  useEffect(() => {
+    integrations
+      ?.get()
+      .then((s) => {
+        const ready = s.providers.filter((p) => p.hasKey && p.model);
+        setCloud(ready);
+        setBrain((b) => (b === 'local' || ready.some((p) => p.id === b) ? b : 'local'));
+      })
+      .catch(() => {});
+  }, [integrations, integrationsVersion]);
+  const cloudBrain = cloud.find((p) => p.id === brain);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // Suggested questions, from the notes the last answer used (or, before any
@@ -127,6 +149,28 @@ Ask any question across your notes, extract cross-project connections, or synthe
 
     setMessages((prev) => [...prev, initialAssistantMsg]);
 
+    if (cloudBrain && integrations) {
+      // Claude / ChatGPT / Gemini: the same briefing, streamed back through the desktop app
+      const { prompt, system } = buildOllamaBrainPrompt('ask', contextText, promptText);
+      const reqId = `ask-${Date.now()}`;
+      let acc = '';
+      const off = integrations.onChunk((c) => {
+        if (c.id !== reqId) return;
+        acc += c.text;
+        setMessages((prev) => prev.map((msg) => (msg.id === assistantMsgId ? { ...msg, content: acc } : msg)));
+      });
+      try {
+        await integrations.chat(reqId, { provider: cloudBrain.id, system, messages: [{ role: 'user', content: prompt }], question: promptText });
+      } catch (err: unknown) {
+        const m = err instanceof Error ? err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(err);
+        setMessages((prev) => prev.map((msg) => (msg.id === assistantMsgId ? { ...msg, content: `${acc}${acc ? '\n\n---\n' : ''}*${cloudBrain.label} could not answer: ${m}*` } : msg)));
+      } finally {
+        off();
+        setIsSynthesizing(false);
+      }
+      return;
+    }
+
     try {
       if (ollamaConfig.isConnected && !ollamaConfig.isSimulatedMode) {
         const { prompt, system } = buildOllamaBrainPrompt('ask', contextText, promptText);
@@ -196,9 +240,27 @@ Ask any question across your notes, extract cross-project connections, or synthe
             <Sparkles className="w-4 h-4 text-emerald-400" />
             <h2 className="text-sm font-semibold text-white">Ask Your Second Brain</h2>
             <span className="text-xs text-neutral-400">·</span>
-            <span className="text-xs text-neutral-400 font-mono">
-              Model: {ollamaConfig.model}
-            </span>
+            {cloud.length ? (
+              <select
+                value={brain}
+                onChange={(e) => setBrain(e.target.value as 'local' | ProviderId)}
+                aria-label="Who answers"
+                title={cloudBrain ? `${cloudBrain.label} (${cloudBrain.model}) answers. The passages that answer your question are sent to it.` : 'Your local model answers; nothing leaves this PC.'}
+                className="rounded bg-neutral-900 border border-neutral-800 px-1.5 py-0.5 text-xs text-neutral-200 font-mono"
+              >
+                <option value="local">Local: {ollamaConfig.model}</option>
+                {cloud.map((p) => (
+                  <option key={p.id} value={p.id}>{p.label}: {p.model}</option>
+                ))}
+              </select>
+            ) : (
+              <span className="text-xs text-neutral-400 font-mono">
+                Model: {ollamaConfig.model}
+                {integrations && onOpenIntegrations && (
+                  <button onClick={onOpenIntegrations} className="ml-2 text-sky-400 hover:text-sky-300 font-sans">+ Claude, ChatGPT, Gemini</button>
+                )}
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-2">
@@ -297,7 +359,7 @@ Ask any question across your notes, extract cross-project connections, or synthe
               </div>
               <div className="space-y-0.5">
                 <div className="text-white font-medium">Scanning notes & generating synthesis...</div>
-                <div className="text-[11px] text-neutral-500">Local model: {ollamaConfig.model}</div>
+                <div className="text-[11px] text-neutral-500">{cloudBrain ? `${cloudBrain.label}: ${cloudBrain.model}` : `Local model: ${ollamaConfig.model}`}</div>
               </div>
             </div>
           )}

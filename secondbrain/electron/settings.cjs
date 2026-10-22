@@ -17,7 +17,9 @@ const DEFAULTS = {
   computer: { enabled: false, askEachAction: true, model: 'qwen3-vl:8b', maxSteps: 25 }, // screen, mouse and keyboard
   share: { enabled: false, writes: false, key: '' }, // the notes over MCP for Atlas/Manjuel
   atlas: { exe: '', ground: '', python: 'python', engine: true, trusted: false, all: false }, // Settings → Atlas & Manjuel, remembered
-  archive: { python: 'python', cli: '', model: '' }, // the archive digger: the notes kernel's cli.py ('' = beside the vault)
+  archive: { python: 'python', cli: '', model: '' },
+  // Claude, ChatGPT, Gemini: API keys (secrets, like the Telegram token), models, keep exchanges as notes
+  integrations: { anthropic: { key: '', model: 'claude-opus-5-5' }, openai: { key: '', model: '' }, google: { key: '', model: '' }, capture: true }, // the archive digger: the notes kernel's cli.py ('' = beside the vault)
 };
 
 function merge(base, over) {
@@ -67,6 +69,7 @@ class Settings {
     const d = JSON.parse(JSON.stringify(this.data));
     d.telegram.token = d.telegram.token ? '••••••' + d.telegram.token.slice(-4) : '';
     d.share.key = d.share.key ? '••••' + d.share.key.slice(-4) : '';
+    for (const p of ['anthropic', 'openai', 'google']) d.integrations[p].key = d.integrations[p].key ? '••••' + d.integrations[p].key.slice(-4) : '';
     return d;
   }
 }

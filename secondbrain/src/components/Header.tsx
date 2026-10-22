@@ -4,7 +4,7 @@ import { OllamaConfig } from '../types/index.ts';
 import { KernelSync } from '../hooks/useKernelSync.ts';
 import { DesktopUpdate } from '../hooks/useDesktopUpdate.ts';
 import { DesktopVault } from '../hooks/useDesktopVault.ts';
-import { Plus, Brain, MessageSquare, Network, Zap, Cpu, Menu, Link2, Download, FilePlus2, RefreshCw, Settings as SettingsIcon, Bot } from 'lucide-react';
+import { Plus, Brain, MessageSquare, Network, Zap, Cpu, Menu, Link2, Download, FilePlus2, RefreshCw, Plug, Settings as SettingsIcon, Bot } from 'lucide-react';
 
 export type ActiveTab = 'notes' | 'ask' | 'graph' | 'agent';
 
@@ -13,6 +13,8 @@ interface HeaderProps {
   onSelectTab: (tab: ActiveTab) => void;
   onOpenQuickCapture: () => void;
   onOpenOllamaModal: () => void;
+  /** Claude, ChatGPT, Gemini and voice (desktop app) */
+  onOpenIntegrations?: () => void;
   onCreateNewNote: () => void;
   ollamaConfig: OllamaConfig;
   storage?: KernelSync;
@@ -105,6 +107,7 @@ export const Header: React.FC<HeaderProps> = ({
   onSelectTab,
   onOpenQuickCapture,
   onOpenOllamaModal,
+  onOpenIntegrations,
   onCreateNewNote,
   ollamaConfig,
   storage,
@@ -224,7 +227,7 @@ export const Header: React.FC<HeaderProps> = ({
         {onOpenSettings && (
           <button
             onClick={onOpenSettings}
-            title="Settings: inbox, agent, Telegram, terminal, voice"
+            title="Settings: inbox, agent, Atlas, archive, Telegram, terminal"
             aria-label="Settings"
             className="p-1.5 rounded-lg border border-neutral-800 bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white transition-colors shrink-0"
           >
@@ -276,6 +279,17 @@ export const Header: React.FC<HeaderProps> = ({
               : 'Ollama'}
           </span>
         </button>
+
+        {onOpenIntegrations && (
+          <button
+            onClick={onOpenIntegrations}
+            title="Integrations: Claude, ChatGPT and Gemini, their apps on your notes, and voice"
+            className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg border border-neutral-800 bg-neutral-900 hover:bg-neutral-800 text-xs text-neutral-300 hover:text-white transition-colors shrink-0"
+          >
+            <Plug className="w-3.5 h-3.5 text-sky-400 shrink-0" />
+            <span className="text-[11px] font-medium hidden sm:inline">Integrations</span>
+          </button>
+        )}
 
         {/* Primary New Note CTA */}
         <button

@@ -79,6 +79,19 @@ contextBridge.exposeInMainWorld('secondbrainDesktop', {
   atlas: {
     connect: (opts) => ipcRenderer.invoke('atlas:connect', opts),
   },
+  integrations: {
+    get: () => ipcRenderer.invoke('integrations:get'),
+    set: (provider, patch) => ipcRenderer.invoke('integrations:set', provider, patch),
+    models: (provider) => ipcRenderer.invoke('integrations:models', provider),
+    chat: (id, req) => ipcRenderer.invoke('integrations:chat', id, req),
+    stop: (id) => ipcRenderer.invoke('integrations:stop', id),
+    connectApp: (app) => ipcRenderer.invoke('integrations:connect-app', app),
+    onChunk: (cb) => {
+      const fn = (_e, c) => cb(c);
+      ipcRenderer.on('integrations:chunk', fn);
+      return () => ipcRenderer.removeListener('integrations:chunk', fn);
+    },
+  },
   archive: {
     get: () => ipcRenderer.invoke('archive:get'),
     set: (patch) => ipcRenderer.invoke('archive:set', patch),

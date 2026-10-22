@@ -128,6 +128,25 @@ export interface VoiceBridge {
   where?: () => Promise<{ bin?: string; model?: string; error?: string }>;
 }
 
+export type ProviderId = 'anthropic' | 'openai' | 'google';
+
+export interface IntegrationsState {
+  providers: { id: ProviderId; label: string; hasKey: boolean; key: string; model: string }[];
+  capture: boolean;
+  kernel: { command: string; args: string[] } | null;
+  apps: { id: string; label: string; file: string; connected: boolean }[];
+  claudeCode: string | null;
+}
+
+export interface ProviderChatRequest {
+  provider: ProviderId;
+  model?: string;
+  system?: string;
+  messages: { role: 'user' | 'assistant'; content: string }[];
+  /** what to keep as the question in the capture note (default: the last user message) */
+  question?: string;
+}
+
 export interface ArchiveProgress {
   started: string | false;
   updated?: string | null;
@@ -202,6 +221,15 @@ export interface DesktopBridge {
   voice?: VoiceBridge;
   share?: { get: (reveal?: boolean) => Promise<ShareState>; set: (patch: { enabled?: boolean; writes?: boolean; rotate?: boolean }) => Promise<ShareState> };
   atlas?: { connect: (opts: AtlasOptions) => Promise<McpState> };
+  integrations?: {
+    get: () => Promise<IntegrationsState>;
+    set: (provider: ProviderId | 'capture', patch: { key?: string; model?: string } | boolean) => Promise<IntegrationsState>;
+    models: (provider: ProviderId) => Promise<string[]>;
+    chat: (id: string, req: ProviderChatRequest) => Promise<{ text: string; model: string }>;
+    stop: (id: string) => Promise<void>;
+    connectApp: (app: string) => Promise<IntegrationsState & { wrote: { file: string; backup: string | null } }>;
+    onChunk: (cb: (c: { id: string; text: string }) => void) => () => void;
+  };
   archive?: {
     get: () => Promise<ArchiveSettings>;
     set: (patch: { python?: string; cli?: string; model?: string }) => Promise<ArchiveSettings>;
