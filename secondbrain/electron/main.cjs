@@ -138,6 +138,7 @@ async function createWindow() {
     },
     autoHideMenuBar: true,
   });
+  require('./contextmenu.cjs').attach(mainWindow, require('electron')); // right-click: copy, paste, links, spelling
 
   // the microphone (voice input), for the app's own page only
   session.defaultSession.setPermissionRequestHandler((wc, permission, callback, details) => {
