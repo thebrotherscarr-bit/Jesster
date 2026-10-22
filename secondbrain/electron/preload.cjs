@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('secondbrainDesktop', {
     sync: () => ipcRenderer.invoke('inbox:sync'),
     connect: () => ipcRenderer.invoke('inbox:connect'),
     disconnect: () => ipcRenderer.invoke('inbox:disconnect'),
+    report: (note) => ipcRenderer.invoke('report:send', note || ''),
     onStatus: (cb) => {
       const fn = (_e, s) => cb(s);
       ipcRenderer.on('inbox:status', fn);

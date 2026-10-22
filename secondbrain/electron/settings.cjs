@@ -8,7 +8,7 @@ const path = require('path');
 
 const DEFAULTS = {
   vaultDir: null, // null: Documents\SecondBrain
-  inbox: { clone: null, every: 5 }, // minutes between pulls
+  inbox: { clone: null, every: 5, reportOnUpdate: false, reportedBuild: 0 }, // minutes between pulls; report back after updates
   agent: { host: 'http://localhost:11434', model: 'gpt-oss:20b', maxSteps: 12 },
   telegram: { token: '', allowedChats: [], enabled: false },
   terminal: { enabled: false, shell: null, alwaysAllow: [] },

@@ -38,6 +38,7 @@ export interface InboxBridge {
   sync: () => Promise<InboxStatus>;
   connect: () => Promise<InboxStatus>;
   disconnect: () => Promise<InboxStatus>;
+  report?: (note?: string) => Promise<{ file: string; at: string; text: string }>;
   onStatus: (cb: (s: InboxStatus) => void) => () => void;
 }
 

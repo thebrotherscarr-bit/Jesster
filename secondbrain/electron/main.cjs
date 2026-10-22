@@ -7,6 +7,7 @@ const fs = require('fs');
 const { Vault, importFile, SUPPORTED } = require('./vaultfs.cjs');
 const { Settings } = require('./settings.cjs');
 const inbox = require('./inbox.cjs');
+const report = require('./report.cjs');
 const atlas = require('./atlas.cjs');
 const { AgentService } = require('./agent/service.cjs');
 const memory = require('./agent/memory.cjs');
@@ -360,6 +361,39 @@ ipcMain.handle('inbox:connect', async (event) => {
   await syncInbox();
   return inboxStatus();
 });
+// ---- report back: a status note pushed to the bridge's outbox -------------
+async function sendReport(note) {
+  const st = getSettings().get();
+  if (!st.inbox.clone) throw new Error('connect the inbox first');
+  getAgent(); // its plugins start the MCP servers
+  if (!getMcp().status().length && Object.keys(getMcp().readConfig()).length) await connectMcp().catch(() => {});
+  let ollama = { ok: false, error: '', models: [] };
+  try {
+    const r = await fetch(`${String(st.agent.host).replace(/\/+$/, '')}/api/tags`, { signal: AbortSignal.timeout(5000) });
+    ollama = { ok: r.ok, error: r.ok ? '' : `HTTP ${r.status}`, models: r.ok ? (await r.json()).models || [] : [] };
+  } catch (e) {
+    ollama.error = e.message;
+  }
+  let notes = null;
+  try {
+    notes = getVault().load().length;
+  } catch {
+    /* counted as ? */
+  }
+  const info = updater.buildInfo();
+  const text = report.scrub(
+    report.build({ build: info, settings: st, inbox: inboxStatus(), mcp: getMcp().status(), ollama, notes, note }),
+    [st.telegram.token, st.share.key]
+  );
+  const r = await report.push(st.inbox.clone, text, { buildNo: info.build });
+  getSettings().set('inbox', { reportedBuild: info.build });
+  return { ...r, text };
+}
+ipcMain.handle('report:send', async (event, note) => {
+  guard(event);
+  return sendReport(typeof note === 'string' ? note : '');
+});
+
 ipcMain.handle('inbox:disconnect', (event) => {
   guard(event);
   getSettings().set('inbox', { clone: null });
@@ -719,6 +753,12 @@ if (!gotSingleInstanceLock) {
     createWindow();
     scheduleInbox();
     setTimeout(syncInbox, 3000);
+    // first start of a new build: report back, if the user asked for that
+    setTimeout(() => {
+      const ib = getSettings().get('inbox');
+      const b = updater.buildInfo().build;
+      if (ib.reportOnUpdate && ib.clone && b && b !== ib.reportedBuild) sendReport('(sent automatically after the update)').catch((e) => console.error('[SecondBrain] report:', e.message));
+    }, 45000);
     // automations: check every 30s; missed runs catch up shortly after start
     schedulerTimer = setInterval(schedulerTick, 30000);
     setTimeout(() => getTelegram().start(), 2000);
