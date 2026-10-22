@@ -51,6 +51,16 @@ contextBridge.exposeInMainWorld('secondbrainDesktop', {
     save: (text) => ipcRenderer.invoke('mcp:save', text),
     reconnect: () => ipcRenderer.invoke('mcp:reconnect'),
   },
+  telegram: {
+    state: () => ipcRenderer.invoke('telegram:state'),
+    pair: (chatId, allow) => ipcRenderer.invoke('telegram:pair', chatId, allow),
+    test: () => ipcRenderer.invoke('telegram:test'),
+    onState: (cb) => {
+      const fn = (_e, s) => cb(s);
+      ipcRenderer.on('telegram:state', fn);
+      return () => ipcRenderer.removeListener('telegram:state', fn);
+    },
+  },
   vault: {
     info: () => ipcRenderer.invoke('vault:info'),
     load: () => ipcRenderer.invoke('vault:load'),

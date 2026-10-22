@@ -103,6 +103,21 @@ export interface McpBridge {
   reconnect: () => Promise<McpState>;
 }
 
+export interface TelegramState {
+  running: boolean;
+  bot: string | null;
+  error: string | null;
+  pending: { id: string; name: string; at: number }[];
+  allowed: string[];
+}
+
+export interface TelegramBridge {
+  state: () => Promise<TelegramState>;
+  pair: (chatId: string, allow: boolean) => Promise<TelegramState>;
+  test: () => Promise<boolean>;
+  onState: (cb: (s: TelegramState) => void) => () => void;
+}
+
 export interface DesktopBridge {
   version: () => Promise<{ build: number; commit: string } | null>;
   checkUpdate: () => Promise<{
@@ -118,6 +133,7 @@ export interface DesktopBridge {
   agent?: AgentBridge;
   schedules?: SchedulesBridge;
   mcp?: McpBridge;
+  telegram?: TelegramBridge;
 }
 
 declare global {

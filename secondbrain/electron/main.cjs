@@ -11,6 +11,8 @@ const { AgentService } = require('./agent/service.cjs');
 const memory = require('./agent/memory.cjs');
 const sched = require('./agent/schedules.cjs');
 const { McpClient } = require('./agent/mcp.cjs');
+const { Telegram } = require('./agent/telegram.cjs');
+const subagents = require('./agent/subagents.cjs');
 
 const isDev = process.env.NODE_ENV === 'development';
 const distDir = path.join(__dirname, '..', 'dist');
@@ -368,6 +370,7 @@ const agentPlugins = [
   (a) => a.registry.add(memory.tools),
   (a) => a.registry.add(sched.tools(getSchedules)),
   () => connectMcp().catch((e) => console.error("[SecondBrain] mcp:", e)),
+  (a) => a.registry.add(subagents.tools(getAgent)),
 ];
 const agentExtras = [() => memory.extras(getVault())];
 
@@ -490,6 +493,52 @@ ipcMain.handle('mcp:reconnect', async (event) => {
   return { config: getMcp().rawConfig(), file: getMcp().file(), status: await connectMcp() };
 });
 
+// ---- Telegram ----------------------------------------------------------------
+let telegram = null;
+function getTelegram() {
+  if (!telegram) {
+    telegram = new Telegram({
+      getConfig: () => getSettings().get('telegram'),
+      agent: getAgent(),
+      onState: (st) => mainWindow && mainWindow.webContents.send('telegram:state', st),
+      // tests point this at a fake Bot API; normally Telegram's own
+      apiBase: process.env.SECONDBRAIN_TELEGRAM_API || undefined,
+      transcribe: (buf, mime) => (telegramTranscriber ? telegramTranscriber(buf, mime) : Promise.reject(new Error('voice is not set up'))),
+    });
+  }
+  return telegram;
+}
+// the voice feature provides speech-to-text for voice notes
+let telegramTranscriber = null;
+deliverers.telegram = (text) => getTelegram().broadcast(text);
+
+async function restartTelegram() {
+  getTelegram().stop();
+  return getTelegram().start();
+}
+settingsListeners.push((section) => section === 'telegram' && restartTelegram());
+
+ipcMain.handle('telegram:state', (event) => {
+  guard(event);
+  return getTelegram().state();
+});
+ipcMain.handle('telegram:pair', (event, chatId, allow) => {
+  guard(event);
+  const cfg = getSettings().get('telegram');
+  const id = String(chatId);
+  const chats = new Set((cfg.allowedChats || []).map(String));
+  if (allow) chats.add(id);
+  else chats.delete(id);
+  getSettings().set('telegram', { allowedChats: [...chats] });
+  getTelegram().approvePairing(id);
+  return getTelegram().state();
+});
+ipcMain.handle('telegram:test', async (event) => {
+  guard(event);
+  await getTelegram().broadcast('SecondBrain is connected to this chat.');
+  return true;
+});
+
 ipcMain.handle('desktop:version', (event) => (fromApp(event) ? updater.buildInfo() : null));
 ipcMain.handle('desktop:check-update', (event) => {
   if (!fromApp(event)) throw new Error('not allowed');
@@ -522,6 +571,7 @@ if (!gotSingleInstanceLock) {
     setTimeout(syncInbox, 3000);
     // automations: check every 30s; missed runs catch up shortly after start
     schedulerTimer = setInterval(schedulerTick, 30000);
+    setTimeout(() => getTelegram().start(), 2000);
     setTimeout(schedulerTick, 15000);
     // downloads from past updates (the hand-over cannot delete its own exe)
     const asar = process.noAsar;
@@ -557,5 +607,6 @@ app.on('window-all-closed', () => {
 
 app.on('before-quit', () => {
   if (mcp) mcp.stopAll();
+  if (telegram) telegram.stop();
   stopLocalServer();
 });

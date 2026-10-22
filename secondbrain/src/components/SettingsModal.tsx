@@ -3,6 +3,7 @@ import { X, Inbox, RefreshCw, FolderGit2, Unplug } from 'lucide-react';
 import { InboxStatus } from '../types/desktop.ts';
 import { AutomationsSection } from './settings/AutomationsSection.tsx';
 import { McpSection } from './settings/McpSection.tsx';
+import { TelegramSection } from './settings/TelegramSection.tsx';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -103,6 +104,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
           )}
         </section>
 
+        <TelegramSection />
         <AutomationsSection />
         <McpSection />
         {children}
