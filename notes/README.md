@@ -39,7 +39,7 @@ Standard library only. Python 3.9 or newer.
 python notes/cli.py init --actor "<your name>"     # vault at ~/JessterNotes
 python notes/cli.py new "First note" -t idea --body "links to [[Second]]"
 python notes/cli.py find idea
-python notes/cli.py serve                          # open http://localhost:8765
+python notes/cli.py serve                          # open http://localhost:43111
 ```
 
 `--vault <dir>` or `JESSTER_VAULT` chooses the vault. For the model, run
@@ -172,9 +172,9 @@ model:
 
 | tool speaks | set its endpoint to |
 |---|---|
-| Ollama (Open WebUI, Continue, Msty, …) | `http://localhost:8765` |
-| OpenAI API, model on local Ollama | base URL `http://localhost:8765/v1`, any API key |
-| OpenAI API, a cloud service | base URL `http://localhost:8765/u/openai/v1`, your real key |
+| Ollama (Open WebUI, Continue, Msty, …) | `http://localhost:43111` |
+| OpenAI API, model on local Ollama | base URL `http://localhost:43111/v1`, any API key |
+| OpenAI API, a cloud service | base URL `http://localhost:43111/u/openai/v1`, your real key |
 
 For cloud services, name them in the vault config:
 `"gateway_upstreams": {"openai": "https://api.openai.com", "openrouter": "https://openrouter.ai/api"}`.
@@ -198,7 +198,7 @@ sessions come in through `watch`.
 
 Double-click `start-secondbrain.cmd` in the repo root. The first run builds
 the UI (`secondbrain/`) and makes a vault at `%USERPROFILE%\JessterNotes`.
-Then it serves the app at http://localhost:8765 and opens it. You need git,
+Then it serves the app at http://localhost:43111 and opens it. You need git,
 Node.js 22 and Python 3.12 on PATH.
 
 ## Updating

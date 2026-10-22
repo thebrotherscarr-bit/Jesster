@@ -4,7 +4,7 @@
 # button in the app header (or `python notes\cli.py update`).
 param(
   [string]$Vault = "$HOME\JessterNotes",
-  [int]$Port = 8765,
+  [int]$Port = 43111,
   [string]$Actor = $env:USERNAME
 )
 $ErrorActionPreference = "Stop"

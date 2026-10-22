@@ -1,0 +1,1227 @@
+[
+ {
+  "name": "get_in_line",
+  "description": "standing law + line + road + log-tail for a carried project",
+  "args": [
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "verify_chain",
+  "description": "chain verdict via tools/chain_verify.py, the Python spine: EMPTY|INTACT|FLIP|TAMPER (SKIPPED where rows carry no hash)",
+  "args": [
+   "path",
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "muster",
+  "description": "declared projects roll call",
+  "args": [],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "read_handoffs",
+  "description": "SEAT_LOG (or the manifest 'log' path) whole, with sha256 receipt(s)",
+  "args": [
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "list_doctrine",
+  "description": "carried doctrine by name, read-only; absent name denied honestly",
+  "args": [
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "read_doctrine",
+  "description": "one document whole with sha256 receipt; absent name denied honestly",
+  "args": [
+   "name",
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "check_the_wall",
+  "description": "judge a path before acting; quote the law on refusal",
+  "args": [
+   "path",
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "git",
+  "description": "the world's repository as it stands now: branch, head, dirty counts, upstream, and whether remote operations are walled",
+  "args": [
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "git_diff",
+  "description": "what actually changed: one file's change served whole, or the whole tree's; a file git has never seen comes back as its contents, said plainly",
+  "args": [
+   "file?",
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "git_commit",
+  "description": "save this world's work: stages everything (or only the files named, one per line) and records it under a message you write",
+  "args": [
+   "message",
+   "files?",
+   "project?"
+  ],
+  "writes": true,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "git_push",
+  "description": "send saved work to the remote; refuses by name while the estate's wall is shut, and says so when it binds a branch to origin for the first time",
+  "args": [
+   "project?"
+  ],
+  "writes": true,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "git_pull",
+  "description": "fetch and catch up, fast-forward only; refuses over unsaved work, and refuses to join two histories that both moved",
+  "args": [
+   "project?"
+  ],
+  "writes": true,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "git_branch",
+  "description": "the lines of work: list them (which one you are on, which is the main line, which have been sent), or open, switch to, land (onto the main line, fast-forward only, from the main line, over saved work), or close one",
+  "args": [
+   "action?",
+   "name?",
+   "project?"
+  ],
+  "writes": true,
+  "reads": [
+   "list"
+  ],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "git_pr",
+  "description": "pull requests, the one GitHub-side object his ruling of 2026-10-07 let into the door: list a world's open pull requests with their checks as one word (none, pending, passed, failed); open one from the line of work he stands on into the main line, refused on the main line, over unsaved work, and for a line GitHub does not have exactly as it stands; or merge one on GitHub by its number, or by its line as the release flow names it, as a merge commit, refused unless it is open, goes into the main line, merges cleanly and every check on it has passed, and then bring the new main line down to this machine (since 2026-10-09; a line whose pull request is merged already is said so, and main still comes down; given minutes to wait, up to 30, it waits that long for the checks to answer). Behind the same wall as every send (GIT_REMOTE). His glass alone may call it",
+  "args": [
+   "action?",
+   "project?",
+   "number?",
+   "line?",
+   "wait?"
+  ],
+  "writes": false,
+  "reads": [
+   "list"
+  ],
+  "serviceOnly": true,
+  "secrets": []
+ },
+ {
+  "name": "hold_list",
+  "description": "the writing calls parked waiting for the operator's hand, and whether holding is armed at all",
+  "args": [
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "hold_answer",
+  "description": "approve or deny one parked call by id; the operator's act alone, and it runs exactly the call that was parked",
+  "args": [
+   "id",
+   "decision",
+   "project?"
+  ],
+  "writes": true,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "shell_run",
+  "description": "the operator's own typed shell, run in this world: a Git Bash command or a Python entry (Python keeps its names between entries). A plain look runs at once; anything that writes, deletes, installs, reaches the network, or saves or sends work waits for his approval; a secret, client material or a path outside the ground is refused by name. His glass alone may call it",
+  "args": [
+   "shell",
+   "command",
+   "timeout?",
+   "reset?",
+   "project?"
+  ],
+  "writes": true,
+  "reads": [],
+  "serviceOnly": true,
+  "secrets": []
+ },
+ {
+  "name": "aider_run",
+  "description": "the operator's own Aider, run on the files he names: it copies them into a scratch folder, runs Aider headless on the copies behind a wall (no network but loopback, writes only to the scratch, no other process) against the coding seat's model, and writes the changed files back only while the world stands on a line of work, only if every Python file still parses; the answer carries the diff, what Aider said and a run id to take it back with. His glass alone may call it",
+  "args": [
+   "message",
+   "files",
+   "context?",
+   "timeout?",
+   "project?"
+  ],
+  "writes": true,
+  "reads": [],
+  "serviceOnly": true,
+  "secrets": []
+ },
+ {
+  "name": "aider_undo",
+  "description": "take one Aider run back: the files it changed are put back as they were, if nothing has changed them since; his glass alone may call it",
+  "args": [
+   "run",
+   "project?"
+  ],
+  "writes": true,
+  "reads": [],
+  "serviceOnly": true,
+  "secrets": []
+ },
+ {
+  "name": "aider_status",
+  "description": "whether Aider can run in this world now and with what: installed, its version, the coding seat's model and window, whether the rack has the model, whether the world stands on a line of work, and the last runs",
+  "args": [
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "file_edit",
+  "description": "the operator's own exact edit of one text file in this world: the path, the exact old text and the new text are plain fields; the old text must appear exactly once; the file keeps its own line endings; the first call writes nothing and parks itself with the change line by line, and it writes only when he approves that card and the file still gives exactly that change. Refused for a path outside the world, a secret, client material, what a model never writes (save the seats' declarations and the skills, which are his to set), and while a sitting is open. His glass alone may call it",
+  "args": [
+   "filepath",
+   "old",
+   "new",
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": true,
+  "secrets": []
+ },
+ {
+  "name": "secret_set",
+  "description": "the operator's own hand: write one key into this world's .env as NAME=value, from the masked field on the card a needs_answer naming `secret` paints; an existing NAME= line is replaced in place, else one is appended, and the file keeps its own line endings. The name is an upper-case variable (^[A-Z][A-Z0-9_]{1,63}$), the value one line of at most 4096 characters. The value is never answered, recorded or logged: the answer says only the name and its length. His glass alone may call it",
+  "args": [
+   "name",
+   "value",
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": true,
+  "secrets": [
+   "value"
+  ]
+ },
+ {
+  "name": "law_status",
+  "description": "the laws as the chain holds them: every law file, how far it is sealed, what is draft below the ledger's seal, and the chain's own verdict (law.py verify); and why the two writing tools would refuse right now, if they would",
+  "args": [
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "law_add",
+  "description": "the operator's own hand: set a law -- one numbered entry appended to law/LAW_LEDGER.md, BELOW its seal, as a draft until he seals it. Refused while a sitting is open and over a chain that does not prove whole; the chain is walked again after the append and the entry is taken back if it refused. His glass alone may call it",
+  "args": [
+   "title",
+   "text",
+   "from?",
+   "project?"
+  ],
+  "writes": true,
+  "reads": [],
+  "serviceOnly": true,
+  "secrets": []
+ },
+ {
+  "name": "law_seal",
+  "description": "the operator's own hand: seal the ledger as far as it is written (law.py seal on law/LAW_LEDGER.md) -- what is below the seal becomes law and is frozen; an entry sealed is changed only by a new entry that amends it. Refused while a sitting is open and when nothing is below the seal. His glass alone may call it",
+  "args": [
+   "note?",
+   "project?"
+  ],
+  "writes": true,
+  "reads": [],
+  "serviceOnly": true,
+  "secrets": []
+ },
+ {
+  "name": "git_tag",
+  "description": "the marks a version is cut at: list them with what GitHub has, cut one at a commit whose declared version it must equal, send one to GitHub by name, or remove one that never left this machine",
+  "args": [
+   "action?",
+   "name?",
+   "message?",
+   "at?",
+   "project?"
+  ],
+  "writes": true,
+  "reads": [
+   "list"
+  ],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "git_remote",
+  "description": "where this world sends: each remote by name, its host, and whether the estate's wall is open",
+  "args": [
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "records",
+  "description": "the estate's own documents sorted by what they are (doctrine, record, spec, agents, commands, skills, logs); a kind listed, or one document served whole with a sha256 receipt",
+  "args": [
+   "kind?",
+   "name?",
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "seats",
+  "description": "the world's own seat declarations and the pipelines they stand in, from agents/ and pipelines.md",
+  "args": [
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "proofs",
+  "description": "what this world has PROVED, from its own record: the suites' stamp, every live standup, the parity history",
+  "args": [
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "projects",
+  "description": "what the maker made: every project under projects/ with its versions read from its own history, or one project's page as it stands (or as a version was)",
+  "args": [
+   "action?",
+   "name?",
+   "version?",
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "state_matrix",
+  "description": "state = fold(record) index of the named project",
+  "args": [
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "read_plan",
+  "description": "HLD/LLD/road documents by name; absent name denied honestly",
+  "args": [
+   "which",
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "ask_steward",
+  "description": "the weighed ruling with receipts, never raw model output; one-shot under the ask lock",
+  "args": [
+   "question",
+   "project?"
+  ],
+  "writes": true,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "remember",
+  "description": "sole write tool; testimony stamped generated; staged for operator ascend",
+  "args": [
+   "text",
+   "project?"
+  ],
+  "writes": true,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "mesh_enroll",
+  "description": "bind a mesh voice: actor -> verifying key (B2)",
+  "args": [
+   "member",
+   "pub",
+   "project?"
+  ],
+  "writes": true,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "mesh_post",
+  "description": "post one signed message on the channel chain (B2)",
+  "args": [
+   "actor",
+   "text",
+   "to",
+   "project?",
+   "chan?",
+   "mode?",
+   "kind?",
+   "cites?"
+  ],
+  "writes": true,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "mesh_read",
+  "description": "read the channel-head index or one actor's chain (B2)",
+  "args": [
+   "project?",
+   "actor?",
+   "last?",
+   "reveal?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "mesh_chain",
+  "description": "rewalk every pen plus the head: EMPTY|INTACT|FLIP|TAMPER|FORGERY (B2)",
+  "args": [
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "mesh_cite",
+  "description": "cite chain hashes by a signed cite entry (B2)",
+  "args": [
+   "actor",
+   "targets",
+   "text",
+   "project?",
+   "to?"
+  ],
+  "writes": true,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "rack_list",
+  "description": "live tier ladder of lawful local voices (F1)",
+  "args": [
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "rack_ask",
+  "description": "routed ask, witnessed to the ledger (F1)",
+  "args": [
+   "question",
+   "voice?",
+   "project?"
+  ],
+  "writes": true,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "rack_open",
+  "description": "expanded context bundle at a depth (F1)",
+  "args": [
+   "project?",
+   "voice?",
+   "depth?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "memory",
+  "description": "cited answers from local memory, or refusal (F1-01)",
+  "args": [
+   "project?",
+   "voice?",
+   "question?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "rack_plan",
+  "description": "VRAM fit check for a model set before it runs (N3)",
+  "args": [
+   "models?",
+   "voices?",
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "rack_pull",
+  "description": "pull a model into the loopback rack behind confirm (N3)",
+  "args": [
+   "model",
+   "confirm?",
+   "project?"
+  ],
+  "writes": true,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "rack_warm",
+  "description": "verify a voice is present and report its footprint (N3)",
+  "args": [
+   "voice",
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "rack_sync",
+  "description": "re-list the loopback rack with a sync receipt (N3)",
+  "args": [
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "chat_start",
+  "description": "open a chat session with a receipted id (N1)",
+  "args": [
+   "actor?",
+   "voice?",
+   "project?"
+  ],
+  "writes": true,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "chat_send",
+  "description": "ask in a session; whole witnessed answer or refusal (N1)",
+  "args": [
+   "session",
+   "question",
+   "actor?",
+   "voice?",
+   "project?"
+  ],
+  "writes": true,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "chat_list",
+  "description": "read one session's turns, isolated by session (N1)",
+  "args": [
+   "session?",
+   "last?",
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "chat_cancel",
+  "description": "end an in-flight send; no partial answer is kept (N1)",
+  "args": [
+   "session",
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "chat_sessions",
+  "description": "list opened chat sessions in first-seen order (N1)",
+  "args": [
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "prompt_save",
+  "description": "fold a new prompt version; history kept whole (N4)",
+  "args": [
+   "name",
+   "body",
+   "description?",
+   "project?"
+  ],
+  "writes": true,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "prompt_get",
+  "description": "read one prompt version with receipt (N4)",
+  "args": [
+   "name",
+   "version?",
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "prompt_list",
+  "description": "list prompts with latest versions (N4)",
+  "args": [
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "prompt_run",
+  "description": "render a prompt and measure one answer (N4)",
+  "args": [
+   "name",
+   "vars?",
+   "version?",
+   "voice?",
+   "project?"
+  ],
+  "writes": true,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "prompt_compare",
+  "description": "run two versions over the same input, diff honestly (N4)",
+  "args": [
+   "name",
+   "vera",
+   "verb",
+   "vars?",
+   "voice?",
+   "project?"
+  ],
+  "writes": true,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "prompt_eval",
+  "description": "score a prompt over a dataset, exact-match (N4)",
+  "args": [
+   "name",
+   "dataset",
+   "version?",
+   "voice?",
+   "project?"
+  ],
+  "writes": true,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "seat_ask",
+  "description": "@seat single-seat ask; model is a measurement (N4)",
+  "args": [
+   "question",
+   "seat?",
+   "voice?",
+   "method?",
+   "project?"
+  ],
+  "writes": true,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "town_beat",
+  "description": "run one town scheduling cycle on this ground (N2)",
+  "args": [
+   "project?"
+  ],
+  "writes": true,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "town_status",
+  "description": "read the board: tasks, worked set, open orders (N2)",
+  "args": [
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "flow_save",
+  "description": "fold a new flow spec version; history kept whole (N2). A gate's `grants` must name writing tools this door carries; a spec carrying `retired` (why, in words) is a flow the door fires no more, every version of it kept",
+  "args": [
+   "name",
+   "spec",
+   "project?"
+  ],
+  "writes": true,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "flow_get",
+  "description": "read one flow spec version (N2)",
+  "args": [
+   "name",
+   "version?",
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "flow_list",
+  "description": "list flows with latest versions, and name any .json under flows/ that cannot be read as one (N2)",
+  "args": [
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "flow_run",
+  "description": "fire a flow; gates pause, evals steer, budget binds (N2)",
+  "args": [
+   "name",
+   "inputs?",
+   "version?",
+   "voice?",
+   "voices?",
+   "project?"
+  ],
+  "writes": true,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "flow_resume",
+  "description": "carry a paused run on with continue|stop (N2)",
+  "args": [
+   "run",
+   "decision",
+   "project?"
+  ],
+  "writes": true,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "flow_cancel",
+  "description": "end a live run; reached nodes stand (N2)",
+  "args": [
+   "run",
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "flow_status",
+  "description": "waterfall: nodes, elapsed, budget bar, verdict (N2)",
+  "args": [
+   "run",
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "flow_compare",
+  "description": "two runs side by side, node by node (N2)",
+  "args": [
+   "runa",
+   "runb",
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "flow_replay",
+  "description": "re-fire a run's spec and inputs under a fresh id (N2)",
+  "args": [
+   "run",
+   "project?"
+  ],
+  "writes": true,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "flow_runs",
+  "description": "list runs for a flow, newest last (N2)",
+  "args": [
+   "flow?",
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "team_send",
+  "description": "send one guarded message to discord|slack|whatsapp (N5)",
+  "args": [
+   "platform",
+   "channel",
+   "content",
+   "actor?",
+   "project?"
+  ],
+  "writes": true,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "team_status",
+  "description": "platform presence + last sends, never secrets (N5)",
+  "args": [
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "team_history",
+  "description": "read the bridge record, filtered, newest last (N5)",
+  "args": [
+   "channel?",
+   "platform?",
+   "last?",
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "team_ingest",
+  "description": "verify + store one inbound platform envelope (N5)",
+  "args": [
+   "platform",
+   "body",
+   "signature",
+   "project?"
+  ],
+  "writes": true,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "auth_key_create",
+  "description": "mint a scoped API key; plaintext returns once (N6)",
+  "args": [
+   "name",
+   "tenants?",
+   "key?",
+   "project?"
+  ],
+  "writes": true,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": [
+   "key"
+  ]
+ },
+ {
+  "name": "auth_key_list",
+  "description": "list live keys with hashes withheld (N6)",
+  "args": [
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "auth_key_revoke",
+  "description": "fold a key: flagged, kept for audit (N6)",
+  "args": [
+   "id",
+   "key?",
+   "project?"
+  ],
+  "writes": true,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": [
+   "key"
+  ]
+ },
+ {
+  "name": "auth_key_scope",
+  "description": "set which carried tenants a live key carries, the list replaced whole; possession re-proved like create and revoke, and the move audited (N6)",
+  "args": [
+   "id",
+   "tenants",
+   "key?",
+   "project?"
+  ],
+  "writes": true,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": [
+   "key"
+  ]
+ },
+ {
+  "name": "auth_verify",
+  "description": "check a key against a tenant store; the login door (N6)",
+  "args": [
+   "key",
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": [
+   "key"
+  ]
+ },
+ {
+  "name": "tenant_trust_list",
+  "description": "read recorded cross-tenant delegations (N6)",
+  "args": [
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "us_to_vc",
+  "description": "convert a .us declaration to a W3C Verifiable Credential",
+  "args": [
+   "path",
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "tenant_list",
+  "description": "list all registered tenants and their roles",
+  "args": [
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "tenant_rbac_assign",
+  "description": "assign a role to an agent in a tenant's RBAC policy",
+  "args": [
+   "actor",
+   "role",
+   "project?"
+  ],
+  "writes": true,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "tenant_rbac_check",
+  "description": "check if an agent has permission for a tool under a tenant's RBAC policy",
+  "args": [
+   "actor",
+   "tool",
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "tenant_trust",
+  "description": "grant or revoke cross-tenant trust (delegation of specific tools)",
+  "args": [
+   "from_project",
+   "to_project",
+   "tool",
+   "action",
+   "project?"
+  ],
+  "writes": true,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "env_open",
+  "description": "open the Manjuel engine inside a world; refuses a world already being sat in",
+  "args": [
+   "project?"
+  ],
+  "writes": true,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "env_close",
+  "description": "close the world's sitting properly and reap its engine",
+  "args": [
+   "project?"
+  ],
+  "writes": true,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "env_list",
+  "description": "which worlds have an engine open, and which are being sat in elsewhere",
+  "args": [],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "run_start",
+  "description": "run one objective through the council; the delivery with what actually ran. `voice` runs every seat on one model for this turn and `voices` names a model per seat over it (flow_run's two words); the declared targets are put back when the turn ends",
+  "args": [
+   "objective",
+   "project?",
+   "feed?",
+   "method?",
+   "voice?",
+   "voices?"
+  ],
+  "writes": true,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "run_answer",
+  "description": "answer what the run asked; the gate crossing the wire, never a default",
+  "args": [
+   "text",
+   "project?"
+  ],
+  "writes": true,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "standup_run",
+  "description": "run the estate's live standup in this world -- the morning set (default), the court, or all -- and hand back its tally and report; it opens and tolls a sitting of its own, so it refuses while one is open here",
+  "args": [
+   "set?",
+   "project?"
+  ],
+  "writes": true,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "suite_run",
+  "description": "run the estate's own suites in this world -- the strokes, the smoke, or both (default) -- one after the other with the python the door runs the engine with; the suites stamp their own proof (tests/last_run.json, run_history) and the head reads that stamp back, failures first",
+  "args": [
+   "set?",
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "release_step",
+  "description": "one of the release's own steps, run by the core's tests/cut.py in this world: bump the pins, atlas's version files and both changelogs to a mark; rebuild the toll index; check the release gate; wait for GitHub's runs and check again; or record where a cut's marks sit",
+  "args": [
+   "step",
+   "mark?",
+   "project?"
+  ],
+  "writes": true,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
+  "name": "run_cancel",
+  "description": "interrupt the turn in flight; the sitting stays open",
+  "args": [
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ }
+]

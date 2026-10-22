@@ -52,11 +52,21 @@ const READ_TOOLS = ['search_notes', 'read_note', 'list_notes', 'search_sessions'
 const WRITE_TOOLS = ['write_note', 'append_to_note', 'todo'];
 const PROTOCOL = '2025-06-18';
 
+// SecondBrain IS the door (door/index.cjs): the Atlas door's ported tools are
+// served here after the notes', with every writing call held for the operator.
+let installedDoor = null;
+
+/** door/index.cjs register() installs the door; null takes it out. */
+function useDoor(door) {
+  installedDoor = door || null;
+}
+
 /**
  * One JSON-RPC request → its response (or null for a notification). `registry`
- * holds the agent's tools; only the shared ones are served.
+ * holds the agent's tools; only the shared ones are served. `door` (the
+ * installed one unless given) serves the Atlas door's tools beside them.
  */
-async function handleMcp(msg, { registry, ctx, writes = false }) {
+async function handleMcp(msg, { registry, ctx, writes = false, door = installedDoor }) {
   const allowed = new Set([...READ_TOOLS, ...(writes ? WRITE_TOOLS : [])]);
   if (!msg || msg.jsonrpc !== '2.0' || typeof msg.method !== 'string') {
     return { jsonrpc: '2.0', id: msg?.id ?? null, error: { code: -32600, message: 'invalid request' } };
@@ -69,20 +79,26 @@ async function handleMcp(msg, { registry, ctx, writes = false }) {
       protocolVersion: params.protocolVersion || PROTOCOL,
       capabilities: { tools: {} },
       serverInfo: { name: 'secondbrain', version: '1' },
-      instructions: `The user's SecondBrain notes vault. ${writes ? 'Reading and writing are allowed.' : 'Read-only: the user has not allowed writes.'}`,
+      instructions:
+        `The user's SecondBrain notes vault. ${writes ? 'Reading and writing are allowed.' : 'Read-only: the user has not allowed writes.'}` +
+        (door && door.list().length ? `\n\nThe Atlas door is served here too.\n${door.instructions}` : ''),
     });
   }
   if (method === 'ping') return ok({});
   if (method === 'tools/list') {
-    return ok({
-      tools: registry
-        .schemas()
-        .filter((t) => allowed.has(t.function.name))
-        .map((t) => ({ name: t.function.name, description: t.function.description, inputSchema: t.function.parameters })),
-    });
+    const notes = registry
+      .schemas()
+      .filter((t) => allowed.has(t.function.name))
+      .map((t) => ({ name: t.function.name, description: t.function.description, inputSchema: t.function.parameters }));
+    const taken = new Set(notes.map((t) => t.name));
+    return ok({ tools: [...notes, ...(door ? door.list().filter((t) => !taken.has(t.name)) : [])] });
   }
   if (method === 'tools/call') {
     const name = params.name;
+    if (!allowed.has(name) && !WRITE_TOOLS.includes(name) && door && door.has(name)) {
+      const out = await door.call(name, params.arguments || {}, ctx && ctx.caller);
+      return ok({ content: [{ type: 'text', text: out.text }], isError: out.isError });
+    }
     if (!allowed.has(name)) {
       const why = WRITE_TOOLS.includes(name) ? `${name} is a write; the user allows reads only (SecondBrain → Settings → Share)` : `no tool ${name}`;
       return ok({ content: [{ type: 'text', text: why }], isError: true });
@@ -104,4 +120,4 @@ function keyOk(header, key) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-module.exports = { atlasServer, withAtlas, handleMcp, keyOk, DEFAULT_TOOLS, READ_TOOLS, WRITE_TOOLS };
+module.exports = { atlasServer, withAtlas, handleMcp, useDoor, keyOk, DEFAULT_TOOLS, READ_TOOLS, WRITE_TOOLS };

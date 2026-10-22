@@ -243,7 +243,7 @@ def main(argv):
             bridge.start_thread(k, os.path.abspath(clone))
         start_watch(k)
         serve(k, _opt(rest, "--host") or "127.0.0.1",
-              int(_opt(rest, "--port") or 8765),
+              int(_opt(rest, "--port") or 43111),
               _opt(rest, "--token") or os.environ.get("JESSTER_NOTES_TOKEN"),
               _opt(rest, "--ui"))
         return 0

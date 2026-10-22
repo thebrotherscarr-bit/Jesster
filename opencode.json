@@ -12,7 +12,7 @@
       "npm": "@ai-sdk/openai-compatible",
       "name": "SecondBrain (local, briefed from your vault)",
       "options": {
-        "baseURL": "http://localhost:8765/v1",
+        "baseURL": "http://localhost:43111/v1",
         "headers": {
           "X-SecondBrain-Source": "opencode"
         }

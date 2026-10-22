@@ -157,7 +157,7 @@ def make_handler(kernel, token, hosts, ui_dir=None):
     return Handler
 
 
-def serve(kernel, host="127.0.0.1", port=8765, token=None, ui_dir=None):
+def serve(kernel, host="127.0.0.1", port=43111, token=None, ui_dir=None):
     if host not in LOOPBACK and not token:
         raise SystemExit("refusing to serve %s beyond loopback without a token "
                          "(--token or JESSTER_NOTES_TOKEN)." % host)

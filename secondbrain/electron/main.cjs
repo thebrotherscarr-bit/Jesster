@@ -10,6 +10,7 @@ const inbox = require('./inbox.cjs');
 const report = require('./report.cjs');
 const atlas = require('./atlas.cjs');
 const atlasGlass = require('./atlasglass.cjs');
+const door = require('./door/index.cjs');
 const archive = require('./archive.cjs');
 const integrations = require('./integrations.cjs');
 const whisper = require('./whisper.cjs');
@@ -744,6 +745,7 @@ ipcMain.handle('atlas:connect', async (event, opts) => {
 
 // ---- the Atlas button: Atlas's door and web app, started when it is clicked ----------
 atlasGlass.register({ app, ipcMain, guard, getSettings, vaultDir, shell });
+door.register({ atlas, ipcMain, guard, getSettings, vaultDir }); // SecondBrain is the door: Atlas's tools at /mcp, writes held
 
 // ---- the archive digger (Settings → Archive), run by the notes kernel ----------
 archive.register({ ipcMain, guard, getSettings, vaultDir, send: (ch, data) => mainWindow && mainWindow.webContents.send(ch, data) });

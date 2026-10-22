@@ -4,8 +4,8 @@ GATEWAY — every model you talk to, briefed by your notes and remembered.
 
 Point a tool's model endpoint at the kernel instead of the model:
 
-    OpenAI-style clients   base URL  http://localhost:8765/v1
-    Ollama-style clients   host      http://localhost:8765
+    OpenAI-style clients   base URL  http://localhost:43111/v1
+    Ollama-style clients   host      http://localhost:43111
 
 The gateway forwards each request to the real model (your local Ollama by
 default; any OpenAI-compatible service by name) and, on the way:
@@ -20,7 +20,7 @@ Streaming is passed through as it arrives. Per request, the header
 `X-SecondBrain: off` turns both off, `X-SecondBrain-Capture: off` only the
 capture, and `X-SecondBrain-Source: <name>` names the tool in the notes.
 `X-SecondBrain-Upstream: <name>`, or a base URL of
-http://localhost:8765/u/<name>/v1 for tools that cannot set headers, picks a
+http://localhost:43111/u/<name>/v1 for tools that cannot set headers, picks a
 service from the vault config's `gateway_upstreams`
 ({"openai": "https://api.openai.com", "openrouter": "https://openrouter.ai/api"});
 the client's own Authorization header is passed through to it and never stored.
