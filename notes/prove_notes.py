@@ -668,6 +668,10 @@ def prove_shelves(root):
     ck("a file on an old shelf is read on its new one", k.note("legacy")["category"] == "archives")
     k.call("notes.update", {"id": "world", "tags": ["ruling"]})
     ck("tagging a note ruling moves it to laws", k.note("world")["category"] == "laws")
+    whole = k.call("notes.list", {"tag": "ruling", "full": True})
+    ck("notes.list full gives whole notes", {n["id"]: n["body"] for n in whole} == {"law-1": "z", "world": "w"}
+       and not any("excerpt" in n for n in whole), whole)
+    ck("notes.list alone still gives excerpts", "body" not in k.call("notes.list", {"tag": "ruling"})[0])
     ck("stats count the new shelves", set(k.call("notes.stats")["shelves"]) >=
        {"inbox", "projects", "tasks", "worlds", "archives", "laws", "scratchpads"})
 

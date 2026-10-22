@@ -12,7 +12,7 @@
     "package:win": "vite build && electron-packager . SecondBrain --platform=win32 --arch=x64 --out=dist-desktop --overwrite --asar --ignore=\"^/dist-desktop$\" --ignore=\"^/dev-dist$\"",
     "clean": "node -e \"const fs=require('fs'); for (const p of ['dist','dev-dist','dist-desktop']) fs.rmSync(p,{recursive:true,force:true})\"",
     "lint": "tsc --noEmit",
-    "test": "tsx --test src/utils/notes.test.ts src/utils/suggest.test.ts src/utils/ollama.test.ts src/utils/kernel.test.ts electron/vaultfs.test.cjs electron/inbox.test.cjs electron/agent/agent.test.cjs electron/agent/memory.test.cjs electron/agent/schedules.test.cjs electron/agent/mcp.test.cjs electron/agent/telegram.test.cjs electron/agent/terminal.test.cjs electron/atlas.test.cjs electron/agent/browser.test.cjs electron/agent/computer.test.cjs electron/report.test.cjs electron/archive.test.cjs electron/whisper.test.cjs electron/contextmenu.test.cjs electron/integrations.test.cjs electron/atlasglass.test.cjs electron/door/tenant.test.cjs electron/door/registry.test.cjs electron/door/records.test.cjs electron/door/git.test.cjs electron/door/auth.test.cjs electron/door/index.test.cjs electron/door/engine.test.cjs electron/door/forward.test.cjs",
+    "test": "tsx --test src/utils/notes.test.ts src/utils/suggest.test.ts src/utils/ollama.test.ts src/utils/kernel.test.ts electron/vaultfs.test.cjs electron/inbox.test.cjs electron/agent/agent.test.cjs electron/agent/memory.test.cjs electron/agent/schedules.test.cjs electron/agent/mcp.test.cjs electron/agent/telegram.test.cjs electron/agent/terminal.test.cjs electron/atlas.test.cjs electron/agent/browser.test.cjs electron/agent/computer.test.cjs electron/report.test.cjs electron/archive.test.cjs electron/whisper.test.cjs electron/contextmenu.test.cjs electron/integrations.test.cjs electron/atlasglass.test.cjs electron/door/tenant.test.cjs electron/door/registry.test.cjs electron/door/records.test.cjs electron/door/git.test.cjs electron/door/auth.test.cjs electron/door/index.test.cjs electron/door/engine.test.cjs electron/door/forward.test.cjs src/flows/flows.test.ts",
     "verify": "npm run lint && npm test && npm run build"
   },
   "dependencies": {
@@ -21,6 +21,7 @@
     "@fontsource/jetbrains-mono": "^5.3.0",
     "@tailwindcss/vite": "^4.3.3",
     "@vitejs/plugin-react": "^6.1.1",
+    "@xyflow/react": "^12.12.0",
     "dompurify": "^3.4.17",
     "express": "^4.21.2",
     "lucide-react": "^0.546.0",

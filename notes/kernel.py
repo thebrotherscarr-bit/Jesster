@@ -444,10 +444,16 @@ def _core(k):
     def methods():
         return k.catalog()
 
-    @k.method("notes.list", "List notes, newest first, by tag, shelf or pin.",
-              {"tag": S, "category": CAT, "pinned": B, "limit": {"type": "integer"}})
-    def list_(tag=None, category=None, pinned=None, limit=200):
-        return k.search("", limit=limit, tag=tag, category=category, pinned=pinned)
+    @k.method("notes.list", "List notes, newest first, by tag, shelf or pin; "
+              "full gives each note whole instead of an excerpt.",
+              {"tag": S, "category": CAT, "pinned": B, "limit": {"type": "integer"},
+               "full": dict(B, description="each note in full (body included), "
+                            "for a reader that wants a whole tag at once")})
+    def list_(tag=None, category=None, pinned=None, limit=200, full=False):
+        found = k.search("", limit=limit, tag=tag, category=category, pinned=pinned)
+        if not full:
+            return found
+        return [dict(k.note(f["id"])) for f in found]
 
     @k.method("notes.dump", "Every note in full — what a UI loads at start.",
               {"exclude_tags": dict(TAGS, description="leave out notes with any of "
