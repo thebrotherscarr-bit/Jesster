@@ -4,6 +4,7 @@ import { OllamaConfig } from '../types/index.ts';
 import { KernelSync } from '../hooks/useKernelSync.ts';
 import { DesktopUpdate } from '../hooks/useDesktopUpdate.ts';
 import { DesktopVault } from '../hooks/useDesktopVault.ts';
+import { AtlasButton } from './AtlasButton.tsx';
 import { Plus, Brain, MessageSquare, Network, Zap, Cpu, Menu, Link2, Download, FilePlus2, RefreshCw, Plug, Settings as SettingsIcon, Bot } from 'lucide-react';
 
 export type ActiveTab = 'notes' | 'ask' | 'graph' | 'agent';
@@ -195,6 +196,8 @@ export const Header: React.FC<HeaderProps> = ({
           <Network className="w-3.5 h-3.5" />
           <span className="hidden md:inline">Graph</span>
         </button>
+
+        <AtlasButton />
 
         <button
           onClick={onOpenQuickCapture}

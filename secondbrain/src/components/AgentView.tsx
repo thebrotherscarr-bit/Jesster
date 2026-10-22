@@ -4,7 +4,6 @@ import { VoiceSettings, useRecorder, speak } from '../voice/useVoice.ts';
 import { AgentEvent, ApprovalRequest } from '../types/desktop.ts';
 import { OllamaConfig } from '../types/index.ts';
 import { renderMarkdown } from '../utils/markdown.ts';
-import { AtlasButton } from './AtlasButton.tsx';
 
 interface Turn {
   role: 'user' | 'assistant' | 'tool' | 'error';
@@ -131,7 +130,6 @@ export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice }) => 
         >
           <Plus className="w-3.5 h-3.5" /> New conversation
         </button>
-        <AtlasButton className="mx-3 mb-3" />
         <div className="px-3 pb-2 text-[10px] uppercase tracking-wider text-neutral-500">Sessions</div>
         <ul className="flex-1 overflow-y-auto px-2 space-y-0.5" aria-label="Agent sessions">
           {sessions.map((s) => (
