@@ -91,6 +91,18 @@ export interface SchedulesBridge {
   run: (id: string) => Promise<{ note: string; ok: boolean; schedules: ScheduleView[] }>;
 }
 
+export interface McpState {
+  config: string;
+  file: string;
+  status: { name: string; status: string; error: string | null; tools: string[]; trusted: boolean }[];
+}
+
+export interface McpBridge {
+  get: () => Promise<McpState>;
+  save: (text: string) => Promise<McpState>;
+  reconnect: () => Promise<McpState>;
+}
+
 export interface DesktopBridge {
   version: () => Promise<{ build: number; commit: string } | null>;
   checkUpdate: () => Promise<{
@@ -105,6 +117,7 @@ export interface DesktopBridge {
   inbox?: InboxBridge;
   agent?: AgentBridge;
   schedules?: SchedulesBridge;
+  mcp?: McpBridge;
 }
 
 declare global {

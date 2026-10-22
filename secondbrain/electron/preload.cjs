@@ -46,6 +46,11 @@ contextBridge.exposeInMainWorld('secondbrainDesktop', {
     remove: (id) => ipcRenderer.invoke('schedules:remove', id),
     run: (id) => ipcRenderer.invoke('schedules:run', id),
   },
+  mcp: {
+    get: () => ipcRenderer.invoke('mcp:get'),
+    save: (text) => ipcRenderer.invoke('mcp:save', text),
+    reconnect: () => ipcRenderer.invoke('mcp:reconnect'),
+  },
   vault: {
     info: () => ipcRenderer.invoke('vault:info'),
     load: () => ipcRenderer.invoke('vault:load'),

@@ -10,6 +10,7 @@ const inbox = require('./inbox.cjs');
 const { AgentService } = require('./agent/service.cjs');
 const memory = require('./agent/memory.cjs');
 const sched = require('./agent/schedules.cjs');
+const { McpClient } = require('./agent/mcp.cjs');
 
 const isDev = process.env.NODE_ENV === 'development';
 const distDir = path.join(__dirname, '..', 'dist');
@@ -363,7 +364,11 @@ function getAgent() {
   return agent;
 }
 // later features add tools (agentPlugins) and system prompt parts (agentExtras)
-const agentPlugins = [(a) => a.registry.add(memory.tools), (a) => a.registry.add(sched.tools(getSchedules))];
+const agentPlugins = [
+  (a) => a.registry.add(memory.tools),
+  (a) => a.registry.add(sched.tools(getSchedules)),
+  () => connectMcp().catch((e) => console.error("[SecondBrain] mcp:", e)),
+];
 const agentExtras = [() => memory.extras(getVault())];
 
 ipcMain.handle('agent:send', (event, text, sessionId, model) => {
@@ -458,6 +463,33 @@ ipcMain.handle('schedules:run', async (event, id) => {
   return { note: r.id, ok: r.ok, schedules: schedulesView() };
 });
 
+// ---- MCP client: other tool servers' tools ---------------------------------
+let mcp = null;
+function getMcp() {
+  return mcp || (mcp = new McpClient(getVault));
+}
+async function connectMcp() {
+  const tools = await getMcp().connect();
+  const a = getAgent();
+  a.registry.remove('mcp__');
+  a.registry.add(tools);
+  return getMcp().status();
+}
+
+ipcMain.handle('mcp:get', (event) => {
+  guard(event);
+  return { config: getMcp().rawConfig(), file: getMcp().file(), status: getMcp().status() };
+});
+ipcMain.handle('mcp:save', async (event, text) => {
+  guard(event);
+  getMcp().writeConfig(String(text));
+  return { config: getMcp().rawConfig(), file: getMcp().file(), status: await connectMcp() };
+});
+ipcMain.handle('mcp:reconnect', async (event) => {
+  guard(event);
+  return { config: getMcp().rawConfig(), file: getMcp().file(), status: await connectMcp() };
+});
+
 ipcMain.handle('desktop:version', (event) => (fromApp(event) ? updater.buildInfo() : null));
 ipcMain.handle('desktop:check-update', (event) => {
   if (!fromApp(event)) throw new Error('not allowed');
@@ -524,5 +556,6 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  if (mcp) mcp.stopAll();
   stopLocalServer();
 });
