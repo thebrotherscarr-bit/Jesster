@@ -64,7 +64,8 @@ test('pushes outbox/status.md to the bridge with git', async () => {
   g(seed, 'push', '-q', 'origin', 'HEAD');
   await report.push(path.join(tmp, 'app'), '# status two\n', { buildNo: 24 });
   g(tmp, 'clone', '-q', path.join(tmp, 'remote.git'), 'check');
-  assert.equal(fs.readFileSync(path.join(tmp, 'check', 'outbox', 'status.md'), 'utf8'), '# status two\n');
+  // Windows git may check it out with CRLF line endings
+  assert.equal(fs.readFileSync(path.join(tmp, 'check', 'outbox', 'status.md'), 'utf8').replace(/\r\n/g, '\n'), '# status two\n');
   assert.ok(fs.existsSync(path.join(tmp, 'check', 'inbox', 'b.md')));
   assert.match(g(path.join(tmp, 'check'), 'log', '--format=%s', '-3'), /report: build 24\nmore\nreport: build 23/);
   await assert.rejects(report.push(path.join(tmp, 'nope'), 'x', { buildNo: 1 }), /connect the inbox first/);
