@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Note, NoteCategory } from '../types/index.ts';
+import { SHELVES } from '../utils/shelves.ts';
 import { Network, Search, ExternalLink, RefreshCw } from 'lucide-react';
 
 interface GraphViewProps {
@@ -31,13 +32,7 @@ export const GraphView: React.FC<GraphViewProps> = ({ notes, onSelectNote }) => 
   const [selectedNode, setSelectedNode] = useState<NodeData | null>(null);
   const [hoveredNode, setHoveredNode] = useState<NodeData | null>(null);
 
-  const categoryColors: Record<NoteCategory, string> = {
-    projects: '#3b82f6', // blue
-    areas: '#10b981', // emerald
-    resources: '#f59e0b', // amber
-    archives: '#71717a', // zinc
-    inbox: '#a855f7', // purple
-  };
+  const categoryColors = Object.fromEntries(SHELVES.map((s) => [s.id, s.color])) as Record<NoteCategory, string>;
 
   useEffect(() => {
     const canvas = canvasRef.current;

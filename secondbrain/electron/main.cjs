@@ -294,7 +294,7 @@ ipcMain.handle('vault:import', async (event, dropped) => {
 });
 
 // ---- settings for the page (secrets masked) ------------------------------
-const PAGE_SECTIONS = ['inbox', 'agent', 'telegram', 'terminal', 'voice', 'browser', 'computer'];
+const PAGE_SECTIONS = ['inbox', 'agent', 'telegram', 'terminal', 'voice', 'browser', 'computer', 'atlas'];
 ipcMain.handle('settings:get', (event) => {
   guard(event);
   return getSettings().public();

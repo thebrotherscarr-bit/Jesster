@@ -13,16 +13,30 @@ export const AtlasSection: React.FC<{ onConnected?: (s: McpState) => void }> = (
   const [copied, setCopied] = useState(false);
   const [form, setForm] = useState({ exe: '', ground: '', python: 'python', engine: true, trusted: false, all: false });
   const [status, setStatus] = useState<string | null>(null);
+  const [saved, setSaved] = useState<typeof form | null>(null);
 
   useEffect(() => {
     desk?.share?.get(false).then(setShare);
+    desk?.settings?.get().then((s) => {
+      const a = { ...form, ...((s.atlas || {}) as Partial<typeof form>) };
+      setForm(a);
+      setSaved(a);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [desk]);
+
+  const dirty = saved !== null && JSON.stringify(saved) !== JSON.stringify(form);
+  const save = async () => {
+    await desk?.settings?.set('atlas', form);
+    setSaved(form);
+  };
 
   if (!desk?.share || !desk.atlas || !desk.pick) return null;
 
   const envLines = share ? `MANJUEL_MCP_SECONDBRAIN=${share.url}\nMANJUEL_MCP_SECONDBRAIN_KEY=${share.key}` : '';
 
   const connect = async () => {
+    await save();
     setStatus('Starting atlas-mcp…');
     try {
       const s = await desk.atlas!.connect(form);
@@ -58,7 +72,10 @@ export const AtlasSection: React.FC<{ onConnected?: (s: McpState) => void }> = (
           <label className="flex items-center gap-1.5"><input type="checkbox" checked={form.all} onChange={(e) => setForm({ ...form, all: e.target.checked })} /> offer all of Atlas's tools (default: the core 27)</label>
           <label className="flex items-center gap-1.5"><input type="checkbox" checked={form.trusted} onChange={(e) => setForm({ ...form, trusted: e.target.checked })} /> don't ask me before each Atlas call</label>
         </div>
-        <button onClick={connect} disabled={!form.exe || !form.ground} className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-xs text-white disabled:opacity-40">Connect Atlas</button>
+        <div className="flex items-center gap-2">
+          <button onClick={save} disabled={!dirty} className="px-3 py-1.5 rounded-lg border border-neutral-700 text-xs text-neutral-200 hover:bg-neutral-800 disabled:opacity-40">{dirty ? 'Save' : 'Saved'}</button>
+          <button onClick={connect} disabled={!form.exe || !form.ground} className="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-xs text-white disabled:opacity-40">Save &amp; connect Atlas</button>
+        </div>
         {status && <p className="text-xs text-neutral-300">{status}</p>}
       </div>
 

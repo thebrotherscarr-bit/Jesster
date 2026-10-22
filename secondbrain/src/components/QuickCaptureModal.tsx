@@ -1,22 +1,34 @@
 import React, { useState } from 'react';
 import { NoteCategory } from '../types/index.ts';
-import { Zap, X, Plus } from 'lucide-react';
+import { SHELVES } from '../utils/shelves.ts';
+import { Zap, X, Plus, Mic, Loader2 } from 'lucide-react';
+import { useRecorder } from '../voice/useVoice.ts';
 
 interface QuickCaptureModalProps {
   isOpen: boolean;
   onClose: () => void;
   onSave: (title: string, content: string, category: NoteCategory, tags: string[]) => void;
+  /** whisper.cpp model for the mic ('' = the one found beside whisper-cli) */
+  whisperModel?: string;
 }
 
 export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
   isOpen,
   onClose,
   onSave,
+  whisperModel = '',
 }) => {
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
   const [category, setCategory] = useState<NoteCategory>('inbox');
   const [tagsInput, setTagsInput] = useState('');
+  const [voiceError, setVoiceError] = useState<string | null>(null);
+  const recorder = useRecorder(
+    whisperModel,
+    (text) => setContent((x) => (x.trim() ? `${x.trimEnd()} ${text}` : text)),
+    setVoiceError
+  );
+  const canSpeak = typeof window !== 'undefined' && Boolean(window.secondbrainDesktop?.voice?.local);
 
   if (!isOpen) return null;
 
@@ -81,14 +93,26 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
             />
           </div>
 
-          <div>
+          <div className="relative">
             <textarea
               value={content}
               onChange={(e) => setContent(e.target.value)}
-              placeholder="Unload raw thoughts, links, code, or tasks here..."
+              placeholder={canSpeak ? 'Unload raw thoughts, links, code, or tasks here, or press the mic and talk...' : 'Unload raw thoughts, links, code, or tasks here...'}
               rows={5}
-              className="w-full p-3 bg-neutral-950 border border-neutral-800 rounded-lg text-xs font-mono text-neutral-200 placeholder-neutral-500 focus:outline-none focus:border-neutral-600 resize-none leading-relaxed"
+              className={`w-full p-3 ${canSpeak ? 'pr-12' : ''} bg-neutral-950 border border-neutral-800 rounded-lg text-xs font-mono text-neutral-200 placeholder-neutral-500 focus:outline-none focus:border-neutral-600 resize-none leading-relaxed`}
             />
+            {canSpeak && (
+              <button
+                type="button"
+                onClick={() => (recorder.state === 'recording' ? recorder.stop() : recorder.state === 'idle' && (setVoiceError(null), recorder.start()))}
+                aria-label={recorder.state === 'recording' ? 'Stop recording' : 'Speak'}
+                title={recorder.state === 'recording' ? 'Stop and transcribe' : recorder.state === 'idle' ? 'Speak (whisper.cpp, on this PC)' : 'Transcribing…'}
+                className={`absolute right-2 top-2 p-2 rounded-lg border ${recorder.state === 'recording' ? 'border-rose-500 bg-rose-950 text-rose-300 animate-pulse' : 'border-neutral-700 text-neutral-300 hover:bg-neutral-800'}`}
+              >
+                {recorder.state === 'idle' || recorder.state === 'recording' ? <Mic className="w-4 h-4" /> : <Loader2 className="w-4 h-4 animate-spin" />}
+              </button>
+            )}
+            {voiceError && <p className="mt-1 text-[11px] text-amber-400">{voiceError}</p>}
           </div>
 
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -102,11 +126,11 @@ export const QuickCaptureModal: React.FC<QuickCaptureModalProps> = ({
                 onChange={(e) => setCategory(e.target.value as NoteCategory)}
                 className="w-full px-2.5 py-1.5 bg-neutral-950 border border-neutral-800 rounded-lg text-xs text-white focus:outline-none focus:border-neutral-600 capitalize"
               >
-                <option value="inbox">Inbox (Unfiled)</option>
-                <option value="projects">Projects</option>
-                <option value="areas">Areas</option>
-                <option value="resources">Resources</option>
-                <option value="archives">Archives</option>
+                {SHELVES.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.id === 'inbox' ? 'Inbox (unfiled)' : s.label}
+                  </option>
+                ))}
               </select>
             </div>
 

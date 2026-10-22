@@ -16,6 +16,7 @@ const DEFAULTS = {
   browser: { enabled: false, askEachAction: true }, // the agent's own browser window
   computer: { enabled: false, askEachAction: true, model: 'qwen3-vl:8b', maxSteps: 25 }, // screen, mouse and keyboard
   share: { enabled: false, writes: false, key: '' }, // the notes over MCP for Atlas/Manjuel
+  atlas: { exe: '', ground: '', python: 'python', engine: true, trusted: false, all: false }, // Settings → Atlas & Manjuel, remembered
   archive: { python: 'python', cli: '', model: '' }, // the archive digger: the notes kernel's cli.py ('' = beside the vault)
 };
 

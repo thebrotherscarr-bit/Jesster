@@ -1,4 +1,5 @@
-import { Note, NoteCategory } from '../types/index.ts';
+import { Note } from '../types/index.ts';
+import { shelfOf } from './shelves.ts';
 
 /**
  * Jesster notes kernel bridge.
@@ -33,7 +34,6 @@ export type SyncOp =
   | { kind: 'update'; note: Note; base: string }
   | { kind: 'remove'; id: string };
 
-const CATEGORIES: NoteCategory[] = ['projects', 'areas', 'resources', 'archives', 'inbox'];
 const KERNEL_ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 
 export class KernelError extends Error {
@@ -56,9 +56,7 @@ export function fromKernel(n: KernelNote): Note {
     id: n.id,
     title: n.title,
     content: n.body,
-    category: CATEGORIES.includes(n.category as NoteCategory)
-      ? (n.category as NoteCategory)
-      : 'inbox',
+    category: shelfOf(n.category, n.tags),
     tags: n.tags,
     isPinned: n.pinned,
     createdAt: kernelTimeToMs(n.created),

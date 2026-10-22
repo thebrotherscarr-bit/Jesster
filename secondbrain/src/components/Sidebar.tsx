@@ -1,10 +1,13 @@
 import React from 'react';
 import { NoteCategory, BrainStats } from '../types/index.ts';
+import { SHELVES } from '../utils/shelves.ts';
 import {
   Inbox,
   FolderGit2,
-  Compass,
-  BookOpen,
+  ListTodo,
+  Globe,
+  Scale,
+  NotebookPen,
   Archive,
   Layers,
   Pin,
@@ -43,6 +46,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onResetSeedNotes,
   className = '',
 }) => {
+  const icons: Record<NoteCategory, React.ComponentType<{ className?: string }>> = {
+    inbox: Inbox,
+    projects: FolderGit2,
+    tasks: ListTodo,
+    worlds: Globe,
+    archives: Archive,
+    laws: Scale,
+    scratchpads: NotebookPen,
+  };
   const categories: {
     id: NoteCategory | 'all';
     label: string;
@@ -50,12 +62,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     count: number;
     description: string;
   }[] = [
-    { id: 'all', label: 'All Notes', icon: Layers, count: stats.totalNotes, description: 'Entire knowledge graph' },
-    { id: 'inbox', label: 'Inbox', icon: Inbox, count: stats.inboxCount, description: 'Quick captured ideas' },
-    { id: 'projects', label: 'Projects', icon: FolderGit2, count: stats.projectsCount, description: 'Active outcomes & deadlines' },
-    { id: 'areas', label: 'Areas', icon: Compass, count: stats.areasCount, description: 'Ongoing responsibilities' },
-    { id: 'resources', label: 'Resources', icon: BookOpen, count: stats.resourcesCount, description: 'Reference & playbooks' },
-    { id: 'archives', label: 'Archives', icon: Archive, count: stats.archivesCount, description: 'Completed historical' },
+    { id: 'all', label: 'All Notes', icon: Layers, count: stats.totalNotes, description: 'Every note' },
+    ...SHELVES.map((s) => ({ id: s.id, label: s.label, icon: icons[s.id], count: stats.shelves[s.id] || 0, description: s.description })),
   ];
 
   return (
@@ -63,7 +71,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       {/* Navigation / PARA categories */}
       <div className="p-3 space-y-1">
         <div className="px-3 py-1.5 text-[11px] font-semibold tracking-wider text-neutral-400 uppercase">
-          Organization (PARA)
+          Shelves
         </div>
 
         {categories.map((cat) => {

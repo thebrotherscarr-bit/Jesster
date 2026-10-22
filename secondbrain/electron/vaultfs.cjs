@@ -25,7 +25,16 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 
-const CATEGORIES = ['projects', 'areas', 'resources', 'archives', 'inbox'];
+const CATEGORIES = ['inbox', 'projects', 'tasks', 'worlds', 'archives', 'laws', 'scratchpads'];
+// where the old shelves went (2026-10-22); notes tagged `ruling` are on Laws
+const LEGACY = { areas: 'projects', resources: 'archives' };
+
+/** The shelf for a note as stored (src/utils/shelves.ts says the same). */
+function shelfOf(category, tags = []) {
+  if (tags.includes('ruling')) return 'laws';
+  const c = String(category || '').toLowerCase();
+  return CATEGORIES.includes(c) ? c : LEGACY[c] || 'inbox';
+}
 const ID = /^[a-z0-9][a-z0-9-]{0,63}$/;
 const MAX_IMPORT = 5 * 1024 * 1024;
 const TEXT_EXT = new Set([
@@ -92,7 +101,7 @@ function parseFile(raw, id, mtimeMs) {
     id,
     title: meta.title || id.replace(/-/g, ' '),
     content: body,
-    category: CATEGORIES.includes(meta.category) ? meta.category : 'inbox',
+    category: shelfOf(meta.category, Array.isArray(meta.tags) ? meta.tags.map((t) => t.toLowerCase()) : []),
     tags: Array.isArray(meta.tags) ? meta.tags.map((t) => t.toLowerCase()) : [],
     isPinned: String(meta.pinned).toLowerCase() === 'true',
     createdAt: created,
@@ -139,12 +148,35 @@ class Vault {
       try {
         const st = fs.statSync(p);
         if (!st.isFile()) continue;
-        out.push(parseFile(fs.readFileSync(p, 'utf8'), id, st.mtimeMs));
+        const raw = fs.readFileSync(p, 'utf8');
+        const note = parseFile(raw, id, st.mtimeMs);
+        out.push(note);
+        this.reshelve(p, raw, note.category);
       } catch {
         /* a file mid-write by another program: next load picks it up */
       }
     }
     return out;
+  }
+
+  /**
+   * Move a note off an old shelf on disk, once: only its `category:` line
+   * changes, so its dates and words stay as they were.
+   */
+  reshelve(p, raw, shelf) {
+    const head = /^---\r?\n([\s\S]*?)\r?\n---/.exec(raw);
+    if (!head) return;
+    const line = /^category:[ \t]*(.*?)[ \t]*\r?$/m.exec(head[1]);
+    if (!line || line[1] === shelf) return;
+    const at = head.index + head[0].indexOf(head[1]) + line.index;
+    const fixed = raw.slice(0, at) + `category: ${shelf}` + raw.slice(at + line[0].replace(/\r$/, '').length);
+    try {
+      const tmp = `${p}.tmp`;
+      fs.writeFileSync(tmp, fixed, 'utf8');
+      fs.renameSync(tmp, p);
+    } catch {
+      /* read-only or busy: it is shown on the right shelf anyway, and tried again next load */
+    }
   }
 
   save(note) {
@@ -284,7 +316,7 @@ function importFile(file, now = Date.now()) {
       id,
       title,
       content: `> imported from \`${file}\`\n\n${content || ''}`,
-      category: 'resources',
+      category: 'archives',
       tags: ['imported', ext.slice(1)],
       isPinned: false,
       createdAt: st.mtimeMs || now,
@@ -293,4 +325,4 @@ function importFile(file, now = Date.now()) {
   };
 }
 
-module.exports = { Vault, parseFile, renderFile, safeId, importFile, docxText, htmlText, zipEntry, stamp, SUPPORTED };
+module.exports = { shelfOf, Vault, parseFile, renderFile, safeId, importFile, docxText, htmlText, zipEntry, stamp, SUPPORTED };

@@ -21,7 +21,6 @@ import { AskBrainView } from './components/AskBrainView.tsx';
 import { GraphView } from './components/GraphView.tsx';
 import { OllamaSetupModal } from './components/OllamaSetupModal.tsx';
 import { QuickCaptureModal } from './components/QuickCaptureModal.tsx';
-import { WindowsPublishModal } from './components/WindowsPublishModal.tsx';
 import { SettingsModal } from './components/SettingsModal.tsx';
 import { AgentView } from './components/AgentView.tsx';
 import { useVoiceSettings } from './voice/useVoice.ts';
@@ -68,7 +67,6 @@ export default function App() {
   const [mobileNotesView, setMobileNotesView] = useState<'sidebar' | 'list' | 'editor'>('list');
 
   const [isOllamaModalOpen, setIsOllamaModalOpen] = useState(false);
-  const [isWindowsModalOpen, setIsWindowsModalOpen] = useState(false);
   const [isQuickCaptureOpen, setIsQuickCaptureOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [, startTransition] = useTransition();
@@ -300,7 +298,7 @@ export default function App() {
       id: createNoteId('note-synthesis'),
       title,
       content,
-      category: 'resources',
+      category: 'scratchpads',
       tags: ['synthesis', 'gpt-oss'],
       isPinned: false,
       createdAt: Date.now(),
@@ -383,7 +381,6 @@ export default function App() {
         }}
         onOpenQuickCapture={() => setIsQuickCaptureOpen(true)}
         onOpenOllamaModal={() => setIsOllamaModalOpen(true)}
-        onOpenWindowsModal={() => setIsWindowsModalOpen(true)}
         onCreateNewNote={() => {
           handleCreateNewNote();
           setMobileNotesView('editor');
@@ -519,13 +516,9 @@ export default function App() {
         isOpen={isQuickCaptureOpen}
         onClose={() => setIsQuickCaptureOpen(false)}
         onSave={handleQuickCaptureSave}
+        whisperModel={voice.whisperModel}
       />
 
-      <WindowsPublishModal
-        isOpen={isWindowsModalOpen}
-        onClose={() => setIsWindowsModalOpen(false)}
-        appUrl={typeof window !== 'undefined' ? window.location.origin : ''}
-      />
       <SettingsModal
         isOpen={isSettingsOpen}
         onClose={() => setIsSettingsOpen(false)}

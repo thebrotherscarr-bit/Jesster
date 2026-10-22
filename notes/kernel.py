@@ -46,8 +46,11 @@ DEFAULT_CONFIG = {
     "model": "gpt-oss:20b",
 }
 
-# PARA — secondbrain's shelves. Any slug is allowed; these are the usual ones.
-CATEGORIES = ("projects", "areas", "resources", "archives", "inbox")
+# The shelves. Any slug is allowed; these are the usual ones. The old PARA
+# shelves move (areas to projects, resources to archives), and notes tagged
+# `ruling` are on laws, wherever they were filed.
+CATEGORIES = ("inbox", "projects", "tasks", "worlds", "archives", "laws", "scratchpads")
+LEGACY_CATEGORIES = {"areas": "projects", "resources": "archives"}
 DEFAULT_CATEGORY = "inbox"
 
 _ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,63}$")
@@ -126,8 +129,11 @@ def render(note):
                tags, note["created"], note["updated"], note.get("body") or ""))
 
 
-def _clean_category(c):
+def _clean_category(c, tags=()):
+    if "ruling" in (tags or ()):
+        return "laws"
     c = slugify(c) if c else DEFAULT_CATEGORY
+    c = LEGACY_CATEGORIES.get(c, c)
     return DEFAULT_CATEGORY if c == "note" else c
 
 
@@ -220,7 +226,7 @@ class Vault:
             "id": nid,
             "title": meta.get("title") or nid.replace("-", " "),
             "tags": _clean_tags(meta.get("tags")),
-            "category": _clean_category(meta.get("category")),
+            "category": _clean_category(meta.get("category"), _clean_tags(meta.get("tags"))),
             "pinned": str(meta.get("pinned", "")).lower() == "true",
             "created": meta.get("created") or stamp,
             "updated": meta.get("updated") or stamp,
@@ -471,7 +477,7 @@ def _core(k):
         c = _stamp(created, "created") if created is not None else stamp
         n = {"id": id or k.vault.fresh_id(title), "title": title.strip() or "untitled",
              "tags": _clean_tags(tags), "body": body,
-             "category": _clean_category(category), "pinned": bool(pinned),
+             "category": _clean_category(category, _clean_tags(tags)), "pinned": bool(pinned),
              "created": c,
              "updated": _stamp(updated, "updated") if updated is not None else
              (c if created is not None else stamp)}
@@ -497,8 +503,8 @@ def _core(k):
             n["body"] = body
         if tags is not None:
             n["tags"] = _clean_tags(tags)
-        if category is not None:
-            n["category"] = _clean_category(category)
+        if category is not None or "ruling" in n["tags"]:
+            n["category"] = _clean_category(category or n["category"], n["tags"])
         if pinned is not None:
             n["pinned"] = bool(pinned)
         fields = ("title", "body", "tags", "category", "pinned")

@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { suggestionNotes, titleQuestions, suggestionPrompt, parseSuggestions } from '../utils/suggest.ts';
 import { Note, OllamaConfig, ChatMessage } from '../types/index.ts';
 import { buildNotesContextForRag } from '../utils/notes.ts';
 import { vaultContext } from '../utils/kernel.ts';
@@ -56,12 +57,32 @@ Ask any question across your notes, extract cross-project connections, or synthe
   const [activeSources, setActiveSources] = useState<Note[]>([]);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  const sampleQuestions = [
-    'What are all my active project action items and deadlines?',
-    'Synthesize my notes on prompt engineering for GPT-OSS 20B',
-    'What are my daily focus and deep work standards?',
-    'Why should I prefer local models over cloud subscriptions?',
-  ];
+  // Suggested questions, from the notes the last answer used (or, before any
+  // question, the ones worked on most recently): titles at once, the local
+  // model's wording when it answers.
+  const basis = suggestionNotes(notes, activeSources);
+  const basisKey = basis.map((n) => `${n.id}:${n.updatedAt}`).join('|');
+  const [suggestions, setSuggestions] = useState<string[]>(() => titleQuestions(basis));
+  const [suggestedBy, setSuggestedBy] = useState<'titles' | 'model'>('titles');
+  const suggestRun = useRef(0);
+  useEffect(() => {
+    const run = ++suggestRun.current;
+    setSuggestions(titleQuestions(basis));
+    setSuggestedBy('titles');
+    if (!basis.length || !ollamaConfig.isConnected || ollamaConfig.isSimulatedMode) return;
+    queryOllama(ollamaConfig.hostUrl, ollamaConfig.model, suggestionPrompt(basis), '')
+      .then((text) => {
+        const qs = parseSuggestions(text);
+        if (run === suggestRun.current && qs.length >= 2) {
+          setSuggestions(qs);
+          setSuggestedBy('model');
+        }
+      })
+      .catch(() => {
+        /* the title questions stay */
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [basisKey, ollamaConfig.isConnected, ollamaConfig.isSimulatedMode, ollamaConfig.model]);
 
   const handleAsk = async (textToAsk?: string) => {
     const promptText = (textToAsk || query).trim();
@@ -282,14 +303,15 @@ Ask any question across your notes, extract cross-project connections, or synthe
           )}
         </div>
 
-        {/* Suggestion prompts if thread is short */}
-        {messages.length <= 2 && (
+        {/* Suggested questions from the notes in play */}
+        {!isSynthesizing && suggestions.length > 0 && (
           <div className="px-6 pb-3 shrink-0">
-            <div className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider mb-2">
-              Suggested Questions
+            <div className="text-[11px] font-semibold text-neutral-500 uppercase tracking-wider mb-2" title={basis.map((n) => n.title).join('\n')}>
+              Suggested from {activeSources.length ? 'the notes just used' : 'what you worked on lately'}
+              {suggestedBy === 'titles' && ollamaConfig.isConnected && !ollamaConfig.isSimulatedMode ? ' · asking the model…' : ''}
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {sampleQuestions.map((q, idx) => (
+              {suggestions.map((q, idx) => (
                 <button
                   key={idx}
                   onClick={() => handleAsk(q)}

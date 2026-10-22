@@ -1,4 +1,5 @@
 import { Note, NoteCategory, BrainStats } from '../types/index.ts';
+import { SHELF_IDS, shelfOf } from './shelves.ts';
 
 /**
  * Filter notes by search text, category, and active tag
@@ -103,46 +104,21 @@ export function calculateBrainStats(notes: Note[]): BrainStats {
   let totalWords = 0;
   const allTags = new Set<string>();
 
-  let projectsCount = 0;
-  let areasCount = 0;
-  let resourcesCount = 0;
-  let archivesCount = 0;
-  let inboxCount = 0;
+  const shelves = Object.fromEntries(SHELF_IDS.map((id) => [id, 0])) as Record<NoteCategory, number>;
 
   for (const note of notes) {
     totalWords += calculateNoteStats(note.content).words;
     for (const tag of note.tags) {
       allTags.add(tag);
     }
-    switch (note.category) {
-      case 'projects':
-        projectsCount++;
-        break;
-      case 'areas':
-        areasCount++;
-        break;
-      case 'resources':
-        resourcesCount++;
-        break;
-      case 'archives':
-        archivesCount++;
-        break;
-      case 'inbox':
-      default:
-        inboxCount++;
-        break;
-    }
+    shelves[shelfOf(note.category, note.tags)]++;
   }
 
   return {
     totalNotes: notes.length,
     totalWords,
     totalTags: allTags.size,
-    projectsCount,
-    areasCount,
-    resourcesCount,
-    archivesCount,
-    inboxCount,
+    shelves,
   };
 }
 
@@ -212,13 +188,7 @@ export function exportNotesToJson(notes: Note[]): string {
   return JSON.stringify(notes, null, 2);
 }
 
-const NOTE_CATEGORIES: NoteCategory[] = [
-  'projects',
-  'areas',
-  'resources',
-  'archives',
-  'inbox',
-];
+
 
 function normalizeImportedNote(item: unknown): Note | null {
   if (!item || typeof item !== 'object') return null;
@@ -227,10 +197,6 @@ function normalizeImportedNote(item: unknown): Note | null {
   if (typeof raw.id !== 'string' || typeof raw.title !== 'string') return null;
 
   const now = Date.now();
-  const category = NOTE_CATEGORIES.includes(raw.category as NoteCategory)
-    ? (raw.category as NoteCategory)
-    : 'inbox';
-
   const tags = Array.isArray(raw.tags)
     ? Array.from(
         new Set(
@@ -255,7 +221,7 @@ function normalizeImportedNote(item: unknown): Note | null {
     id: raw.id,
     title: raw.title,
     content: typeof raw.content === 'string' ? raw.content : '',
-    category,
+    category: shelfOf(raw.category, tags),
     tags,
     isPinned: raw.isPinned === true,
     createdAt,

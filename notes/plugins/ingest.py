@@ -20,7 +20,7 @@ Audio is transcribed by a command you choose (config `transcribe_cmd`, a list
 with {in} and {out_dir}, e.g. whisper.cpp or openai-whisper); its stdout, or
 a .txt it writes into {out_dir}, is the transcript. Nothing is uploaded.
 
-Chat notes are filed under resources, tagged `chat` and their source.
+Chat notes are filed under archives, tagged `chat` and their source.
 """
 import hashlib
 import html
@@ -316,7 +316,7 @@ def register(k):
             stats["updated"] += 1
             return
         params = {"id": nid, "title": c["title"], "body": body, "tags": tags,
-                  "category": "resources"}
+                  "category": "archives"}
         if c["created"]:
             params["created"] = c["created"]
         if c["updated"]:

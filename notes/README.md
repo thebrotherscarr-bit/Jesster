@@ -101,7 +101,7 @@ for the local model.
 | Claude Code | already on disk, in `%USERPROFILE%\.claude\projects` | `python notes/cli.py watch add %USERPROFILE%\.claude\projects` |
 | voice memos, meetings | any .mp3/.m4a/.wav | set `transcribe_cmd` (below), then `ingest <folder>` |
 
-Each conversation becomes one Markdown note, filed under resources and tagged
+Each conversation becomes one Markdown note, filed under archives and tagged
 `chat` plus its source. Edits you abandoned in ChatGPT are left out. Ingesting
 the same export again is safe: unchanged chats are skipped, and ones that
 grew are updated. `watch add <folder>` re-ingests a folder every 10 minutes

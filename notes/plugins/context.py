@@ -23,10 +23,18 @@ NOW_DAYS = 7
 def register(k):
     from kernel import KernelError, slugify
 
+    def quiet(n):
+        """Not current work: dug-up archive notes, the digger's write-ups, and
+        whatever sits on the archives shelf, except chats (those are work)."""
+        tags = set(n["tags"])
+        if tags & {"archive", "distilled"}:
+            return True
+        return n["category"] == "archives" and "chat" not in tags
+
     def recent(days, limit):
         cutoff = time.strftime("%Y-%m-%d", time.localtime(time.time() - days * 86400))
         notes = [n for n in k.vault.notes.values()
-                 if n["updated"][:10] >= cutoff and n["category"] != "archives"]
+                 if n["updated"][:10] >= cutoff and not quiet(n)]
         notes.sort(key=lambda n: n["updated"], reverse=True)
         return notes[:limit]
 

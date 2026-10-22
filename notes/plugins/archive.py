@@ -541,7 +541,7 @@ def register(k):
                         lines.append("- %s%s %s" % (x["text"], why, cite(x["source"])))
             lines += ["", "## Sources", "", ", ".join(cite(s) for s in t["sources"])]
             put(nid, "Archive: " + t["name"], "\n".join(lines) + foot,
-                tags + ["archive-topic"], None, stats, category="resources")
+                tags + ["archive-topic"], None, stats, category="archives")
 
         def tlink(key):
             return (" (%s)" % "[[%s]]" % topic_ids[key]) if key in topic_ids else ""
@@ -550,7 +550,7 @@ def register(k):
             items = sorted(st[kind], key=lambda x: (x["date"], x["text"]))
             body = "# %s\n\n" % title + ("\n".join(render_(x) for x in items)
                                          or "Nothing found yet.") + foot
-            put(nid, title, body, tags, None, stats, category="resources")
+            put(nid, title, body, tags, None, stats, category="archives")
 
         months = {}
         for e in sorted(st["events"], key=lambda e: e["date"]):
@@ -562,7 +562,7 @@ def register(k):
                                      for e in es] + [""]
         put("archive-timeline", "Archive: timeline",
             "\n".join(tl).rstrip() + foot if months else "# Timeline\n\nNothing dated yet." + foot,
-            tags, None, stats, category="resources")
+            tags, None, stats, category="archives")
         listing("archive-decisions", "Archive: decisions", "decisions",
                 lambda x: "- %s: **%s**%s%s %s" % (
                     x["date"], x["text"], (" Why: %s" % x["why"]) if x.get("why") else "",
@@ -587,7 +587,7 @@ def register(k):
                                              len(st["topics"][key]["sources"]))
                for key in sorted(topic_ids, key=lambda x: -len(st["topics"][x]["sources"]))]
         put("archive-overview", "Archive: overview", "\n".join(ov) + foot,
-            tags, None, stats, category="resources")
+            tags, None, stats, category="archives")
         st["written"] = _iso(time.time())
         save(STATE, st)
         return stats | {"topics": len(topic_ids)}

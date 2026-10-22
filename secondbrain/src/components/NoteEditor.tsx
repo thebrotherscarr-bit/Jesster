@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useId } from 'react';
 import { Note, NoteCategory, OllamaConfig } from '../types/index.ts';
+import { SHELVES } from '../utils/shelves.ts';
 import { calculateNoteStats, extractTagsFromText } from '../utils/notes.ts';
 import {
   buildOllamaBrainPrompt,
@@ -80,13 +81,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
 
   const stats = calculateNoteStats(note.content);
 
-  const categories: { id: NoteCategory; label: string }[] = [
-    { id: 'inbox', label: 'Inbox' },
-    { id: 'projects', label: 'Projects' },
-    { id: 'areas', label: 'Areas' },
-    { id: 'resources', label: 'Resources' },
-    { id: 'archives', label: 'Archives' },
-  ];
+  const categories: { id: NoteCategory; label: string }[] = SHELVES;
 
   const handleAddTag = (e: React.KeyboardEvent | React.MouseEvent) => {
     if ('key' in e && e.key !== 'Enter') return;

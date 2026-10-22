@@ -1,9 +1,10 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
+import { InboxStatus } from '../types/desktop.ts';
 import { OllamaConfig } from '../types/index.ts';
 import { KernelSync } from '../hooks/useKernelSync.ts';
 import { DesktopUpdate } from '../hooks/useDesktopUpdate.ts';
 import { DesktopVault } from '../hooks/useDesktopVault.ts';
-import { Plus, Brain, MessageSquare, Network, Zap, Cpu, Menu, Monitor, Link2, Download, FolderOpen, FilePlus2, Settings as SettingsIcon, Bot } from 'lucide-react';
+import { Plus, Brain, MessageSquare, Network, Zap, Cpu, Menu, Link2, Download, FilePlus2, RefreshCw, Settings as SettingsIcon, Bot } from 'lucide-react';
 
 export type ActiveTab = 'notes' | 'ask' | 'graph' | 'agent';
 
@@ -12,7 +13,6 @@ interface HeaderProps {
   onSelectTab: (tab: ActiveTab) => void;
   onOpenQuickCapture: () => void;
   onOpenOllamaModal: () => void;
-  onOpenWindowsModal: () => void;
   onCreateNewNote: () => void;
   ollamaConfig: OllamaConfig;
   storage?: KernelSync;
@@ -21,6 +21,46 @@ interface HeaderProps {
   onOpenSettings?: () => void;
   onToggleMobileMenu?: () => void;
 }
+
+/** Pull the notes Claude left in the bridge inbox now (Settings → Inbox sets it up). */
+const InboxSyncButton: React.FC = () => {
+  const inbox = window.secondbrainDesktop?.inbox;
+  const [s, setS] = useState<InboxStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (!inbox) return;
+    inbox.status().then(setS).catch(() => {});
+    return inbox.onStatus(setS);
+  }, [inbox]);
+  if (!inbox || !s?.clone) return null;
+  const running = busy || s.running;
+  const title = s.error
+    ? `Inbox sync failed: ${s.error}`
+    : s.last
+      ? `Inbox from Claude: last synced ${new Date(s.last.at).toLocaleTimeString()}, ${s.last.filed.length ? `filed ${s.last.filed.map((f) => f.title).join(', ')}` : 'nothing new'}. Click to sync now.`
+      : 'Inbox from Claude: sync now';
+  return (
+    <button
+      onClick={async () => {
+        setBusy(true);
+        try {
+          setS(await inbox.sync());
+        } catch (e) {
+          setS({ ...s, error: e instanceof Error ? e.message : String(e) });
+        } finally {
+          setBusy(false);
+        }
+      }}
+      disabled={running}
+      title={title}
+      aria-label="Sync the inbox from Claude"
+      className={`flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-md transition-colors whitespace-nowrap shrink-0 hover:bg-neutral-900 ${s.error ? 'text-amber-400' : 'text-neutral-400 hover:text-neutral-200'}`}
+    >
+      <RefreshCw className={`w-3.5 h-3.5 text-sky-400 ${running ? 'animate-spin' : ''}`} />
+      <span className="hidden md:inline">Sync</span>
+    </button>
+  );
+};
 
 /** Where notes are kept: the Jesster vault (with its chain) or this browser. */
 const StorageBadge: React.FC<{ storage?: KernelSync }> = ({ storage }) => {
@@ -65,7 +105,6 @@ export const Header: React.FC<HeaderProps> = ({
   onSelectTab,
   onOpenQuickCapture,
   onOpenOllamaModal,
-  onOpenWindowsModal,
   onCreateNewNote,
   ollamaConfig,
   storage,
@@ -162,29 +201,14 @@ export const Header: React.FC<HeaderProps> = ({
           <Zap className="w-3.5 h-3.5 text-amber-400" />
           <span>Capture</span>
         </button>
+
+        <InboxSyncButton />
       </nav>
 
       {/* Zone 3: Actions */}
       <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
         {desktopVault ? (
           <>
-            <button
-              onClick={desktopVault.reveal}
-              onContextMenu={(e) => {
-                e.preventDefault();
-                desktopVault.choose();
-              }}
-              title={
-                desktopVault.error ||
-                `Notes are Markdown files in ${desktopVault.dir}\nClick: open the folder. Right-click: choose a different folder.`
-              }
-              className={`hidden sm:inline-flex items-center gap-1 px-2 py-1 rounded-md border text-[11px] whitespace-nowrap ${
-                desktopVault.error ? 'border-amber-700 text-amber-400' : 'border-emerald-800 text-emerald-400'
-              }`}
-            >
-              <FolderOpen className="w-3 h-3" />
-              Vault · {desktopVault.dir.split(/[\\/]/).filter(Boolean).pop() || 'notes'}
-            </button>
             <button
               onClick={() => desktopVault.importFiles()}
               title="Import documents from anywhere on this PC as notes (Markdown, text, Word, HTML, code). You can also drop files on the window."
@@ -229,16 +253,6 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="hidden sm:inline">{storage.updating ? 'Updating…' : 'Update'}</span>
           </button>
         )}
-        {/* Windows .exe Packaging Button */}
-        <button
-          onClick={onOpenWindowsModal}
-          title="Package and Download Windows .exe Desktop App"
-          className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg border border-neutral-800 bg-neutral-900 hover:bg-neutral-800 text-xs text-neutral-300 hover:text-white transition-colors shrink-0"
-        >
-          <Monitor className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
-          <span className="text-[11px] font-medium hidden sm:inline">Windows .exe</span>
-        </button>
-
         {/* Ollama Status Button */}
         <button
           onClick={onOpenOllamaModal}

@@ -1,4 +1,4 @@
-export type NoteCategory = 'projects' | 'areas' | 'resources' | 'archives' | 'inbox';
+export type NoteCategory = 'inbox' | 'projects' | 'tasks' | 'worlds' | 'archives' | 'laws' | 'scratchpads';
 
 export interface Note {
   id: string;
@@ -32,9 +32,6 @@ export interface BrainStats {
   totalNotes: number;
   totalWords: number;
   totalTags: number;
-  projectsCount: number;
-  areasCount: number;
-  resourcesCount: number;
-  archivesCount: number;
-  inboxCount: number;
+  /** notes on each shelf */
+  shelves: Record<NoteCategory, number>;
 }

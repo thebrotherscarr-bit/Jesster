@@ -50,7 +50,7 @@ test('files written by the notes kernel read the same way', () => {
     'created: 2026-10-21T21:00:54+0000\nupdated: 2026-10-21T14:00:54-0700\n---\n\nhello';
   const n = parseFile(raw, 'k', 0);
   assert.equal(n.title, 'From the kernel');
-  assert.equal(n.category, 'areas');
+  assert.equal(n.category, 'projects', 'an old shelf is read as its new one');
   assert.equal(n.updatedAt, Date.UTC(2026, 9, 21, 21, 0, 54));
   assert.equal(n.content, 'hello');
 });
@@ -119,4 +119,24 @@ test('Word documents: paragraphs, headings and lists', () => {
   const n = importFile(f).note;
   assert.equal(n.title, 'Quarterly plan');
   assert.deepEqual(n.tags, ['imported', 'docx']);
+});
+
+test('old shelves are moved on disk once, touching only the category line', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sb-shelves-'));
+  const file = (id, cat, tags, body) =>
+    fs.writeFileSync(path.join(dir, `${id}.md`), `---\r\nid: ${id}\r\ntitle: "${id}"\r\ncategory: ${cat}\r\npinned: false\r\ntags: [${tags}]\r\ncreated: 2026-01-01T00:00:00+0000\r\nupdated: 2026-01-02T00:00:00+0000\r\n---\r\n\r\n${body}`);
+  file('a', 'areas', '', 'category: areas stays in the body');
+  file('r', 'resources', 'chat', 'x');
+  file('l', 'resources', 'ruling', 'x');
+  file('t', 'tasks', '', 'x');
+  const v = new Vault(dir);
+  const shelf = Object.fromEntries(v.load().map((n) => [n.id, n.category]));
+  assert.deepEqual(shelf, { a: 'projects', l: 'laws', r: 'archives', t: 'tasks' });
+  const a = fs.readFileSync(path.join(dir, 'a.md'), 'utf8');
+  assert.match(a, /\r\ncategory: projects\r\n/);
+  assert.match(a, /updated: 2026-01-02T00:00:00\+0000/);
+  assert.match(a, /category: areas stays in the body$/);
+  const before = fs.statSync(path.join(dir, 't.md')).mtimeMs;
+  v.load();
+  assert.equal(fs.statSync(path.join(dir, 't.md')).mtimeMs, before, 'a note on a current shelf is not rewritten');
 });

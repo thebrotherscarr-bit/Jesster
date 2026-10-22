@@ -650,6 +650,28 @@ def prove_archive(root):
         srv.shutdown()
 
 
+def prove_shelves(root):
+    print("== shelves ==")
+    k = fresh(root, "shelves")
+    k.call("notes.create", {"title": "Old", "body": "x", "category": "resources"})
+    k.call("notes.create", {"title": "Area", "body": "y", "category": "areas"})
+    k.call("notes.create", {"title": "Law 1", "body": "z", "tags": ["ruling"], "category": "projects"})
+    k.call("notes.create", {"title": "World", "body": "w", "category": "worlds"})
+    cats = {n["id"]: n["category"] for n in k.vault.notes.values()}
+    ck("old shelves move on write, rulings sit on laws",
+       cats == {"old": "archives", "area": "projects", "law-1": "laws", "world": "worlds"}, cats)
+    raw = os.path.join(k.vault.root, "legacy.md")
+    with open(raw, "w", encoding="utf-8") as f:
+        f.write("---\nid: legacy\ntitle: Legacy\ncategory: resources\ntags: []\n---\n\nold note\n")
+    k._scanned = 0
+    k.call("notes.list")
+    ck("a file on an old shelf is read on its new one", k.note("legacy")["category"] == "archives")
+    k.call("notes.update", {"id": "world", "tags": ["ruling"]})
+    ck("tagging a note ruling moves it to laws", k.note("world")["category"] == "laws")
+    ck("stats count the new shelves", set(k.call("notes.stats")["shelves"]) >=
+       {"inbox", "projects", "tasks", "worlds", "archives", "laws", "scratchpads"})
+
+
 def main():
     root = tempfile.mkdtemp(prefix="prove-notes-")
     try:
@@ -661,6 +683,7 @@ def main():
         prove_http(root)
         prove_ingest_index_gateway(root)
         prove_archive(root)
+        prove_shelves(root)
     finally:
         shutil.rmtree(root, ignore_errors=True)
     print()

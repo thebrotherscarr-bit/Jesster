@@ -27,10 +27,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
   const bridge = window.secondbrainDesktop;
   const [inbox, setInbox] = useState<InboxStatus | null>(null);
   const [busy, setBusy] = useState(false);
+  const [vaultDir, setVaultDir] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isOpen || !bridge?.inbox) return;
     bridge.inbox.status().then(setInbox);
+    bridge.vault?.info().then((v) => setVaultDir(v.dir)).catch(() => {});
     return bridge.inbox.onStatus(setInbox);
   }, [isOpen, bridge]);
 
@@ -61,6 +63,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
             <X className="w-4 h-4" />
           </button>
         </div>
+
+        {vaultDir && (
+          <div className="px-5 py-3 border-b border-neutral-900 flex items-center gap-2 text-xs text-neutral-400">
+            <span className="flex-1 break-all">Notes folder: <span className="text-neutral-300">{vaultDir}</span></span>
+            <button onClick={() => bridge?.vault?.reveal()} className="px-2.5 py-1 rounded-lg border border-neutral-700 text-neutral-200 hover:bg-neutral-800 shrink-0">Open folder</button>
+          </div>
+        )}
 
         <section className="px-5 py-4 border-b border-neutral-900 space-y-3">
           <div className="flex items-center gap-2 text-white text-sm font-medium">

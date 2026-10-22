@@ -38,7 +38,7 @@ ollama run gpt-oss:20b
   {
     id: 'note-resource-prompt-cheatsheet',
     title: 'Resource: GPT-OSS:20B Prompt Engineering & Distillation Cheatsheet',
-    category: 'resources',
+    category: 'archives',
     tags: ['prompts', 'gpt-oss', 'ollama', 'distillation'],
     isPinned: true,
     createdAt: Date.now() - 1000 * 60 * 60 * 24 * 5,
@@ -68,7 +68,7 @@ Format as: - [ ] [Priority] Task description (Owner/Context)
   {
     id: 'note-area-deep-work-routines',
     title: 'Area: Deep Work & Cognitive Habits',
-    category: 'areas',
+    category: 'projects',
     tags: ['productivity', 'habits', 'deep-work'],
     isPinned: false,
     createdAt: Date.now() - 1000 * 60 * 60 * 24 * 7,

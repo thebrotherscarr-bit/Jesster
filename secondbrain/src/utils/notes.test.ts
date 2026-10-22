@@ -27,7 +27,7 @@ const mockNotes: Note[] = [
     id: 'note-2',
     title: 'Daily Deep Work Routine',
     content: 'Focus blocks in the morning from 8 to 11am. Turn off notifications. #focus',
-    category: 'areas',
+    category: 'tasks',
     tags: ['focus', 'routine'],
     isPinned: false,
     createdAt: 2000,
@@ -52,7 +52,7 @@ test('filterNotes filters correctly by query, category, and tags', () => {
   assert.equal(queryResult[0].id, 'note-1');
 
   // Category filter
-  const categoryResult = filterNotes(mockNotes, '', 'areas');
+  const categoryResult = filterNotes(mockNotes, '', 'tasks');
   assert.equal(categoryResult.length, 1);
   assert.equal(categoryResult[0].id, 'note-2');
 
@@ -96,10 +96,10 @@ test('extractTagsFromText identifies hashtags accurately', () => {
 test('calculateBrainStats produces correct aggregate metrics', () => {
   const stats = calculateBrainStats(mockNotes);
   assert.equal(stats.totalNotes, 3);
-  assert.equal(stats.projectsCount, 1);
-  assert.equal(stats.areasCount, 1);
-  assert.equal(stats.archivesCount, 1);
-  assert.equal(stats.inboxCount, 0);
+  assert.equal(stats.shelves.projects, 1);
+  assert.equal(stats.shelves.tasks, 1);
+  assert.equal(stats.shelves.archives, 1);
+  assert.equal(stats.shelves.inbox, 0);
   assert.ok(stats.totalWords > 0);
   assert.ok(stats.totalTags >= 4);
 });
@@ -154,4 +154,15 @@ test('parseNotesFromJson normalizes malformed imported notes instead of crashing
   assert.deepEqual(partial?.tags, ['ollama', 'local-ai']);
   assert.equal(partial?.isPinned, false);
   assert.equal(partial?.updatedAt, partial?.createdAt);
+});
+
+test('old shelves move: areas to projects, resources to archives, rulings to laws', () => {
+  const notes = parseNotesFromJson(JSON.stringify([
+    { id: 'a', title: 'A', category: 'areas', tags: [] },
+    { id: 'r', title: 'R', category: 'resources', tags: [] },
+    { id: 'l', title: 'L', category: 'resources', tags: ['ruling'] },
+    { id: 'w', title: 'W', category: 'worlds', tags: [] },
+    { id: 'x', title: 'X', category: 'nonsense', tags: [] },
+  ]))!;
+  assert.deepEqual(notes.map((n) => n.category), ['projects', 'archives', 'laws', 'worlds', 'inbox']);
 });
