@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { GitBranch, RefreshCw, Loader2, Check, X, ArrowUpFromLine, ArrowDownToLine, GitPullRequest, GitMerge, Save, FileDiff, ExternalLink, Hourglass } from 'lucide-react';
 import { nextStep, isMain, type RepoState, type PullRequest, type Step } from '../utils/githubStep.ts';
+import { LinesPanel, MarksPanel } from './GitHubPanels.tsx';
+import { InboxSyncButton } from './Header.tsx';
 
 /**
  * The GitHub shelf (plan-github-shelf, G2; Kyle, 2026-10-23: "github flows goes into a shelf in
@@ -163,7 +165,8 @@ export const GitHubView: React.FC = () => {
           <GitBranch className="w-5 h-5 text-violet-400" />
           <h1 className="text-lg font-semibold">GitHub</h1>
           <span className="text-xs text-neutral-500">every repository on this PC, level with GitHub</span>
-          <button onClick={readAll} className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-neutral-900 hover:bg-neutral-800 border border-neutral-800">
+          <span className="ml-auto" title="Claude's inbox, from the secondbrain-bridge repository"><InboxSyncButton /></span>
+          <button onClick={readAll} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs bg-neutral-900 hover:bg-neutral-800 border border-neutral-800">
             <RefreshCw className="w-3.5 h-3.5" /> Ask GitHub again
           </button>
         </div>
@@ -282,6 +285,14 @@ export const GitHubView: React.FC = () => {
                         </a>
                         <span className="text-neutral-500 font-mono shrink-0">{p.line}</span>
                         <ExternalLink className="w-3 h-3 text-neutral-600 shrink-0" />
+                        <button
+                          disabled={!!c.busy || p.checks !== 'passed'}
+                          title={p.checks === 'passed' ? 'Merge on GitHub as a merge commit, then bring main down' : 'Merges once every check has passed (checks: ' + p.checks + ')'}
+                          onClick={() => run(r.project, { act: 'merge', label: '', why: '', pr: p })}
+                          className="ml-auto shrink-0 px-2 py-0.5 rounded-md bg-neutral-800 hover:bg-neutral-700 disabled:opacity-40"
+                        >
+                          Merge
+                        </button>
                       </div>
                     ))}
                   </div>
@@ -311,6 +322,9 @@ export const GitHubView: React.FC = () => {
                     </button>
                   </div>
                 </details>
+
+                <LinesPanel project={r.project} door={door} act={(what, steps) => act(r.project, what, steps)} busy={!!c.busy} />
+                <MarksPanel project={r.project} door={door} act={(what, steps) => act(r.project, what, steps)} busy={!!c.busy} />
 
                 {c.said && <pre className={`text-[11px] whitespace-pre-wrap break-words rounded-lg p-2 ${c.failed ? 'bg-red-950/40 text-red-200' : 'bg-emerald-950/30 text-emerald-200'}`}>{c.said}</pre>}
               </section>

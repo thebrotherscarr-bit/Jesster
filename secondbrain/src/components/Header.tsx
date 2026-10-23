@@ -26,7 +26,7 @@ interface HeaderProps {
 }
 
 /** Pull the notes Claude left in the bridge inbox now (Settings → Inbox sets it up). */
-const InboxSyncButton: React.FC = () => {
+export const InboxSyncButton: React.FC = () => {
   const inbox = window.secondbrainDesktop?.inbox;
   const [s, setS] = useState<InboxStatus | null>(null);
   const [busy, setBusy] = useState(false);
@@ -208,19 +208,6 @@ export const Header: React.FC<HeaderProps> = ({
           <span className="hidden md:inline">Flows</span>
         </button>
 
-        {window.secondbrainDesktop?.door && (
-          <button
-            onClick={() => onSelectTab('github')}
-            title="GitHub: every repository on this PC, saved, sent and kept level"
-            className={`flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-md transition-colors whitespace-nowrap shrink-0 ${
-              activeTab === 'github' ? 'bg-neutral-800 text-white font-semibold' : 'hover:text-neutral-200 hover:bg-neutral-900'
-            }`}
-          >
-            <GitBranch className="w-3.5 h-3.5 text-violet-400" />
-            <span className="hidden md:inline">GitHub</span>
-          </button>
-        )}
-
         <AtlasButton />
 
         <button
@@ -232,7 +219,22 @@ export const Header: React.FC<HeaderProps> = ({
           <span>Capture</span>
         </button>
 
-        <InboxSyncButton />
+        {/* GitHub, where Sync stood (his word, 2026-10-23: "take that button, change it to GitHub, fucking add all the shit in there"):
+            every repository, its lines, marks and pull requests, the git flows, and Claude's inbox sync */}
+        {window.secondbrainDesktop?.door ? (
+          <button
+            onClick={() => onSelectTab('github')}
+            title="GitHub: every repository on this PC, its lines of work, version marks and pull requests, the git flows, and Claude's inbox"
+            className={`flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-md transition-colors whitespace-nowrap shrink-0 ${
+              activeTab === 'github' ? 'bg-neutral-800 text-white font-semibold' : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900'
+            }`}
+          >
+            <GitBranch className="w-3.5 h-3.5 text-violet-400" />
+            <span className="hidden md:inline">GitHub</span>
+          </button>
+        ) : (
+          <InboxSyncButton />
+        )}
       </nav>
 
       {/* Zone 3: Actions */}
