@@ -1,5 +1,10 @@
 # Reconciling secondbrain-local with Jesster Notes
 
+> **Historical (2026-10-23).** SecondBrain is now in this repo at
+> `secondbrain/` and uses the kernel over `/rpc`; `serve` serves its build.
+> Embeddings are `index.embed` and `index.search`. The steps below are kept
+> as the record of how it was brought over.
+
 The `secondbrain-local---ollama-gpt-oss` project lives on a Windows desktop
 and was not reachable from the session that built this kernel. The kernel
 already covers what its name says: local notes and Ollama with `gpt-oss`.
@@ -66,7 +71,7 @@ REA is for when there are only binaries or bundles.
 |---|---|
 | chat or ask over notes with gpt-oss | `llm.ask`: already here |
 | summaries or auto-tags | `llm.summarize`, `llm.suggest_tags`: already here |
-| embeddings / vector search | a new `plugins/embeddings.py` that calls Ollama `/api/embed` and registers `notes.semantic_search`. Store vectors under `<vault>/.jesster/`. |
-| its own UI | the PWA in `../pwa`, or keep secondbrain's UI and point it at `POST /rpc` |
+| embeddings / vector search | `index.embed`, `index.search` (`plugins/index.py`, `nomic-embed-text`): already here |
+| its own UI | secondbrain's UI (`../secondbrain`), served by `serve` and talking to `POST /rpc`: already here |
 | its own API | `serve` (HTTP JSON-RPC), `rpc` (stdio) or `mcp` |
 | its prompts | the `SYSTEM` strings in `plugins/ollama.py` |
