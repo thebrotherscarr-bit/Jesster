@@ -38,8 +38,13 @@ import zipfile
 
 NAME = "archive"
 RAW_TAG = "archive"
+# Notes dug from a local-only root (the vault's config archive_local_roots) carry this
+# tag, and the bridge never sends a note that does (bridge.WITHHOLD): Kyle's rule, "the
+# ARCHIVE never goes on github, EVER". No root is named in this code, since a path out of
+# the archive is the archive too; with none configured, everything dug counts as local.
+LOCAL_TAG = "archive-local"
 DONE_TAG = "distilled"
-DEFAULT_TAGS = ("archive", "chat", "transcript")
+DEFAULT_TAGS = ("archive", "chat", "transcript", "archive-local")
 LEDGER = "archive-ledger.json"
 STATE = "distill.json"
 CHUNK = 6000                 # characters of raw notes per model call (config archive_chunk)
@@ -166,6 +171,18 @@ def file_body(rel, ext, text):
 def register(k):
     from kernel import KernelError, slugify
 
+    def is_local(p):
+        """Is this path under a local-only root (config archive_local_roots)?"""
+        roots = k.config.get("archive_local_roots")
+        if not roots:
+            return True
+        a = os.path.normcase(os.path.abspath(p))
+        for r in roots:
+            r = os.path.normcase(os.path.abspath(os.path.expanduser(r)))
+            if a == r or a.startswith(r.rstrip("\\/") + os.sep):
+                return True
+        return False
+
     def meta_path(name):
         return os.path.join(k.vault.meta, name)
 
@@ -184,12 +201,17 @@ def register(k):
         os.replace(tmp, p)
 
     def put(nid, title, body, tags, created, stats, category="archives"):
+        tags = list(tags) + [t for t in stats.get("extra_tags", ()) if t not in tags]
         have = k.vault.notes.get(nid)
         if have:
-            if have["body"] == body:
+            more = [t for t in tags if t not in have["tags"]]
+            if have["body"] == body and not more:
                 stats["skipped"] += 1
                 return
-            k.call("notes.update", {"id": nid, "body": body, "title": title})
+            up = {"id": nid, "body": body, "title": title}
+            if more:
+                up["tags"] = list(have["tags"]) + more
+            k.call("notes.update", up)
             stats["updated"] += 1
             return
         params = {"id": nid, "title": title, "body": body, "tags": tags,
@@ -307,10 +329,15 @@ def register(k):
             raise KernelError("not_found", "nothing at %s" % p)
         stats = {"path": p, "created": 0, "updated": 0, "skipped": 0, "unchanged": 0,
                  "repos": 0, "files": 0, "chats": None, "failed": []}
+        # what is dug from a local-only root carries LOCAL_TAG, which the bridge never sends
+        local = is_local(p)
+        if local:
+            stats["extra_tags"] = [LOCAL_TAG]
+            stats["local"] = True
         if "ingest.path" in k.methods:
             # chats, transcripts, and Markdown/text notes (through import.folder)
             try:
-                stats["chats"] = k.call("ingest.path", {"path": p, "tag": RAW_TAG})
+                stats["chats"] = k.call("ingest.path", {"path": p, "tag": LOCAL_TAG if local else RAW_TAG})
             except KernelError as e:
                 stats["failed"].append("%s: %s" % (p, e))
         if os.path.isdir(p):
@@ -517,6 +544,9 @@ def register(k):
         foot = FOOT % st["pos"]
         stats = {"created": 0, "updated": 0, "skipped": 0}
         tags = [DONE_TAG]
+        # distilled from anything local-only: the written notes carry its words, so they stay local too
+        if any(LOCAL_TAG in (k.vault.notes.get(i) or {}).get("tags", ()) for i in st["queue"][: st["pos"] + 1]):
+            stats["extra_tags"] = [LOCAL_TAG]
         names = {k_: t["name"] for k_, t in st["topics"].items()}
 
         def under(kind, key):

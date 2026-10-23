@@ -14,8 +14,8 @@ function fakeInner() {
   return { calls, call: async (name, args) => (calls.push([name, args]), `ran ${name}`) };
 }
 
-test('the table is the Go door\'s 96, with its flags', () => {
-  assert.equal(TABLE.length, 96);
+test('the table is the Go door\'s 97, with its flags', () => {
+  assert.equal(TABLE.length, 97);
   const by = Object.fromEntries(TABLE.map((t) => [t.name, t]));
   assert.ok(by.shell_run.serviceOnly && by.file_edit.serviceOnly && by.git_pr.serviceOnly);
   assert.deepEqual(by.git_branch.reads, ['list']);

@@ -5,7 +5,7 @@
  * app and in tests.
  */
 
-export type BlockType = 'input' | 'note' | 'search' | 'model' | 'template' | 'save' | 'output';
+export type BlockType = 'input' | 'note' | 'search' | 'model' | 'template' | 'save' | 'output' | 'dig' | 'tag';
 
 export interface BlockData {
   /** input: the text; template / model: the template, with {{input}}, {{input1}}…, {{date}} */
@@ -39,6 +39,8 @@ export interface FlowEdge {
 export interface Flow {
   nodes: FlowNode[];
   edges: FlowEdge[];
+  /** run again every this many minutes while it is open in Flows (0 or absent: only on Run) */
+  every?: number;
 }
 
 export interface BlockContext {
@@ -161,6 +163,7 @@ export function flowToNoteBody(flow: Flow, about = ''): string {
   const clean: Flow = {
     nodes: flow.nodes.map(({ id, type, position, data }) => ({ id, type, position: { x: Math.round(position.x), y: Math.round(position.y) }, data })),
     edges: flow.edges.map(({ id, source, target }) => ({ id, source, target })),
+    ...(flow.every && flow.every > 0 ? { every: Math.round(flow.every) } : {}),
   };
   return `${about.trim() || 'A flow: blocks wired output to input. Open it in the Flows tab.'}\n\n\`\`\`flow\n${JSON.stringify(clean, null, 1)}\n\`\`\`\n`;
 }

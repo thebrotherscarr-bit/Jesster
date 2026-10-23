@@ -554,7 +554,9 @@ def prove_archive(root):
     srv = HTTPServer(("127.0.0.1", 0), FakeDistiller)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     url = "http://127.0.0.1:%d" % srv.server_port
-    k = fresh(root, "dig", ollama_url=url, archive_chunk=400)
+    # a vault with its local-only root set elsewhere, as the real one is: this source is not local
+    roots = [os.path.join(root, "local-only")]
+    k = fresh(root, "dig", ollama_url=url, archive_chunk=400, archive_local_roots=roots)
     try:
         ck("a missing source is refused",
            refused(lambda: k.call("archive.sources", {"add": os.path.join(root, "nope")}),
@@ -599,14 +601,14 @@ def prove_archive(root):
            and sent["stream"] is False)
         ck("chunks stay small", len(sent["messages"][-1]["content"]) < 7000)
 
-        dead = fresh(root, "dig", ollama_url="http://127.0.0.1:9", archive_chunk=400)
+        dead = fresh(root, "dig", ollama_url="http://127.0.0.1:9", archive_chunk=400, archive_local_roots=roots)
         before = dead.call("archive.status")["distill"]["notes_done"]
         ck("Ollama down is said plainly",
            refused(lambda: dead.call("archive.distill"), "llm_unreachable"))
         ck("and the cursor does not move",
            dead.call("archive.status")["distill"]["notes_done"] == before)
 
-        again = fresh(root, "dig", ollama_url=url, archive_chunk=400)
+        again = fresh(root, "dig", ollama_url=url, archive_chunk=400, archive_local_roots=roots)
         while not again.call("archive.distill", {"steps": 3})["finished"]:
             pass
         st = again.call("archive.status")["distill"]
@@ -650,6 +652,59 @@ def prove_archive(root):
         srv.shutdown()
 
 
+def prove_archive_stays_local(root):
+    print("== the archive stays off GitHub ==")
+    import bridge
+    from kernel import KernelError
+    local = os.path.join(root, "private-archive")
+    make_archive(local)
+    srv = HTTPServer(("127.0.0.1", 0), FakeDistiller)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        k = fresh(root, "local", ollama_url="http://127.0.0.1:%d" % srv.server_port, archive_chunk=400,
+                  archive_local_roots=[local])
+        mine = k.call("notes.create", {"title": "My own note", "body": "kept", "tags": ["x"]})
+        k.call("archive.sources", {"add": local})
+        k.call("archive.dig")
+        dug = [n for n in k.vault.notes.values() if "archive-local" in n["tags"]]
+        ck("everything dug from a local-only root is tagged archive-local",
+           len(dug) >= 5 and all("archive-local" in n["tags"] for n in k.vault.notes.values()
+                                 if n["id"] != mine["id"]), len(dug))
+        bare = fresh(root, "no-roots", archive_chunk=400)
+        bare.call("archive.sources", {"add": local})
+        bare.call("archive.dig")
+        ck("with no local-only root configured, everything dug counts as local",
+           bare.vault.notes and all("archive-local" in n["tags"] for n in bare.vault.notes.values()),
+           len(bare.vault.notes))
+        some = dug[0]["id"]
+        listed = bridge.answer(k, "notes.list", {"limit": 500})
+        ck("the bridge leaves them out of a listing",
+           [n["id"] for n in listed] == [mine["id"]], [n["id"] for n in listed])
+        ck("and out of a search", all(h.get("note") != some and h.get("id") != some
+                                      for h in bridge.answer(k, "notes.search", {"q": "door"})))
+
+        def code(fn):
+            try:
+                fn()
+            except KernelError as e:
+                return e.code
+            return None
+        ck("one of them asked for by id is refused",
+           code(lambda: bridge.answer(k, "notes.get", {"id": some})) == "bridge_withheld")
+        ck("a briefing or a model's answer is refused while they are here",
+           code(lambda: bridge.answer(k, "context.for", {"q": "door"})) == "bridge_withheld"
+           and code(lambda: bridge.answer(k, "llm.ask", {"q": "door"})) == "bridge_withheld")
+        ck("and an ordinary note still crosses",
+           bridge.answer(k, "notes.get", {"id": mine["id"]})["body"] == "kept")
+        while not k.call("archive.distill", {"steps": 5})["finished"]:
+            pass
+        k.call("archive.write")
+        ck("what the digger writes from it is local too",
+           "archive-local" in k.vault.notes["archive-overview"]["tags"])
+    finally:
+        srv.shutdown()
+
+
 def prove_shelves(root):
     print("== shelves ==")
     k = fresh(root, "shelves")
@@ -687,6 +742,7 @@ def main():
         prove_http(root)
         prove_ingest_index_gateway(root)
         prove_archive(root)
+        prove_archive_stays_local(root)
         prove_shelves(root)
     finally:
         shutil.rmtree(root, ignore_errors=True)

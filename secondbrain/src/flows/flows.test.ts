@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { Flow, order, fillTemplate, runFlow, flowToNoteBody, flowFromNoteBody, describe, BlockState } from './engine.ts';
-import { makeRunners } from './runners.ts';
+import { makeRunners, parseTags, TAGGED } from './runners.ts';
 import { STARTERS } from './starters.ts';
 import { Note } from '../types/index.ts';
 
@@ -151,4 +151,56 @@ test('a flow is kept in a note and read back the same', () => {
   assert.deepEqual(flowFromNoteBody(body), f);
   assert.equal(flowFromNoteBody('no flow here'), null);
   assert.equal(flowFromNoteBody('```flow\n{bad\n```'), null);
+});
+
+const anote = (id: string, tags: string[], content = 'text'): Note => ({ id, title: id, content, category: 'archives', tags, isPinned: false, createdAt: 1, updatedAt: 1 });
+
+test("tags are read out of a model's reply: lowercased, hyphenated, at most eight", () => {
+  assert.deepEqual(parseTags('Tags: Game Design, #Rimtera, voxel engine; ROCm'), ['game-design', 'rimtera', 'voxel-engine', 'rocm']);
+  assert.deepEqual(parseTags('a, b, c'), []);
+});
+
+test('Tag notes tags the next batch, marks each tagged, and moves on next run', async () => {
+  let notes = [anote('a', ['archive']), anote('b', ['archive']), anote('c', ['other']), anote('d', ['archive', TAGGED])];
+  const asked: string[] = [];
+  const r = makeRunners({
+    notes: () => notes,
+    upsertNote: (n) => (notes = notes.map((x) => (x.id === n.id ? n : x))),
+    askLocal: async (p) => (asked.push(p), 'Atlas, door design'),
+    newId: () => 'x',
+  });
+  const run = () => r.tag!({ node: { id: 't', type: 'tag', position: at(0), data: { tags: 'archive', limit: 1 } }, inputs: [], fill: (s) => s });
+  assert.match(await run(), /^Tagged 1:\na: atlas, door-design/);
+  assert.deepEqual(notes.find((n) => n.id === 'a')!.tags, ['archive', 'atlas', 'door-design', TAGGED]);
+  assert.match(await run(), /^Tagged 1:\nb:/);
+  assert.equal(await run(), 'Everything tagged archive is tagged.');
+  assert.ok(!notes.find((n) => n.id === 'c')!.tags.includes(TAGGED), 'a note outside the filter is left alone');
+  assert.equal(asked.length, 2);
+});
+
+test('Dig the archive adds the folder as a source and reports what changed', async () => {
+  const added: string[] = [];
+  const dir = String.raw`C:\Archive`;
+  const r = makeRunners({
+    notes: () => [],
+    upsertNote: () => {},
+    askLocal: async () => '',
+    newId: () => 'x',
+    archive: {
+      sources: async (c) => (c && c.add ? (added.push(c.add), added) : added),
+      dig: async () => ({ sources: [{ path: dir, created: 3, updated: 1, unchanged: 7 }] }),
+    },
+  });
+  const out = await r.dig!({ node: { id: 'd', type: 'dig', position: at(0), data: { path: dir } }, inputs: [], fill: (s) => s });
+  assert.deepEqual(added, [dir]);
+  assert.equal(out, `Dug:\n${dir}: 3 new, 1 changed, 7 unchanged`);
+  const none = makeRunners({ notes: () => [], upsertNote: () => {}, askLocal: async () => '', newId: () => 'x' });
+  await assert.rejects(async () => none.dig!({ node: { id: 'd', type: 'dig', position: at(0), data: {} }, inputs: [], fill: (s) => s }), /desktop app/);
+});
+
+test('the starter "Dig and tag the archive" repeats every 10 minutes, and the repeat is kept in its note', () => {
+  const s = STARTERS.find((x) => x.name === 'Dig and tag the archive')!;
+  assert.equal(describe(s.flow), 'dig → tag → output');
+  assert.equal(flowFromNoteBody(flowToNoteBody(s.flow))!.every, 10);
+  assert.equal(flowFromNoteBody(flowToNoteBody({ nodes: [], edges: [] }))!.every, undefined);
 });

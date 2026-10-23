@@ -743,9 +743,9 @@ ipcMain.handle('atlas:connect', async (event, opts) => {
   return { config: getMcp().rawConfig(), file: getMcp().file(), status: await connectMcp() };
 });
 
-// ---- the Atlas button: Atlas's door and web app, started when it is clicked ----------
-atlasGlass.register({ app, ipcMain, guard, getSettings, vaultDir, shell });
-door.register({ atlas, ipcMain, guard, getSettings, vaultDir }); // SecondBrain is the door: Atlas's tools at /mcp, writes held
+// ---- Atlas comes from SecondBrain: the door at /mcp and on 8090, the glass its child ----------
+const theDoor = door.register({ atlas, ipcMain, guard, getSettings, vaultDir }); // Atlas's tools, writes held
+atlasGlass.register({ app, ipcMain, guard, getSettings, vaultDir, shell, door: theDoor }); // 8090 and the glass at start; the button opens it
 
 // ---- the archive digger (Settings → Archive), run by the notes kernel ----------
 archive.register({ ipcMain, guard, getSettings, vaultDir, send: (ch, data) => mainWindow && mainWindow.webContents.send(ch, data) });

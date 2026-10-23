@@ -352,6 +352,23 @@
   "secrets": []
  },
  {
+  "name": "notes",
+  "description": "his notes in SecondBrain, read through the notes kernel he declared (MANJUEL_MCP_NOTES_CMD): search them, list them by tag newest first, whole if asked (whats-left, handoff, daybook, changelog, doc, ledger, ruling ...), get one whole, or the briefing for a question. Nothing is written",
+  "args": [
+   "action?",
+   "q?",
+   "tag?",
+   "id?",
+   "limit?",
+   "full?",
+   "project?"
+  ],
+  "writes": false,
+  "reads": [],
+  "serviceOnly": false,
+  "secrets": []
+ },
+ {
   "name": "seats",
   "description": "the world's own seat declarations and the pipelines they stand in, from agents/ and pipelines.md",
   "args": [
