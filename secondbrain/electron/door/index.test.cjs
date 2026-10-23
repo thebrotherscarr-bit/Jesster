@@ -99,3 +99,44 @@ test('without a ground there is no door: nothing listed, nothing served', async 
   assert.equal(out.result.isError, true);
   assert.equal(out.result.content[0].text, 'no tool records');
 });
+
+test('the GitHub shelf presses the door\'s git and hold tools over IPC as the operator, and nothing else', async () => {
+  const g = ground();
+  const handlers = {};
+  const reg = door.register({
+    atlas: { useDoor: () => {} },
+    ipcMain: { handle: (ch, fn) => (handlers[ch] = fn) },
+    guard: () => {},
+    getSettings: () => ({ get: () => ({ ground: g }) }),
+    vaultDir: () => '',
+  });
+  try {
+    const out = await handlers['door:call']({}, 'git', { project: 'atlas' });
+    assert.equal(out.isError, false);
+    assert.match(out.text, /"world": "atlas"/);
+    await assert.rejects(() => handlers['door:call']({}, 'shell_run', { shell: 'bash', command: 'ls' }), /not a GitHub shelf tool: shell_run/);
+    await assert.rejects(() => handlers['door:call']({}, 'file_edit', {}), /not a GitHub shelf tool/);
+    for (const n of ['git', 'git_commit', 'git_push', 'git_pull', 'git_branch', 'git_tag', 'git_pr', 'hold_list', 'hold_answer']) assert.ok(door.SHELF_TOOLS.has(n), n);
+  } finally {
+    reg.stop();
+  }
+});
+
+test('a flow\'s git block: reads and bringing level run, other writes wait for him, pull requests too, and nothing moves the ground under a sitting', async () => {
+  const g = ground();
+  const d = door.serve(() => g);
+  try {
+    assert.match((await door.flowCall(d, 'git', { project: 'atlas' })).text, /"world": "atlas"/);
+    assert.match((await door.flowCall(d, 'git_commit', { project: 'atlas', message: 'm' })).text, /^HELD: "git_commit" writes/);
+    assert.match((await door.flowCall(d, 'git_pr', { project: 'atlas', action: 'open' })).text, /^HELD: "git_pr" writes, and this call did not come from the operator's own glass \(a flow\)/);
+    assert.match((await door.flowCall(d, 'hold_answer', { id: 'x', decision: 'approve' })).text, /cannot call hold_answer/);
+    assert.match((await door.flowCall(d, 'git_pull', { project: 'atlas' })).text, /not a repository/, 'bringing level runs, as the operator');
+    fs.mkdirSync(path.join(g, 'sessions'));
+    fs.writeFileSync(path.join(g, 'sessions', 'sessions.jsonl'), '{"n": 9, "ended": ""}\n');
+    assert.match((await door.flowCall(d, 'git_pull', { project: 'research' })).text, /^Refused: sitting 9 is open/);
+    const held = JSON.parse((await d.call('hold_list', {}, door.OPERATOR)).text).held.map((h) => h.tool);
+    assert.deepEqual(held.sort(), ['git_commit', 'git_pr'], 'both wait in Waiting on you');
+  } finally {
+    d.stop();
+  }
+});

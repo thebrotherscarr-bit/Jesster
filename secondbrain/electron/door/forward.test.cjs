@@ -35,9 +35,10 @@ test('a forwarded read runs at once; the operator\'s call is forwarded with its 
   const inner = fakeInner();
   const reg = door.build([['research', fs.mkdtempSync(path.join(os.tmpdir(), 'fwd-'))]], { defaultProject: 'research', getInner: () => inner });
   assert.equal(await reg.call('rack_list', {}, CLIENT), 'ran rack_list');
-  assert.equal(await reg.call('git_branch', { action: 'list' }, CLIENT), 'ran git_branch', 'a reading action is not held');
+  // git_branch runs here since 2026-10-23 (gitctl.cjs): its reading action is still not held
+  assert.match(await reg.call('git_branch', { action: 'list' }, CLIENT), /not a repository/, 'a reading action is not held');
   assert.equal(await reg.call('shell_run', { shell: 'bash', command: 'ls', __caller: { service: true } }, OPERATOR), 'ran shell_run');
-  assert.deepEqual(inner.calls[2], ['shell_run', { shell: 'bash', command: 'ls', project: 'research' }]);
+  assert.deepEqual(inner.calls[1], ['shell_run', { shell: 'bash', command: 'ls', project: 'research' }]);
 });
 
 test('the inner door is started with --auth and its own wire, and called as the operator', async () => {
@@ -58,4 +59,26 @@ test('the inner door is started with --auth and its own wire, and called as the 
   const args = inner.args();
   assert.ok(args.includes('--auth') && args.includes('--http') && args.includes(`research=${g.replace(/\\/g, '/')}`));
   assert.ok(!args.join(' ').includes(inner.secret), 'the wire is never on the command line');
+});
+
+test('the inner door\'s holds are the operator\'s too: listed beside this door\'s own, and answered there', async () => {
+  const calls = [];
+  const inner = {
+    child: { exitCode: null },
+    call: async (name, args) => {
+      calls.push([name, args]);
+      if (name === 'hold_list') return JSON.stringify({ armed: true, held: [{ id: 'hold_2_shell_run', tool: 'shell_run' }] });
+      return 'Approved ' + args.id + '. "shell_run" ran:\n\nok';
+    },
+  };
+  const reg = door.build([['research', fs.mkdtempSync(path.join(os.tmpdir(), 'fwd-'))]], { defaultProject: 'research', getInner: () => inner });
+  assert.match(await reg.call('remember', { text: 'a client wrote' }, CLIENT), /^HELD/);
+  const listed = JSON.parse(await reg.call('hold_list', {}, OPERATOR));
+  assert.deepEqual(listed.held.map((h) => h.tool), ['remember', 'shell_run'], 'this door\'s hold and the inner door\'s, together');
+  assert.equal(await reg.call('hold_answer', { id: 'hold_2_shell_run', decision: 'approve' }, OPERATOR), 'Approved hold_2_shell_run. "shell_run" ran:\n\nok');
+  assert.deepEqual(calls[1], ['hold_answer', { id: 'hold_2_shell_run', decision: 'approve', project: 'research' }]);
+  assert.match(await reg.call('hold_list', {}, CLIENT), /^Refused: the hold queue is the operator's/, 'a client sees neither queue');
+  assert.equal(calls.length, 2, 'and the inner door was not asked for it');
+  inner.child.exitCode = 0;
+  assert.deepEqual(JSON.parse(await reg.call('hold_list', {}, OPERATOR)).held.map((h) => h.tool), ['remember'], 'a stopped inner door is not asked');
 });

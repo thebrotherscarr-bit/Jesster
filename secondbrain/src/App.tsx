@@ -510,6 +510,17 @@ export default function App() {
           />
         )}
 
+        {activeTab === 'github' && (
+          <FlowsView
+            kind="github"
+            notes={notes}
+            ollamaConfig={ollamaConfig}
+            integrationsVersion={integrationsVersion}
+            newNoteId={createNoteId}
+            onUpsertNote={(n) => setNotes((prev) => (prev.some((x) => x.id === n.id) ? prev.map((x) => (x.id === n.id ? n : x)) : [n, ...prev]))}
+          />
+        )}
+
         {activeTab === 'graph' && (
           <GraphView
             notes={notes}
