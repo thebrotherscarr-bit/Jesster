@@ -213,6 +213,9 @@ function serve(getGround, opts = {}) {
   };
 }
 
+/** What the GitHub shelf may press over IPC (door:call). */
+const SHELF_TOOLS = new Set(['git', 'git_diff', 'git_remote', 'git_commit', 'git_push', 'git_pull', 'git_branch', 'git_tag', 'git_pr', 'hold_list', 'hold_answer']);
+
 /** main.cjs's one line: the door into atlas.handleMcp, and the operator's hand over IPC. */
 function register({ atlas, ipcMain, guard, getSettings, vaultDir }) {
   const { findGround } = require('../atlasglass.cjs');
@@ -227,7 +230,14 @@ function register({ atlas, ipcMain, guard, getSettings, vaultDir }) {
     guard(event);
     return door.call('hold_answer', { id: String(id || ''), decision: String(decision || '') }, OPERATOR);
   });
+  // The GitHub shelf (plan-github-shelf, G2): the app's own page presses these as the operator, the way
+  // the glass's GitHub tab presses its buttons. Its git and hold tools only, never the rest of the door.
+  ipcMain.handle('door:call', async (event, name, args) => {
+    guard(event);
+    if (!SHELF_TOOLS.has(name)) throw new Error(`not a GitHub shelf tool: ${name}`);
+    return door.call(name, args && typeof args === 'object' ? args : {}, OPERATOR);
+  });
   return door;
 }
 
-module.exports = { register, serve, build, worldsFor, engines, ORDER, PORTED, REMAINING, INSTRUCTIONS, OPERATOR, CLIENT };
+module.exports = { register, serve, build, worldsFor, engines, ORDER, PORTED, REMAINING, INSTRUCTIONS, OPERATOR, CLIENT, SHELF_TOOLS };

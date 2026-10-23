@@ -112,6 +112,10 @@ contextBridge.exposeInMainWorld('secondbrainDesktop', {
   computer: {
     models: () => ipcRenderer.invoke('computer:models'),
   },
+  // the GitHub shelf: the door's git and hold tools, as the operator
+  door: {
+    call: (name, args) => ipcRenderer.invoke('door:call', name, args || {}),
+  },
   pick: (kind, title) => ipcRenderer.invoke('dialog:pick', kind, title),
   vault: {
     info: () => ipcRenderer.invoke('vault:info'),
