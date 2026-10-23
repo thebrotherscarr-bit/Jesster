@@ -71,7 +71,7 @@ test('no ground, or a glass that never answers, is said plainly', async () => {
 test('the web app opens in an app window: Chrome first, then Edge, then the default browser', () => {
   const launched = [];
   const external = [];
-  const launch = (exe, args) => launched.push([path.basename(exe), args]);
+  const launch = (exe, args) => launched.push([path.win32.basename(exe), args]); // a Windows path, read as one on any machine
   const openExternal = (u) => external.push(u);
   const both = (parts) => (parts.includes('chrome.exe') || parts.includes('msedge.exe') ? 'C:\\x\\' + parts[parts.length - 1] : '');
   assert.strictEqual(openWindow(GLASS_URL, { find: both, launch, openExternal }), 'chrome');
