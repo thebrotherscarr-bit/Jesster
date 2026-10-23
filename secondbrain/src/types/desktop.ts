@@ -247,6 +247,8 @@ export interface DesktopBridge {
     onState: (cb: (s: ArchiveState) => void) => () => void;
   };
   computer?: { models: () => Promise<string[]> };
+  /** the door's git and hold tools, as the operator: the GitHub shelf's hand (door:call) */
+  door?: { call: (name: string, args?: Record<string, unknown>) => Promise<{ text: string; isError: boolean }> };
   pick?: (kind: 'file' | 'folder' | 'exe', title: string) => Promise<string | null>;
 }
 

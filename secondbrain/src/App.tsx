@@ -24,6 +24,7 @@ import { QuickCaptureModal } from './components/QuickCaptureModal.tsx';
 import { SettingsModal } from './components/SettingsModal.tsx';
 import { IntegrationsModal } from './components/IntegrationsModal.tsx';
 import { FlowsView } from './components/FlowsView.tsx';
+import { GitHubView } from './components/GitHubView.tsx';
 import { AgentView } from './components/AgentView.tsx';
 import { useVoiceSettings } from './voice/useVoice.ts';
 import { useKernelSync } from './hooks/useKernelSync.ts';
@@ -509,6 +510,8 @@ export default function App() {
             onUpsertNote={(n) => setNotes((prev) => (prev.some((x) => x.id === n.id) ? prev.map((x) => (x.id === n.id ? n : x)) : [n, ...prev]))}
           />
         )}
+
+        {activeTab === 'github' && <GitHubView />}
 
         {activeTab === 'graph' && (
           <GraphView
