@@ -16,11 +16,11 @@ import {
   type NodeProps,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Workflow, Play, Square, Save, Plus, Type, FileText, Search, Bot, Braces, NotebookPen, Eye, Loader2, Check, AlertTriangle, MinusCircle, Trash2, Pickaxe, Tags, Repeat } from 'lucide-react';
+import { Workflow, Play, Square, Save, Plus, Type, FileText, Search, Bot, Braces, NotebookPen, Eye, Loader2, Check, AlertTriangle, MinusCircle, Trash2, Pickaxe, Tags, Repeat, GitBranch } from 'lucide-react';
 import { Note, OllamaConfig } from '../types/index.ts';
 import { IntegrationsState } from '../types/desktop.ts';
 import { BlockData, BlockState, BlockType, Flow, describe, flowFromNoteBody, flowToNoteBody, runFlow } from '../flows/engine.ts';
-import { makeRunners } from '../flows/runners.ts';
+import { makeRunners, GIT_ACTS, GIT_REPOS } from '../flows/runners.ts';
 import { STARTERS } from '../flows/starters.ts';
 import { SHELVES } from '../utils/shelves.ts';
 import { queryOllama } from '../utils/ollama.ts';
@@ -37,6 +37,7 @@ const BLOCKS: { type: BlockType; label: string; icon: React.ComponentType<{ clas
   { type: 'output', label: 'Output', icon: Eye, hint: 'Show the result', color: 'text-neutral-200' },
   { type: 'dig', label: 'Dig the archive', icon: Pickaxe, hint: 'Read the archive into notes (only what changed)', color: 'text-orange-300' },
   { type: 'tag', label: 'Tag notes', icon: Tags, hint: 'Tag the next batch of untagged notes with a model', color: 'text-lime-300' },
+  { type: 'git', label: 'Git', icon: GitBranch, hint: 'A git act on one repository: status, bring level, save, send, a pull request, a merge, a mark', color: 'text-violet-300' },
 ];
 const BLOCK = Object.fromEntries(BLOCKS.map((b) => [b.type, b])) as Record<BlockType, (typeof BLOCKS)[number]>;
 
@@ -99,6 +100,17 @@ const BlockNode: React.FC<NodeProps<RFNode>> = ({ id, type, data, selected }) =>
               </select>
             </div>
             <input className={field} value={String(data.tags || '')} onChange={(e) => set({ tags: e.target.value })} placeholder="tags" />
+          </>
+        )}
+        {type === 'git' && (
+          <>
+            <select className={field} value={String(data.repo || 'secondbrain')} onChange={(e) => set({ repo: e.target.value })}>
+              {GIT_REPOS.map((r) => <option key={r.project} value={r.project}>{r.label}</option>)}
+            </select>
+            <select className={field} value={String(data.action || 'status')} onChange={(e) => set({ action: e.target.value })}>
+              {Object.entries(GIT_ACTS).map(([k, a]) => <option key={k} value={k}>{a.label}</option>)}
+            </select>
+            <input className={field} value={String(data.text ?? '{{input}}')} onChange={(e) => set({ text: e.target.value })} placeholder="text: a message, a line, a mark ({{input}} is what is wired in)" />
           </>
         )}
         {type === 'dig' && <input className={field} value={String(data.path || '')} onChange={(e) => set({ path: e.target.value })} placeholder="Folder to dig (blank: the sources in Settings → Archive)" />}
@@ -199,7 +211,7 @@ const Canvas: React.FC<FlowsViewProps> = ({ notes, ollamaConfig, onUpsertNote, n
   const add = (type: BlockType) => {
     const id = `${type}-${Math.random().toString(36).slice(2, 7)}`;
     const center = screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
-    const data: BlockData = type === 'tag' ? { model: 'local', limit: 10 } : type === 'model' ? { model: 'local', text: '{{input}}' } : type === 'save' ? { note: 'Flow output {{date}}', mode: 'create', shelf: 'inbox', tags: 'flow-output' } : {};
+    const data: BlockData = type === 'git' ? { repo: 'secondbrain', action: 'status', text: '{{input}}' } : type === 'tag' ? { model: 'local', limit: 10 } : type === 'model' ? { model: 'local', text: '{{input}}' } : type === 'save' ? { note: 'Flow output {{date}}', mode: 'create', shelf: 'inbox', tags: 'flow-output' } : {};
     setNodes((ns) => [...ns, { id, type, position: { x: center.x - 128 + ns.length * 12, y: center.y - 60 + ns.length * 12 }, data }]);
     setDirty(true);
   };
@@ -220,6 +232,7 @@ const Canvas: React.FC<FlowsViewProps> = ({ notes, ollamaConfig, onUpsertNote, n
       },
       newId: () => newNoteId('flow-out'),
       archive: window.secondbrainDesktop?.archive,
+      git: window.secondbrainDesktop?.door?.flow,
       askLocal: (prompt) => {
         if (!ollamaConfig.isConnected || ollamaConfig.isSimulatedMode) throw new Error(`the local model is not connected (Ollama at ${ollamaConfig.hostUrl})`);
         return queryOllama(ollamaConfig.hostUrl, ollamaConfig.model, prompt, '');

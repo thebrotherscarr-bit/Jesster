@@ -19,7 +19,31 @@ export interface RunnerDeps {
     sources: (change?: { add?: string }) => Promise<string[]>;
     dig: () => Promise<unknown>;
   };
+  /** the door's git tools as a flow asks them (door:flow): reads and bringing level run, other writes wait for him */
+  git?: (name: string, args: Record<string, unknown>) => Promise<{ text: string; isError: boolean }>;
 }
+
+/** The git block's acts (plan-github-shelf, G3): a door tool and its arguments, from the block's text. */
+export const GIT_ACTS: Record<string, { label: string; call: (text: string) => [string, Record<string, unknown>] }> = {
+  status: { label: 'Status (asks GitHub)', call: () => ['git', { fetch: 'yes' }] },
+  level: { label: 'Bring level (fast-forward)', call: () => ['git_pull', {}] },
+  save: { label: 'Save (text: the message)', call: (t) => ['git_commit', { message: t }] },
+  send: { label: 'Send the line', call: () => ['git_push', {}] },
+  line: { label: 'Start a line (text: its name)', call: (t) => ['git_branch', { action: 'new', name: t }] },
+  switch: { label: 'Switch line (text: its name)', call: (t) => ['git_branch', { action: 'switch', name: t }] },
+  main: { label: 'Back to main', call: () => ['git_branch', { action: 'switch', name: 'main' }] },
+  pr: { label: 'Open a pull request', call: () => ['git_pr', { action: 'open' }] },
+  prs: { label: 'Pull requests and their checks', call: () => ['git_pr', { action: 'list' }] },
+  merge: { label: 'Merge when green (text: the line; blank: this one)', call: (t) => ['git_pr', { action: 'merge', line: t, wait: '30' }] },
+  mark: { label: 'Cut a version mark (text: v1.2.3)', call: (t) => ['git_tag', { action: 'cut', name: t, message: 'Version ' + t.replace(/^v/, '') }] },
+  sendmark: { label: 'Send a version mark (text: v1.2.3)', call: (t) => ['git_tag', { action: 'send', name: t }] },
+};
+
+export const GIT_REPOS: { project: string; label: string }[] = [
+  { project: 'secondbrain', label: 'SecondBrain' },
+  { project: 'research', label: 'Manjuel' },
+  { project: 'atlas', label: 'Atlas' },
+];
 
 /** The tag a note gets once the Tag notes block has tagged it, so the next run moves on. */
 export const TAGGED = 'tagged';
@@ -102,6 +126,24 @@ export function makeRunners(d: RunnerDeps): Runners {
     },
 
     output: ({ fill }) => fill('{{input}}'),
+
+    // A git act on one repository, through the door. A write that waits for him, or a refusal, stops the flow and says why.
+    git: async ({ node, fill }) => {
+      if (!d.git) throw new Error('git blocks run in the SecondBrain desktop app');
+      const project = String(node.data.repo || 'secondbrain');
+      const act = GIT_ACTS[String(node.data.action || 'status')];
+      if (!act) throw new Error(`no git act "${String(node.data.action)}"`);
+      let text = fill(String(node.data.text ?? '{{input}}')).trim();
+      if (node.data.action === 'merge' && !text) {
+        const st = await d.git('git', { project });
+        text = (JSON.parse(st.text || '{}') as { branch?: string }).branch || '';
+      }
+      const [name, args] = act.call(text);
+      const r = await d.git(name, { project, ...args });
+      if (r.isError || /^(Refused|Sending refused|Fetching refused)/.test(r.text)) throw new Error(r.text);
+      if (/^HELD/.test(r.text)) throw new Error(`waiting on you in GitHub → Waiting on you: ${name} on ${project}`);
+      return `${project}: ${r.text}`;
+    },
 
     // Dig the archive: the digger reads its sources into notes, only what changed since the last dig.
     dig: async ({ node }) => {

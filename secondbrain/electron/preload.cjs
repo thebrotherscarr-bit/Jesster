@@ -115,6 +115,8 @@ contextBridge.exposeInMainWorld('secondbrainDesktop', {
   // the GitHub shelf: the door's git and hold tools, as the operator
   door: {
     call: (name, args) => ipcRenderer.invoke('door:call', name, args || {}),
+    // a flow's git block: reads and bringing level run; other writes wait in Waiting on you
+    flow: (name, args) => ipcRenderer.invoke('door:flow', name, args || {}),
   },
   pick: (kind, title) => ipcRenderer.invoke('dialog:pick', kind, title),
   vault: {

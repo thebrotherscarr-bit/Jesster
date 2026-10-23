@@ -5,7 +5,7 @@
  * app and in tests.
  */
 
-export type BlockType = 'input' | 'note' | 'search' | 'model' | 'template' | 'save' | 'output' | 'dig' | 'tag';
+export type BlockType = 'input' | 'note' | 'search' | 'model' | 'template' | 'save' | 'output' | 'dig' | 'tag' | 'git';
 
 export interface BlockData {
   /** input: the text; template / model: the template, with {{input}}, {{input1}}…, {{date}} */

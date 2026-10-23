@@ -20,7 +20,8 @@
  */
 const path = require('path');
 const { Tenants } = require('./tenant.cjs');
-const { Registry, holdTools, callerOf, regOf } = require('./registry.cjs');
+const { Registry, holdTools, callerOf, regOf, heldAnswer } = require('./registry.cjs');
+const { sittingOpen } = require('./records.cjs');
 const { marshal } = require('./util.cjs');
 const { recordTools } = require('./records.cjs');
 const { gitTools } = require('./git.cjs');
@@ -216,6 +217,42 @@ function serve(getGround, opts = {}) {
 /** What the GitHub shelf may press over IPC (door:call). */
 const SHELF_TOOLS = new Set(['git', 'git_diff', 'git_remote', 'git_commit', 'git_push', 'git_pull', 'git_branch', 'git_tag', 'git_pr', 'hold_list', 'hold_answer']);
 
+const FLOW = Object.freeze({ name: 'a flow', service: false });
+
+/** One git act asked by a flow: { text, isError }, as door.call answers. */
+async function flowCall(door, name, args) {
+  if (!SHELF_TOOLS.has(name) || name.startsWith('hold_')) return { text: `Refused: a flow's git block cannot call ${name}.`, isError: true };
+  const reg = door.registry();
+  if (!reg) return door.call(name, args, FLOW);
+  const action = String(typeof args.action === 'string' ? args.action : '').trim().toLowerCase();
+  const reading = ['git', 'git_diff', 'git_remote'].includes(name) || (['git_branch', 'git_tag', 'git_pr'].includes(name) && (action === '' || action === 'list'));
+  if (reading) return door.call(name, args, OPERATOR);
+  if (name === 'git_pull') {
+    let tn;
+    try {
+      tn = reg.tenants.resolve(typeof args.project === 'string' ? args.project : '');
+    } catch (e) {
+      return { text: e.message, isError: true };
+    }
+    if (tn.name === 'research') {
+      const [n, , open] = sittingOpen(tn.home);
+      if (open) return { text: `Refused: sitting ${n} is open on the ground, and nothing moves under a sitting (RULE 9). Close it, then bring Manjuel level.`, isError: true };
+    }
+    return door.call(name, args, OPERATOR);
+  }
+  if (name === 'git_pr') {
+    // his glass's alone, so it cannot park the usual way: it is parked here, and runs on his Approve
+    let tn;
+    try {
+      tn = reg.tenants.resolve(typeof args.project === 'string' ? args.project : '');
+    } catch (e) {
+      return { text: e.message, isError: true };
+    }
+    return { text: heldAnswer(reg.park(tn, reg.get('git_pr'), args, FLOW)), isError: false };
+  }
+  return door.call(name, args, FLOW);
+}
+
 /** main.cjs's one line: the door into atlas.handleMcp, and the operator's hand over IPC. */
 function register({ atlas, ipcMain, guard, getSettings, vaultDir }) {
   const { findGround } = require('../atlasglass.cjs');
@@ -237,7 +274,15 @@ function register({ atlas, ipcMain, guard, getSettings, vaultDir }) {
     if (!SHELF_TOOLS.has(name)) throw new Error(`not a GitHub shelf tool: ${name}`);
     return door.call(name, args && typeof args === 'object' ? args : {}, OPERATOR);
   });
+  // A FLOW'S git block (plan-github-shelf, G3). A flow is not his hand: its reads run, and bringing a
+  // repository level runs (his card, 2026-10-23: "Yes, fast-forward freely" -- git_pull is fast-forward only
+  // and refuses over unsaved work), but never into the ground while a sitting is open (RULE 9). Every other
+  // write waits for him in GitHub's Waiting on you, pull requests too.
+  ipcMain.handle('door:flow', async (event, name, args) => {
+    guard(event);
+    return flowCall(door, name, args && typeof args === 'object' ? args : {});
+  });
   return door;
 }
 
-module.exports = { register, serve, build, worldsFor, engines, ORDER, PORTED, REMAINING, INSTRUCTIONS, OPERATOR, CLIENT, SHELF_TOOLS };
+module.exports = { register, serve, build, worldsFor, engines, ORDER, PORTED, REMAINING, INSTRUCTIONS, OPERATOR, CLIENT, SHELF_TOOLS, flowCall };
