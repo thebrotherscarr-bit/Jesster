@@ -248,7 +248,11 @@ export interface DesktopBridge {
   };
   computer?: { models: () => Promise<string[]> };
   /** the door's git and hold tools, as the operator: the GitHub shelf's hand (door:call) */
-  door?: { call: (name: string, args?: Record<string, unknown>) => Promise<{ text: string; isError: boolean }> };
+  door?: {
+    call: (name: string, args?: Record<string, unknown>) => Promise<{ text: string; isError: boolean }>;
+    /** a flow's git block: reads and bringing level run, other writes wait in Waiting on you */
+    flow?: (name: string, args?: Record<string, unknown>) => Promise<{ text: string; isError: boolean }>;
+  };
   pick?: (kind: 'file' | 'folder' | 'exe', title: string) => Promise<string | null>;
 }
 

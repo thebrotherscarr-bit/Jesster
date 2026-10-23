@@ -204,3 +204,22 @@ test('the starter "Dig and tag the archive" repeats every 10 minutes, and the re
   assert.equal(flowFromNoteBody(flowToNoteBody(s.flow))!.every, 10);
   assert.equal(flowFromNoteBody(flowToNoteBody({ nodes: [], edges: [] }))!.every, undefined);
 });
+
+test('the git block asks the door as a flow: an act and its text; a write waiting on him or a refusal stops the flow', async () => {
+  const asked: [string, Record<string, unknown>][] = [];
+  const answers: Record<string, string> = { git: '{"branch":"work"}', git_commit: 'HELD: "git_commit" writes', git_pr: 'Merged pull request #7', git_pull: 'Refused: there is unsaved work here.' };
+  const r = makeRunners({
+    notes: () => [],
+    upsertNote: () => {},
+    askLocal: async () => '',
+    newId: () => 'x',
+    git: async (name, args) => (asked.push([name, args]), { text: answers[name] || 'ok', isError: false }),
+  });
+  const run = (data: Record<string, unknown>, input = '') => r.git!({ node: { id: 'g', type: 'git', position: at(0), data }, inputs: input ? [input] : [], fill: (s) => s.replace('{{input}}', input) });
+  assert.equal(await run({ repo: 'atlas', action: 'merge', text: '' }), 'atlas: Merged pull request #7');
+  assert.deepEqual(asked.slice(-1)[0], ['git_pr', { project: 'atlas', action: 'merge', line: 'work', wait: '30' }], 'a blank line is the one the checkout stands on');
+  await assert.rejects(async () => run({ repo: 'secondbrain', action: 'save' }, 'the message'), /waiting on you in GitHub/);
+  assert.deepEqual(asked.slice(-1)[0], ['git_commit', { project: 'secondbrain', message: 'the message' }]);
+  await assert.rejects(async () => run({ repo: 'research', action: 'level' }), /^Error: Refused: there is unsaved work/);
+  assert.equal(describe(STARTERS.find((s) => s.name === 'Keep everything level')!.flow), 'git → git → git → template → output');
+});
