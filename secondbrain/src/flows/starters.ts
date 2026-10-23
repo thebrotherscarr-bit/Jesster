@@ -35,5 +35,21 @@ export const STARTERS: { name: string; about: string; flow: Flow }[] = [
       ],
     },
   },
+  {
+    name: 'Dig and tag the archive',
+    about: "Every 10 minutes while open: dig what changed in the digger's sources (Settings → Archive) into notes, then tag the next batch of untagged notes with the local model.",
+    flow: {
+      every: 10,
+      nodes: [
+        { id: 'd', type: 'dig', position: { x: 0, y: 40 }, data: { path: '' } },
+        { id: 't', type: 'tag', position: { x: 300, y: 40 }, data: { model: 'local', limit: 10, tags: '' } },
+        { id: 'o', type: 'output', position: { x: 600, y: 40 }, data: {} },
+      ],
+      edges: [
+        { id: 'd-t', source: 'd', target: 't' },
+        { id: 't-o', source: 't', target: 'o' },
+      ],
+    },
+  },
   { name: 'Empty', about: 'Start from nothing.', flow: { nodes: [], edges: [] } },
 ];

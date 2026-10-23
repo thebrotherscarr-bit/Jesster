@@ -32,6 +32,49 @@ import uuid
 
 DENY = ("system.update", "system.install_desktop", "import.*", "ingest.*",
         "archive.dig", "archive.sources")
+
+# NOTES THAT NEVER CROSS (Kyle's rule, 2026-09-11: "the ARCHIVE never goes on
+# github, EVER"). The bridge repository is on GitHub, private or not, so a note
+# carrying one of these tags is left out of every reply, and the methods that
+# write text OUT OF notes (a briefing, a model's answer, a summary) are refused
+# while any such note is in the vault: their words could carry the archive's.
+# The archive digger tags everything it digs from a local-only root this way
+# (plugins/archive.py, archive_local_roots). bridge_withhold_tags overrides it.
+WITHHOLD = ("archive-local",)
+SYNTHESIZE = ("context.*", "llm.*", "live.*")
+
+
+def withheld_ids(kernel):
+    tags = set(kernel.config.get("bridge_withhold_tags") or WITHHOLD)
+    return {nid for nid, n in kernel.vault.notes.items() if tags & set(n.get("tags") or ())}
+
+
+def scrub(obj, withheld):
+    """The reply with every withheld note taken out, wherever a list carries one."""
+    if isinstance(obj, list):
+        return [scrub(x, withheld) for x in obj
+                if not (isinstance(x, dict) and (x.get("id") in withheld or x.get("note") in withheld))]
+    if isinstance(obj, dict):
+        return {k: scrub(v, withheld) for k, v in obj.items()}
+    return obj
+
+
+def answer(kernel, method, params):
+    """One request's result, as the bridge may send it; raises KernelError when refused."""
+    from kernel import KernelError
+    if not allowed(method, kernel.config):
+        raise KernelError("bridge_denied", "%s is not allowed over the bridge "
+                          "on this machine (bridge_allow in the vault config)" % method)
+    withheld = withheld_ids(kernel)
+    if withheld and any(fnmatch.fnmatch(method, s) for s in SYNTHESIZE):
+        raise KernelError("bridge_withheld", "%s is refused over the bridge while the "
+                          "vault holds archive notes: its answer could carry their words, "
+                          "and the archive never goes on GitHub" % method)
+    result = kernel.call(method, params)
+    if isinstance(result, dict) and result.get("id") in withheld:
+        raise KernelError("bridge_withheld", "that note is from the archive, and the "
+                          "archive never goes on GitHub")
+    return scrub(result, withheld)
 INTERVAL = 5
 KEEP_SECONDS = 24 * 3600
 
@@ -98,11 +141,7 @@ def work_once(kernel, clone):
             with open(os.path.join(req_dir, name), "r", encoding="utf-8") as f:
                 req = json.load(f)
             method, params = req["method"], req.get("params") or {}
-            if not allowed(method, kernel.config):
-                raise KernelError("bridge_denied", "%s is not allowed over the bridge "
-                                  "on this machine (bridge_allow in the vault config)"
-                                  % method)
-            reply = {"id": req.get("id"), "result": kernel.call(method, params)}
+            reply = {"id": req.get("id"), "result": answer(kernel, method, params)}
         except KernelError as e:
             reply = {"id": name[:-5], "error": {"reason": e.code, "message": str(e)}}
         except (ValueError, KeyError, OSError) as e:

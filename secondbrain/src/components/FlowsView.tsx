@@ -16,7 +16,7 @@ import {
   type NodeProps,
 } from '@xyflow/react';
 import '@xyflow/react/dist/style.css';
-import { Workflow, Play, Square, Save, Plus, Type, FileText, Search, Bot, Braces, NotebookPen, Eye, Loader2, Check, AlertTriangle, MinusCircle, Trash2 } from 'lucide-react';
+import { Workflow, Play, Square, Save, Plus, Type, FileText, Search, Bot, Braces, NotebookPen, Eye, Loader2, Check, AlertTriangle, MinusCircle, Trash2, Pickaxe, Tags, Repeat } from 'lucide-react';
 import { Note, OllamaConfig } from '../types/index.ts';
 import { IntegrationsState } from '../types/desktop.ts';
 import { BlockData, BlockState, BlockType, Flow, describe, flowFromNoteBody, flowToNoteBody, runFlow } from '../flows/engine.ts';
@@ -35,6 +35,8 @@ const BLOCKS: { type: BlockType; label: string; icon: React.ComponentType<{ clas
   { type: 'template', label: 'Template', icon: Braces, hint: 'Reshape text: {{input}}, {{date}}', color: 'text-violet-300' },
   { type: 'save', label: 'Save note', icon: NotebookPen, hint: 'Write the result to a note', color: 'text-rose-300' },
   { type: 'output', label: 'Output', icon: Eye, hint: 'Show the result', color: 'text-neutral-200' },
+  { type: 'dig', label: 'Dig the archive', icon: Pickaxe, hint: 'Read the archive into notes (only what changed)', color: 'text-orange-300' },
+  { type: 'tag', label: 'Tag notes', icon: Tags, hint: 'Tag the next batch of untagged notes with a model', color: 'text-lime-300' },
 ];
 const BLOCK = Object.fromEntries(BLOCKS.map((b) => [b.type, b])) as Record<BlockType, (typeof BLOCKS)[number]>;
 
@@ -99,6 +101,19 @@ const BlockNode: React.FC<NodeProps<RFNode>> = ({ id, type, data, selected }) =>
             <input className={field} value={String(data.tags || '')} onChange={(e) => set({ tags: e.target.value })} placeholder="tags" />
           </>
         )}
+        {type === 'dig' && <input className={field} value={String(data.path || '')} onChange={(e) => set({ path: e.target.value })} placeholder="Folder to dig (blank: the sources in Settings → Archive)" />}
+        {type === 'tag' && (
+          <>
+            <select className={field} value={String(data.model || 'local')} onChange={(e) => set({ model: e.target.value })}>
+              <option value="local">Local: {localModel}</option>
+              {cloud.map((p) => <option key={p.id} value={p.id}>{p.label}: {p.model}</option>)}
+            </select>
+            <div className="flex gap-1.5">
+              <input className={field} value={String(data.tags || '')} onChange={(e) => set({ tags: e.target.value })} placeholder="Only notes tagged… (blank: all)" />
+              <label className="flex items-center gap-1 text-[11px] text-neutral-400 shrink-0">Per run <input type="number" min={1} max={100} className={`${field} !w-14`} value={Number(data.limit) || 10} onChange={(e) => set({ limit: Number(e.target.value) })} /></label>
+            </div>
+          </>
+        )}
         {type === 'output' && !(s && s.status === 'done') && <p className="text-[11px] text-neutral-500">Run the flow to see what arrives here.</p>}
         {s?.status === 'done' && type !== 'input' && (
           <pre className={`nodrag nowheel text-[10.5px] leading-snug text-neutral-300 bg-black/40 rounded p-1.5 overflow-auto whitespace-pre-wrap ${type === 'output' ? 'max-h-64' : 'max-h-24'}`}>{s.output || '(empty)'}</pre>
@@ -112,7 +127,8 @@ const BlockNode: React.FC<NodeProps<RFNode>> = ({ id, type, data, selected }) =>
 };
 const nodeTypes = Object.fromEntries(BLOCKS.map((b) => [b.type, BlockNode]));
 
-const toFlow = (nodes: RFNode[], edges: Edge[]): Flow => ({
+const toFlow = (nodes: RFNode[], edges: Edge[], every = 0): Flow => ({
+  ...(every > 0 ? { every } : {}),
   nodes: nodes.map((n) => ({ id: n.id, type: n.type as BlockType, position: n.position, data: n.data })),
   edges: edges.map((e) => ({ id: e.id, source: e.source, target: e.target })),
 });
@@ -136,6 +152,8 @@ const Canvas: React.FC<FlowsViewProps> = ({ notes, ollamaConfig, onUpsertNote, n
   const [dirty, setDirty] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [cloud, setCloud] = useState<IntegrationsState['providers']>([]);
+  // run again every N minutes while this flow is open (0: only on Run)
+  const [every, setEvery] = useState(0);
   const stop = useRef<AbortController | null>(null);
   const notesRef = useRef(notes);
   notesRef.current = notes;
@@ -151,6 +169,7 @@ const Canvas: React.FC<FlowsViewProps> = ({ notes, ollamaConfig, onUpsertNote, n
     setEdges(flow.edges.map((e) => ({ ...e })));
     setCurrent(note);
     setTitle(name);
+    setEvery(flow.every || 0);
     setStates({});
     setDirty(false);
     setMessage(null);
@@ -164,7 +183,7 @@ const Canvas: React.FC<FlowsViewProps> = ({ notes, ollamaConfig, onUpsertNote, n
   };
 
   const save = () => {
-    const flow = toFlow(nodes, edges);
+    const flow = toFlow(nodes, edges, every);
     const t = Date.now();
     const name = title.trim() || 'Untitled flow';
     const note: Note = current
@@ -180,7 +199,7 @@ const Canvas: React.FC<FlowsViewProps> = ({ notes, ollamaConfig, onUpsertNote, n
   const add = (type: BlockType) => {
     const id = `${type}-${Math.random().toString(36).slice(2, 7)}`;
     const center = screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
-    const data: BlockData = type === 'model' ? { model: 'local', text: '{{input}}' } : type === 'save' ? { note: 'Flow output {{date}}', mode: 'create', shelf: 'inbox', tags: 'flow-output' } : {};
+    const data: BlockData = type === 'tag' ? { model: 'local', limit: 10 } : type === 'model' ? { model: 'local', text: '{{input}}' } : type === 'save' ? { note: 'Flow output {{date}}', mode: 'create', shelf: 'inbox', tags: 'flow-output' } : {};
     setNodes((ns) => [...ns, { id, type, position: { x: center.x - 128 + ns.length * 12, y: center.y - 60 + ns.length * 12 }, data }]);
     setDirty(true);
   };
@@ -200,6 +219,7 @@ const Canvas: React.FC<FlowsViewProps> = ({ notes, ollamaConfig, onUpsertNote, n
         onUpsertNote(n);
       },
       newId: () => newNoteId('flow-out'),
+      archive: window.secondbrainDesktop?.archive,
       askLocal: (prompt) => {
         if (!ollamaConfig.isConnected || ollamaConfig.isSimulatedMode) throw new Error(`the local model is not connected (Ollama at ${ollamaConfig.hostUrl})`);
         return queryOllama(ollamaConfig.hostUrl, ollamaConfig.model, prompt, '');
@@ -228,6 +248,18 @@ const Canvas: React.FC<FlowsViewProps> = ({ notes, ollamaConfig, onUpsertNote, n
       stop.current = null;
     }
   };
+
+  const runRef = useRef(run);
+  runRef.current = run;
+  const runningRef = useRef(running);
+  runningRef.current = running;
+  useEffect(() => {
+    if (!every || every <= 0 || !nodes.length) return;
+    const t = window.setInterval(() => {
+      if (!runningRef.current) runRef.current();
+    }, every * 60 * 1000);
+    return () => window.clearInterval(t);
+  }, [every, nodes.length]);
 
   const onConnect = useCallback((c: Connection) => {
     setEdges((es) => addEdge({ ...c, animated: false }, es));
@@ -274,6 +306,10 @@ const Canvas: React.FC<FlowsViewProps> = ({ notes, ollamaConfig, onUpsertNote, n
           <Workflow className="w-4 h-4 text-sky-400 shrink-0" />
           <input value={title} onChange={(e) => { setTitle(e.target.value); setDirty(true); }} placeholder="Name this flow" aria-label="Flow name" className="flex-1 min-w-0 bg-transparent text-sm font-semibold text-white placeholder-neutral-600 focus:outline-none" />
           {message && <span className="text-xs text-neutral-400 truncate max-w-[40%]" title={message}>{message}</span>}
+          <label className="flex items-center gap-1 text-[11px] text-neutral-400 shrink-0" title="Run this flow again every so many minutes while it is open here (0: only when you press Run)">
+            <Repeat className={`w-3.5 h-3.5 ${every > 0 ? 'text-sky-400' : ''}`} /> every
+            <input type="number" min={0} max={1440} value={every} onChange={(e) => { setEvery(Math.max(0, Number(e.target.value) || 0)); setDirty(true); }} className="w-12 rounded bg-neutral-950 border border-neutral-800 px-1 py-0.5 text-[11px] text-neutral-100" /> min
+          </label>
           <button onClick={save} disabled={empty} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-neutral-700 text-xs text-neutral-200 hover:bg-neutral-800 disabled:opacity-40">
             <Save className="w-3.5 h-3.5" /> {dirty || !current ? 'Save' : 'Saved'}
           </button>

@@ -18,10 +18,10 @@ test('ORDER is the Go door\'s whole surface: every tool it registers, and nothin
     for (const m of fs.readFileSync(path.join(GO_TOOLS, f), 'utf8').matchAll(/\bName:\s*"([a-z_]+)"/g)) names.add(m[1]);
   }
   assert.deepEqual([...door.ORDER].sort(), [...names].sort());
-  assert.equal(door.ORDER.length, 96);
+  assert.equal(door.ORDER.length, 97);
 });
 
-test('PORTED and REMAINING split the surface, and all 96 are served: the ported here, the rest forwarded', () => {
+test('PORTED and REMAINING split the surface, and all 97 are served: the ported here, the rest forwarded', () => {
   assert.equal(door.PORTED.length + door.REMAINING.length, door.ORDER.length);
   const reg = door.build([['w', fs.mkdtempSync(path.join(os.tmpdir(), 'door-idx-'))]]);
   assert.deepEqual(reg.names(), door.ORDER);

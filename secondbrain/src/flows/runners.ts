@@ -14,6 +14,29 @@ export interface RunnerDeps {
   askCloud?: (provider: string, prompt: string, signal?: AbortSignal) => Promise<string>;
   newId: () => string;
   now?: () => number;
+  /** the archive digger (Settings → Archive): its sources and one dig */
+  archive?: {
+    sources: (change?: { add?: string }) => Promise<string[]>;
+    dig: () => Promise<unknown>;
+  };
+}
+
+/** The tag a note gets once the Tag notes block has tagged it, so the next run moves on. */
+export const TAGGED = 'tagged';
+const TAG_DEFAULT = 10;
+
+/** Tags out of a model's reply: words or short phrases, lowercased, hyphenated, at most eight. */
+export function parseTags(reply: string): string[] {
+  const line = reply.replace(/```[\s\S]*?```/g, ' ').split('\n').find((l) => /[a-z]/i.test(l)) || '';
+  return [
+    ...new Set(
+      line
+        .replace(/^(tags?|keywords?)\s*:/i, '')
+        .split(/[,;|]/)
+        .map((t) => t.trim().replace(/^#/, '').toLowerCase().replace(/[^a-z0-9 -]/g, '').trim().replace(/\s+/g, '-'))
+        .filter((t) => t.length > 1 && t.length <= 30),
+    ),
+  ].slice(0, 8);
 }
 
 const SEARCH_DEFAULT = 4;
@@ -79,5 +102,47 @@ export function makeRunners(d: RunnerDeps): Runners {
     },
 
     output: ({ fill }) => fill('{{input}}'),
+
+    // Dig the archive: the digger reads its sources into notes, only what changed since the last dig.
+    dig: async ({ node }) => {
+      if (!d.archive) throw new Error('the archive digger runs in the SecondBrain desktop app');
+      const path = String(node.data.path || '').trim();
+      if (path) await d.archive.sources({ add: path });
+      const out = (await d.archive.dig()) as { sources?: { path: string; created?: number; updated?: number; unchanged?: number; files?: number; failed?: string[] }[] };
+      const lines = (out.sources || []).map(
+        (s) => `${s.path}: ${s.created || 0} new, ${s.updated || 0} changed, ${s.unchanged || 0} unchanged${s.failed && s.failed.length ? `, ${s.failed.length} unreadable` : ''}`,
+      );
+      return lines.length ? `Dug:\n${lines.join('\n')}` : 'Dug: no sources yet (add one in the block or in Settings → Archive)';
+    },
+
+    // Tag notes: a batch of the notes not tagged yet, each given tags by the model, then marked `tagged`.
+    tag: async ({ node, signal }) => {
+      const only = String(node.data.tags || '').split(/[\s,]+/).map((t) => t.replace(/^#/, '').toLowerCase()).filter(Boolean);
+      const limit = Math.max(1, Number(node.data.limit) || TAG_DEFAULT);
+      const who = String(node.data.model || 'local');
+      const todo = d
+        .notes()
+        .filter((n) => !n.tags.includes(TAGGED) && !n.tags.includes('flow') && (!only.length || only.some((t) => n.tags.includes(t))))
+        .slice(0, limit);
+      if (!todo.length) return `Everything${only.length ? ` tagged ${only.join(' or ')}` : ''} is tagged.`;
+      const done: string[] = [];
+      for (const n of todo) {
+        if (signal?.aborted) break;
+        const prompt =
+          'Give 3 to 6 short topic tags for this note: lowercase, a word or two each, separated by commas, nothing else.\n\n' +
+          `Title: ${n.title}\n\n${n.content.slice(0, 3000)}`;
+        const reply = who === 'local' ? await d.askLocal(prompt, signal) : d.askCloud ? await d.askCloud(who, prompt, signal) : '';
+        const add = parseTags(reply).filter((t) => !n.tags.includes(t));
+        const fresh = notesNow(d, n.id) || n;
+        d.upsertNote({ ...fresh, tags: [...fresh.tags, ...add, TAGGED], updatedAt: now() });
+        done.push(`${n.title}: ${add.join(', ') || '(no new tags)'}`);
+      }
+      return `Tagged ${done.length}:\n${done.join('\n')}`;
+    },
   };
+}
+
+/** The note as it stands now (a block before may have changed it). */
+function notesNow(d: RunnerDeps, id: string): Note | undefined {
+  return d.notes().find((n) => n.id === id);
 }

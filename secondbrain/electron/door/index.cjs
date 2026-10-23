@@ -14,6 +14,9 @@
  * is not ported yet. Since 2026-10-22 (his card: "Forward them now") every
  * REMAINING tool is still listed and served: SecondBrain's own gate judges the
  * call, then hands it to the Atlas door it runs inside itself (forward.cjs).
+ *
+ * Since 2026-10-23 (plan-one-exe) the same door also answers on 8090, the port the glass and
+ * every other client of the old Go door use (listen.cjs, started by atlasglass.cjs at boot).
  */
 const path = require('path');
 const { Tenants } = require('./tenant.cjs');
@@ -24,11 +27,11 @@ const { authTools } = require('./auth.cjs');
 const { engines } = require('./engine.cjs');
 const { InnerDoor, forwardedTools } = require('./forward.cjs');
 
-/** The Go door's 96 tools, in the order atlas/line/internal/tools/tools.go registers them. */
+/** The Go door's 97 tools, in the order atlas/line/internal/tools/tools.go registers them (`notes` since 2026-10-23). */
 const ORDER = [
   'get_in_line', 'verify_chain', 'muster', 'read_handoffs', 'list_doctrine', 'read_doctrine', 'check_the_wall', 'git', 'git_diff',
   'git_commit', 'git_push', 'git_pull', 'git_branch', 'git_pr', 'hold_list', 'hold_answer', 'shell_run', 'aider_run', 'aider_undo',
-  'aider_status', 'file_edit', 'secret_set', 'law_status', 'law_add', 'law_seal', 'git_tag', 'git_remote', 'records', 'seats', 'proofs',
+  'aider_status', 'file_edit', 'secret_set', 'law_status', 'law_add', 'law_seal', 'git_tag', 'git_remote', 'records', 'notes', 'seats', 'proofs',
   'projects', 'state_matrix', 'read_plan', 'ask_steward', 'remember', 'mesh_enroll', 'mesh_post', 'mesh_read', 'mesh_chain', 'mesh_cite',
   'rack_list', 'rack_ask', 'rack_open', 'memory', 'rack_plan', 'rack_pull', 'rack_warm', 'rack_sync', 'chat_start', 'chat_send',
   'chat_list', 'chat_cancel', 'chat_sessions', 'prompt_save', 'prompt_get', 'prompt_list', 'prompt_run', 'prompt_compare', 'prompt_eval',
@@ -138,6 +141,8 @@ function serve(getGround, opts = {}) {
       }
     },
     registry: () => current(),
+    /** the inner door, for the engine's streams on 8090 (listen.cjs) */
+    inner: () => (current() ? inner : null),
     /** the inner door goes down with SecondBrain */
     stop: () => {
       if (inner) inner.stop();
