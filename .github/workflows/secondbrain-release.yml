@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
   push:
     branches:
-      - claude/serene-edison-64sdmm
+      - secondbrain-app
     paths:
       - secondbrain/**
       - .github/workflows/secondbrain-release.yml
