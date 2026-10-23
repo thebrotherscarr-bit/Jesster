@@ -1,0 +1,12 @@
+node_modules/
+build/
+dist/
+dist-desktop/
+dev-dist/
+.aistudio/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+electron/build.json

@@ -22,3 +22,5 @@ jobs:
           python-version: "3.12"
       - name: Prove the repo updater
         run: python repo-updater/prove_repo_update.py
+      - name: Prove the notes microkernel
+        run: python notes/prove_notes.py

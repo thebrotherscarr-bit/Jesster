@@ -60,6 +60,16 @@ is witnessed to the board. Prove it yourself:
 python repo-updater/prove_repo_update.py
 ```
 
+## notes — the microkernel, CLI and PWA
+
+`notes/` is a local notes system on Jesster's chain: Markdown files you own,
+every save deposited on the vault's own chain (sealed by default), a local
+model (Ollama, `gpt-oss`) answering from your notes, and one kernel behind a
+CLI, an installable offline PWA (`pwa/`), JSON-RPC on stdio and HTTP, and an
+MCP server — so any other system can use it as its notes plugin. See
+[`notes/README.md`](notes/README.md); prove it with
+`python notes/prove_notes.py`.
+
 ## License
 
 Apache-2.0.

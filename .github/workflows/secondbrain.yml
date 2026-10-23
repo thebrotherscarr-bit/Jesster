@@ -1,0 +1,32 @@
+name: secondbrain
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - smith/**
+    paths:
+      - secondbrain/**
+      - .github/workflows/secondbrain.yml
+  pull_request:
+    paths:
+      - secondbrain/**
+      - .github/workflows/secondbrain.yml
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: secondbrain
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      # vite@8 vs tsx's esbuild peer pin needs --legacy-peer-deps (see secondbrain/README.md)
+      - run: npm ci --legacy-peer-deps --ignore-scripts
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
