@@ -43,8 +43,19 @@ async function mainByPullRequest(t) {
 
 // ---- git ------------------------------------------------------------------------------
 
-async function toolGit(t) {
+const truthyArg = (v) => ['1', 'true', 'yes', 'on'].includes(String(v || '').trim().toLowerCase());
+
+async function toolGit(t, args = {}) {
   const out = { world: t.name };
+  // ASKED WITH `fetch`, GITHUB IS ASKED FIRST (2026-10-23, plan-github-shelf G1): the counts below are
+  // against the upstream as this machine last saw it, so without a fetch "behind" stays 0 until something
+  // else fetched, and Take from GitHub stayed greyed. Behind the wall like every reach to the remote; it
+  // moves only remote-tracking refs, never a line or the tree.
+  if (truthyArg(str(args, 'fetch')) && dial(t.home, 'GIT_REMOTE')) {
+    const f = await spawn('git', ['fetch', '--quiet', 'origin'], { dir: t.home, timeout: 60000, env: gitEnv() });
+    out.fetched = !f.err;
+    if (f.err) out.fetch_note = 'GitHub was not asked: ' + (f.combined.trim().split(/\r?\n/)[0] || f.err.message);
+  }
   const run = async (...args) => {
     const res = await spawn('git', args, { dir: t.home, timeout: 5000, env: gitEnv() });
     return res.err ? [null, false] : [res.stdout.trim(), true];
@@ -349,7 +360,14 @@ async function toolProjects(t, args) {
 }
 
 const gitTools = [
-  { name: 'git', writes: false, description: "the world's repository as it stands now: branch, head, dirty counts, upstream, and whether remote operations are walled", args: ['project?'], fn: toolGit },
+  {
+    name: 'git',
+    writes: false,
+    description:
+      "the world's repository as it stands now: branch, head, dirty counts, upstream, and whether remote operations are walled; with fetch=yes, GitHub is asked first so ahead and behind are today's",
+    args: ['fetch?', 'project?'],
+    fn: toolGit,
+  },
   {
     name: 'git_diff',
     writes: false,
