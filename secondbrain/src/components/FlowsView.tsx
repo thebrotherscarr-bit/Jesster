@@ -21,6 +21,7 @@ import { Note, OllamaConfig } from '../types/index.ts';
 import { IntegrationsState } from '../types/desktop.ts';
 import { BlockData, BlockState, BlockType, Flow, describe, flowFromNoteBody, flowToNoteBody, runFlow } from '../flows/engine.ts';
 import { makeRunners, GIT_ACTS, GIT_REPOS } from '../flows/runners.ts';
+import { GitHubView } from './GitHubView.tsx';
 import { STARTERS } from '../flows/starters.ts';
 import { SHELVES } from '../utils/shelves.ts';
 import { queryOllama } from '../utils/ollama.ts';
@@ -151,10 +152,17 @@ interface FlowsViewProps {
   onUpsertNote: (n: Note) => void;
   newNoteId: (prefix?: string) => string;
   integrationsVersion?: number;
+  /** 'github': the GitHub shelf, the same layout with git blocks, git flows and the repositories (plan-github-shelf) */
+  kind?: 'notes' | 'github';
 }
 
-const Canvas: React.FC<FlowsViewProps> = ({ notes, ollamaConfig, onUpsertNote, newNoteId, integrationsVersion = 0 }) => {
-  const flows = useMemo(() => notes.filter((n) => n.tags.includes('flow')).sort((a, b) => b.updatedAt - a.updatedAt), [notes]);
+const Canvas: React.FC<FlowsViewProps> = ({ notes, ollamaConfig, onUpsertNote, newNoteId, integrationsVersion = 0, kind = 'notes' }) => {
+  const gh = kind === 'github';
+  // the GitHub shelf keeps the flows tagged git; Flows keeps the rest
+  const flows = useMemo(() => notes.filter((n) => n.tags.includes('flow') && n.tags.includes('git') === gh).sort((a, b) => b.updatedAt - a.updatedAt), [notes, gh]);
+  const starters = STARTERS.filter((s) => s.name === 'Empty' || s.flow.nodes.some((n) => n.type === 'git') === gh);
+  const blocks = BLOCKS.filter((b) => (gh ? ['input', 'template', 'model', 'save', 'output'].includes(b.type) : b.type !== 'git'));
+  const [showRepos, setShowRepos] = useState(gh);
   const [current, setCurrent] = useState<Note | null>(null);
   const [title, setTitle] = useState('');
   const [nodes, setNodes, onNodesChange] = useNodesState<RFNode>([]);
@@ -177,6 +185,7 @@ const Canvas: React.FC<FlowsViewProps> = ({ notes, ollamaConfig, onUpsertNote, n
   }, [integrations, integrationsVersion]);
 
   const load = (flow: Flow, note: Note | null, name: string) => {
+    setShowRepos(false);
     setNodes(flow.nodes.map((n) => ({ ...n, data: { ...n.data } })) as RFNode[]);
     setEdges(flow.edges.map((e) => ({ ...e })));
     setCurrent(note);
@@ -200,19 +209,20 @@ const Canvas: React.FC<FlowsViewProps> = ({ notes, ollamaConfig, onUpsertNote, n
     const name = title.trim() || 'Untitled flow';
     const note: Note = current
       ? { ...current, title: name, content: flowToNoteBody(flow, `A flow: ${describe(flow)}.`), updatedAt: t }
-      : { id: newNoteId('flow'), title: name, content: flowToNoteBody(flow, `A flow: ${describe(flow)}.`), category: 'scratchpads', tags: ['flow'], isPinned: false, createdAt: t, updatedAt: t };
+      : { id: newNoteId('flow'), title: name, content: flowToNoteBody(flow, `A flow: ${describe(flow)}.`), category: 'scratchpads', tags: gh ? ['flow', 'git'] : ['flow'], isPinned: false, createdAt: t, updatedAt: t };
     onUpsertNote(note);
     setCurrent(note);
     setTitle(name);
     setDirty(false);
-    setMessage(`Saved as the note "${name}" (Scratchpads, tagged flow).`);
+    setMessage(`Saved as the note "${name}" (Scratchpads, tagged ${gh ? 'flow and git' : 'flow'}).`);
   };
 
-  const add = (type: BlockType) => {
+  const add = (type: BlockType, extra: BlockData = {}) => {
+    setShowRepos(false);
     const id = `${type}-${Math.random().toString(36).slice(2, 7)}`;
     const center = screenToFlowPosition({ x: window.innerWidth / 2, y: window.innerHeight / 2 });
     const data: BlockData = type === 'git' ? { repo: 'secondbrain', action: 'status', text: '{{input}}' } : type === 'tag' ? { model: 'local', limit: 10 } : type === 'model' ? { model: 'local', text: '{{input}}' } : type === 'save' ? { note: 'Flow output {{date}}', mode: 'create', shelf: 'inbox', tags: 'flow-output' } : {};
-    setNodes((ns) => [...ns, { id, type, position: { x: center.x - 128 + ns.length * 12, y: center.y - 60 + ns.length * 12 }, data }]);
+    setNodes((ns) => [...ns, { id, type, position: { x: center.x - 128 + ns.length * 12, y: center.y - 60 + ns.length * 12 }, data: { ...data, ...extra } }]);
     setDirty(true);
   };
 
@@ -288,8 +298,13 @@ const Canvas: React.FC<FlowsViewProps> = ({ notes, ollamaConfig, onUpsertNote, n
       <style>{'.sb-flows .react-flow__node{padding:0;border:none;background:transparent;width:auto;box-shadow:none;border-radius:0.75rem;text-align:left}'}</style>
       <aside className="w-60 shrink-0 border-r border-neutral-800 flex flex-col">
         <div className="p-3 space-y-1.5 border-b border-neutral-800">
-          <div className="text-[11px] font-semibold tracking-wider text-neutral-400 uppercase">New flow</div>
-          {STARTERS.map((s) => (
+          {gh && (
+            <button onClick={() => setShowRepos(true)} className={`w-full flex items-center gap-2 px-2.5 py-2 mb-1.5 rounded-lg text-xs font-semibold ${showRepos ? 'bg-neutral-800 text-white' : 'text-neutral-200 hover:bg-neutral-900'}`}>
+              <GitBranch className="w-3.5 h-3.5 text-violet-400" /> Repositories and waiting on you
+            </button>
+          )}
+          <div className="text-[11px] font-semibold tracking-wider text-neutral-400 uppercase">{gh ? 'New git flow' : 'New flow'}</div>
+          {starters.map((s) => (
             <button key={s.name} onClick={() => load(s.flow, null, s.name === 'Empty' ? '' : s.name)} title={s.about} className="w-full text-left px-2.5 py-1.5 rounded-lg text-xs text-neutral-300 hover:bg-neutral-900 hover:text-white">
               <Plus className="inline w-3 h-3 mr-1" /> {s.name}
             </button>
@@ -297,15 +312,21 @@ const Canvas: React.FC<FlowsViewProps> = ({ notes, ollamaConfig, onUpsertNote, n
         </div>
         <div className="p-3 space-y-1 border-b border-neutral-800">
           <div className="text-[11px] font-semibold tracking-wider text-neutral-400 uppercase">Blocks</div>
-          {BLOCKS.map((b) => (
+          {gh &&
+            Object.entries(GIT_ACTS).map(([k, a]) => (
+              <button key={k} onClick={() => add('git', { action: k })} title={a.label} className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-neutral-300 hover:bg-neutral-900 hover:text-white">
+                <GitBranch className="w-3.5 h-3.5 text-violet-300" /> {a.label.replace(/ \(.*\)$/, '')}
+              </button>
+            ))}
+          {blocks.map((b) => (
             <button key={b.type} onClick={() => add(b.type)} title={b.hint} className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-neutral-300 hover:bg-neutral-900 hover:text-white">
               <b.icon className={`w-3.5 h-3.5 ${b.color}`} /> {b.label}
             </button>
           ))}
         </div>
         <div className="p-3 flex-1 overflow-y-auto space-y-1">
-          <div className="text-[11px] font-semibold tracking-wider text-neutral-400 uppercase">Your flows ({flows.length})</div>
-          {flows.length === 0 && <p className="text-[11px] text-neutral-500">Saved flows are notes tagged <code>flow</code>.</p>}
+          <div className="text-[11px] font-semibold tracking-wider text-neutral-400 uppercase">{gh ? 'Your git flows' : 'Your flows'} ({flows.length})</div>
+          {flows.length === 0 && <p className="text-[11px] text-neutral-500">Saved {gh ? 'git flows are notes tagged flow and git' : 'flows are notes tagged flow'}.</p>}
           {flows.map((f) => (
             <button key={f.id} onClick={() => open(f)} className={`w-full text-left px-2.5 py-1.5 rounded-lg text-xs ${current?.id === f.id ? 'bg-neutral-800 text-white' : 'text-neutral-300 hover:bg-neutral-900'}`}>
               {f.title}
@@ -314,9 +335,12 @@ const Canvas: React.FC<FlowsViewProps> = ({ notes, ollamaConfig, onUpsertNote, n
         </div>
       </aside>
 
+      {showRepos ? (
+        <GitHubView />
+      ) : (
       <div className="flex-1 flex flex-col min-w-0">
         <div className="px-4 py-2.5 border-b border-neutral-800 flex items-center gap-2">
-          <Workflow className="w-4 h-4 text-sky-400 shrink-0" />
+          {gh ? <GitBranch className="w-4 h-4 text-violet-400 shrink-0" /> : <Workflow className="w-4 h-4 text-sky-400 shrink-0" />}
           <input value={title} onChange={(e) => { setTitle(e.target.value); setDirty(true); }} placeholder="Name this flow" aria-label="Flow name" className="flex-1 min-w-0 bg-transparent text-sm font-semibold text-white placeholder-neutral-600 focus:outline-none" />
           {message && <span className="text-xs text-neutral-400 truncate max-w-[40%]" title={message}>{message}</span>}
           <label className="flex items-center gap-1 text-[11px] text-neutral-400 shrink-0" title="Run this flow again every so many minutes while it is open here (0: only when you press Run)">
@@ -369,6 +393,7 @@ const Canvas: React.FC<FlowsViewProps> = ({ notes, ollamaConfig, onUpsertNote, n
           </div>
         )}
       </div>
+      )}
     </div>
   );
 };
