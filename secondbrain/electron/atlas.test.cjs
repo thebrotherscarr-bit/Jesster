@@ -36,7 +36,8 @@ test('the notes are served over MCP: read-only unless writes are allowed', async
   const list = await atlas.handleMcp({ jsonrpc: '2.0', id: 2, method: 'tools/list' }, { registry, ctx });
   const names = list.result.tools.map((t) => t.name);
   assert.ok(names.includes('search_notes') && names.includes('read_note'));
-  assert.ok(!names.includes('write_note') && !names.includes('web_fetch'), 'no writes, and nothing beyond the notes');
+  assert.ok(!names.includes('write_note') && !names.includes('memory'), 'no writes while writes are off');
+  assert.ok(names.includes('web_search') && names.includes('web_fetch'), "Steward reads the web through SecondBrain's tools");
   const found = await atlas.handleMcp({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'search_notes', arguments: { query: 'launch' } } }, { registry, ctx });
   assert.match(found.result.content[0].text, /Launch plan/);
   const refused = await atlas.handleMcp({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'write_note', arguments: { title: 'x', content: 'y' } } }, { registry, ctx });
@@ -45,8 +46,28 @@ test('the notes are served over MCP: read-only unless writes are allowed', async
   const wrote = await atlas.handleMcp({ jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'write_note', arguments: { title: 'From Manjuel', content: 'hi' } } }, { registry, ctx, writes: true });
   assert.equal(wrote.result.isError, false);
   assert.ok(vault.load().some((n) => n.title === 'From Manjuel'));
-  const nope = await atlas.handleMcp({ jsonrpc: '2.0', id: 6, method: 'resources/list' }, { registry, ctx });
+  const nope = await atlas.handleMcp({ jsonrpc: '2.0', id: 6, method: 'prompts/list' }, { registry, ctx });
   assert.equal(nope.error.code, -32601);
+});
+
+test("Steward gets the long-term memory and the vault's skills (SEP-2640 resources)", async () => {
+  const { vault, registry, ctx } = setup();
+  vault.save(memory.skillNote('Release Check', 'Use before tagging a release.', '1. Run the suites.\n2. Read the changelog.'));
+  const init = await atlas.handleMcp({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {} }, { registry, ctx });
+  assert.deepEqual(init.result.capabilities.resources, {});
+  const writes = await atlas.handleMcp({ jsonrpc: '2.0', id: 2, method: 'tools/list' }, { registry, ctx, writes: true });
+  const names = writes.result.tools.map((t) => t.name);
+  assert.ok(names.includes('memory') && names.includes('skill_save'), 'memory and skill_save are writes');
+  const kept = await atlas.handleMcp({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'memory', arguments: { target: 'user', action: 'add', text: 'Kyle keeps commits small.' } } }, { registry, ctx, writes: true });
+  assert.equal(kept.result.isError, false);
+  assert.match(vault.load().find((n) => n.id === memory.IDS.user).content, /commits small/);
+  const index = await atlas.handleMcp({ jsonrpc: '2.0', id: 4, method: 'resources/read', params: { uri: 'skill://index.json' } }, { registry, ctx });
+  const entry = JSON.parse(index.result.contents[0].text).skills[0];
+  assert.deepEqual(entry, { name: 'release-check', type: 'skill-md', description: 'Use before tagging a release.', url: 'skill://release-check/SKILL.md' });
+  const md = await atlas.handleMcp({ jsonrpc: '2.0', id: 5, method: 'resources/read', params: { uri: entry.url } }, { registry, ctx });
+  assert.match(md.result.contents[0].text, /^---\nname: release-check\ndescription: "Use before tagging a release."\n---\n\n1\. Run the suites\./);
+  const missing = await atlas.handleMcp({ jsonrpc: '2.0', id: 6, method: 'resources/read', params: { uri: 'skill://nope/SKILL.md' } }, { registry, ctx });
+  assert.equal(missing.error.code, -32002);
 });
 
 test('the bearer key is checked in constant time and never optional', () => {
