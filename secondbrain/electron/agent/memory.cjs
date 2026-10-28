@@ -206,4 +206,4 @@ function extras(vault) {
   ];
 }
 
-module.exports = { tools, extras, fromSkillMd, skillNote, describeSkill, LIMIT, IDS };
+module.exports = { tools, extras, skills, fromSkillMd, skillNote, describeSkill, LIMIT, IDS };

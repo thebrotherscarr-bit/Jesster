@@ -3,7 +3,8 @@
 A local notes system built on Jesster's provenance chain. Notes are plain
 Markdown files that you own. Every save is deposited on a Jesster chain inside
 the vault. A local model (Ollama, `gpt-oss` by default) answers questions from
-your notes, and nothing leaves the machine.
+your notes, and nothing leaves the machine unless you set up a gateway
+upstream or the bridge (both below).
 
 It is built to be embedded. One small kernel answers every caller through the
 same door, so any other system can use it as its notes plugin.
@@ -23,11 +24,18 @@ same door, so any other system can use it as its notes plugin.
 |---|---|
 | `kernel.py` | the vault, the method registry, the event bus and the core `notes.*` methods |
 | `plugins/provenance.py` | deposits every save on the vault's chain (sealed by default) |
-| `plugins/ollama.py` | `llm.ask`, `llm.summarize`, `llm.suggest_tags` against local Ollama |
+| `plugins/ollama.py` | `llm.ask`, `llm.summarize`, `llm.suggest_tags`, `llm.brain`, `llm.models` against local Ollama |
 | `plugins/importer.py` | `import.folder` and `import.json` to bring notes in from other tools |
-| `plugins/archive.py` | the archive digger: `archive.dig`, `archive.distill`, `archive.write` |
-| `cli.py` | the command line, plus `serve`, `rpc` and `mcp` |
-| `serve.py` | HTTP: `/rpc` and the PWA in `../pwa` |
+| `plugins/ingest.py` | `ingest.path`, `ingest.sources`, `ingest.watch`: chat exports, sessions and audio |
+| `plugins/index.py` | `index.search`, `index.embed`, `index.rebuild`, `index.stats`: passages, full-text and vectors |
+| `plugins/context.py` | `context.for`, `context.now`, `capture.append` |
+| `plugins/live.py` | `live.focus`, `live.send`, `live.poll`, `live.report`: the open window |
+| `plugins/system.py` | `system.version`, `system.update`, `system.desktop_build`, `system.install_desktop` |
+| `plugins/archive.py` | the archive digger: `archive.sources`, `archive.dig`, `archive.distill`, `archive.write`, `archive.status` |
+| `cli.py` | the command line, plus `serve`, `rpc`, `mcp` and `bridge` |
+| `serve.py` | HTTP: `/rpc`, the model gateway, and the UI: SecondBrain (`../secondbrain/dist`) once built, otherwise the plain PWA in `../pwa` |
+| `gateway.py` | the model gateway (below) |
+| `bridge.py` | the bridge (below) |
 | `stdio.py` | JSON-RPC 2.0 and MCP on stdio |
 | `prove_notes.py` | the proof suite (also run in CI) |
 
@@ -82,7 +90,9 @@ The server refuses a foreign `Host` header and any body that isn't
 
 ## The PWA
 
-`../pwa` is served by `serve` at `/`. It is installable and opens offline. It
+`serve` puts SecondBrain (`../secondbrain/dist`) at `/` once it is built;
+until then, and with `--ui ../pwa`, it serves the plain PWA in `../pwa`,
+described here. It is installable and opens offline. It
 keeps a copy of your notes in IndexedDB, and saves made offline are sent when
 the kernel is back. A queued edit is refused rather than merged if the note
 changed elsewhere in the meantime. It has search, tags, `[[wikilinks]]` and

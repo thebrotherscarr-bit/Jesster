@@ -48,9 +48,33 @@ function withAtlas(configText, entry) {
 
 // ---- SecondBrain as an MCP server for Atlas and Manjuel ---------------------
 
-const READ_TOOLS = ['search_notes', 'read_note', 'list_notes', 'search_sessions', 'skills_list', 'skill_view'];
-const WRITE_TOOLS = ['write_note', 'append_to_note', 'todo'];
+// Steward (the MAF agent in worlds/steward) is SecondBrain's agent: it gets the web tools, the
+// long-term memory notes (agent-memory, user-profile) and skill saving, beside the notes.
+const READ_TOOLS = ['search_notes', 'read_note', 'list_notes', 'search_sessions', 'skills_list', 'skill_view', 'web_search', 'web_fetch'];
+const WRITE_TOOLS = ['write_note', 'append_to_note', 'todo', 'memory', 'skill_save'];
 const PROTOCOL = '2025-06-18';
+const SKILL_INDEX_URI = 'skill://index.json';
+
+/**
+ * The vault's skill notes as Agent Skills over MCP (SEP-2640): `skill://index.json` lists them
+ * and `skill://<name>/SKILL.md` serves each one, which is how MAF's MCPSkillsSource discovers
+ * centrally managed skills. A skill note is "> description" then the instructions.
+ */
+function skillResources(vault) {
+  const { skills, describeSkill } = require('./agent/memory.cjs');
+  const { slug } = require('./agent/tools.cjs');
+  return (vault ? skills(vault) : []).map((n) => {
+    const name = slug(n.title);
+    const description = describeSkill(n);
+    const body = String(n.content || '').replace(/^>\s*.*(\r?\n)+/, '');
+    return {
+      name,
+      description,
+      uri: `skill://${name}/SKILL.md`,
+      text: `---\nname: ${name}\ndescription: ${JSON.stringify(description)}\n---\n\n${body.trim()}\n`,
+    };
+  });
+}
 
 // SecondBrain IS the door (door/index.cjs): the Atlas door's ported tools are
 // served here after the notes', with every writing call held for the operator.
@@ -77,7 +101,7 @@ async function handleMcp(msg, { registry, ctx, writes = false, door = installedD
   if (method === 'initialize') {
     return ok({
       protocolVersion: params.protocolVersion || PROTOCOL,
-      capabilities: { tools: {} },
+      capabilities: { tools: {}, resources: {} },
       serverInfo: { name: 'secondbrain', version: '1' },
       instructions:
         `The user's SecondBrain notes vault. ${writes ? 'Reading and writing are allowed.' : 'Read-only: the user has not allowed writes.'}` +
@@ -85,6 +109,25 @@ async function handleMcp(msg, { registry, ctx, writes = false, door = installedD
     });
   }
   if (method === 'ping') return ok({});
+  if (method === 'resources/list') {
+    const list = skillResources(ctx && ctx.vault);
+    return ok({
+      resources: [
+        { uri: SKILL_INDEX_URI, name: 'skills index', mimeType: 'application/json' },
+        ...list.map((s) => ({ uri: s.uri, name: s.name, description: s.description, mimeType: 'text/markdown' })),
+      ],
+    });
+  }
+  if (method === 'resources/read') {
+    const list = skillResources(ctx && ctx.vault);
+    if (params.uri === SKILL_INDEX_URI) {
+      const index = { skills: list.map((s) => ({ name: s.name, type: 'skill-md', description: s.description, url: s.uri })) };
+      return ok({ contents: [{ uri: SKILL_INDEX_URI, mimeType: 'application/json', text: JSON.stringify(index) }] });
+    }
+    const hit = list.find((s) => s.uri === params.uri);
+    if (!hit) return { jsonrpc: '2.0', id, error: { code: -32002, message: `resource not found: ${params.uri}` } };
+    return ok({ contents: [{ uri: hit.uri, mimeType: 'text/markdown', text: hit.text }] });
+  }
   if (method === 'tools/list') {
     const notes = registry
       .schemas()

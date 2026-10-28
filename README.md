@@ -65,10 +65,17 @@ python repo-updater/prove_repo_update.py
 `notes/` is a local notes system on Jesster's chain: Markdown files you own,
 every save deposited on the vault's own chain (sealed by default), a local
 model (Ollama, `gpt-oss`) answering from your notes, and one kernel behind a
-CLI, an installable offline PWA (`pwa/`), JSON-RPC on stdio and HTTP, and an
-MCP server — so any other system can use it as its notes plugin. See
-[`notes/README.md`](notes/README.md); prove it with
-`python notes/prove_notes.py`.
+CLI, a served UI (SecondBrain from `secondbrain/`, or the plain PWA in
+`pwa/`), JSON-RPC on stdio and HTTP, and an MCP server — so any other system
+can use it as its notes plugin. See [`notes/README.md`](notes/README.md);
+prove it with `python notes/prove_notes.py`.
+
+## secondbrain — the notes app
+
+`secondbrain/` is SecondBrain, the notes app (React + Vite PWA, and an
+Electron desktop app built as `secondbrain-b<N>` releases from the
+`secondbrain-app` branch). Served by `python notes/cli.py serve`, it keeps
+notes through the kernel. See [`secondbrain/README.md`](secondbrain/README.md).
 
 ## License
 
