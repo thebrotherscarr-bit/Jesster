@@ -9,7 +9,9 @@ const path = require('path');
 const DEFAULTS = {
   vaultDir: null, // null: Documents\SecondBrain
   inbox: { clone: null, every: 5, reportOnUpdate: false, reportedBuild: 0 }, // minutes between pulls; report back after updates
-  agent: { host: 'http://localhost:11434', model: 'gpt-oss:20b', maxSteps: 12 },
+  // backend 'steward': the Agent tab talks to Steward (agent/steward.cjs); 'ollama': the local loop
+  // check: Claude checks each Steward turn in the Agent tab (agent/checker.cjs), on the Integrations key
+  agent: { host: 'http://localhost:11434', model: 'gpt-oss:20b', maxSteps: 12, backend: 'steward', steward: { dir: '', port: 43120 }, check: false },
   telegram: { token: '', allowedChats: [], enabled: false },
   terminal: { enabled: false, shell: null, alwaysAllow: [] },
   voice: { speakReplies: false, whisperModel: '' }, // '' = whisper.cpp's model, found beside it

@@ -47,7 +47,9 @@ export type AgentEvent =
   | { sessionId: string; type: 'step'; step: number }
   | { sessionId: string; type: 'tool'; name: string; args: Record<string, unknown> }
   | { sessionId: string; type: 'result'; name: string; text: string }
+  | { sessionId: string; type: 'delta'; text: string }
   | { sessionId: string; type: 'answer'; text: string }
+  | { sessionId: string; type: 'check'; text: string }
   | { sessionId: string; type: 'error'; text: string }
   | { sessionId: string; type: 'done' };
 
@@ -60,7 +62,7 @@ export interface ApprovalRequest {
 }
 
 export interface AgentBridge {
-  send: (text: string, sessionId?: string | null, model?: { host: string; model: string } | null) => Promise<{ sessionId: string }>;
+  send: (text: string, sessionId?: string | null, model?: { host: string; model: string; mode?: 'plan' | 'execute' } | null) => Promise<{ sessionId: string }>;
   sessions: () => Promise<{ id: string; title: string; updatedAt: number; source?: string }[]>;
   open: (id: string) => Promise<{ sessionId: string; busy: boolean; messages: { role: string; content: string }[] }>;
   stop: (id: string) => Promise<boolean>;
@@ -68,6 +70,7 @@ export interface AgentBridge {
   tools: () => Promise<{ name: string; description: string }[]>;
   onEvent: (cb: (e: AgentEvent) => void) => () => void;
   onApproval: (cb: (r: ApprovalRequest) => void) => () => void;
+  onShow?: (cb: (sessionId: string) => void) => () => void;
 }
 
 export interface ScheduleView {

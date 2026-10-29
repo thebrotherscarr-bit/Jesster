@@ -134,6 +134,9 @@ export default function App() {
   // voice settings; also transcribes Telegram voice notes while the app runs
   const [voice, setVoice] = useVoiceSettings();
 
+  // a conversation started from outside (agent_send over MCP) brings the Agent tab forward
+  useEffect(() => window.secondbrainDesktop?.agent?.onShow?.(() => setActiveTab('agent')), []);
+
   // tell the kernel what this window has open, so collaborators can see it
   useEffect(() => {
     if (storage.mode !== 'kernel') return;
@@ -355,7 +358,7 @@ export default function App() {
 
   return (
     <div
-      className="min-h-screen bg-neutral-950 text-neutral-100 flex flex-col font-sans selection:bg-neutral-800"
+      className="h-screen bg-neutral-950 text-neutral-100 flex flex-col font-sans selection:bg-neutral-800"
       onDragOver={(e) => {
         if (!desktopVault || !e.dataTransfer.types.includes('Files')) return;
         e.preventDefault();
@@ -415,7 +418,7 @@ export default function App() {
       )}
 
       {/* Main Workspace */}
-      <main className="flex-1 flex overflow-hidden">
+      <main className="flex-1 min-h-0 flex overflow-hidden">
         {activeTab === 'notes' && (
           <>
             <Sidebar

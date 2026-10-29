@@ -52,8 +52,52 @@ function withAtlas(configText, entry) {
 // long-term memory notes (agent-memory, user-profile) and skill saving, beside the notes.
 const READ_TOOLS = ['search_notes', 'read_note', 'list_notes', 'search_sessions', 'skills_list', 'skill_view', 'web_search', 'web_fetch'];
 const WRITE_TOOLS = ['write_note', 'append_to_note', 'todo', 'memory', 'skill_save'];
+// SecondBrain's browser window and computer use, for Steward too (Kyle, 2026-10-28: "allow clicking and
+// typing too", "computer use"). Served only while switched on in Settings, which is when they exist.
+const SCREEN_TOOLS = ['browser_open', 'browser_read', 'browser_click', 'browser_type', 'browser_press', 'browser_scroll', 'browser_back', 'computer_task', 'screen_look'];
 const PROTOCOL = '2025-06-18';
 const SKILL_INDEX_URI = 'skill://index.json';
+
+// The Agent tab, typed into from outside (Kyle, 2026-10-28: "write an extension for secondbrain so
+// you can click in it"): a message goes to the Agent exactly as if typed in the tab, the window
+// opens that conversation, and every approval the Agent asks for waits on the user's card there.
+// Served only while writes are allowed.
+const AGENT_TOOLS = [
+  {
+    name: 'agent_send',
+    description:
+      "Type a message into SecondBrain's Agent tab, as the user would. It goes to the Agent (Steward), the window shows the conversation live, and any approval he asks for waits on the user's Allow/Deny card there. Returns the session id at once; read the answer with agent_read.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        text: { type: 'string', description: 'the message' },
+        session_id: { type: 'string', description: 'continue this conversation; omit to start a new one' },
+      },
+      required: ['text'],
+    },
+  },
+  {
+    name: 'agent_read',
+    description: "Read one Agent-tab conversation: whether the Agent is still working on it, and its messages so far.",
+    inputSchema: { type: 'object', properties: { session_id: { type: 'string' } }, required: ['session_id'] },
+  },
+];
+
+/** agent_send / agent_read on the app's AgentService (ctx.agent); the text of the result. */
+function agentCall(name, args, { agent, showAgent }) {
+  if (name === 'agent_read') {
+    if (!args.session_id) return { error: 'agent_read needs a session_id' };
+    return JSON.stringify(agent.open(String(args.session_id)));
+  }
+  const text = String(args.text || '').trim();
+  if (!text) return { error: 'agent_send needs the text to send' };
+  const sessionId = args.session_id ? String(args.session_id) : require('./agent/agent.cjs').newSessionId();
+  if (agent.sessions.get(sessionId)?.busy) return { error: `session ${sessionId} is still working on the last message; read it with agent_read` };
+  // not awaited: a turn can take minutes, and its answer is read with agent_read
+  agent.ask({ text, sessionId, source: 'app' }).catch(() => {});
+  if (showAgent) showAgent(sessionId);
+  return JSON.stringify({ session_id: sessionId });
+}
 
 /**
  * The vault's skill notes as Agent Skills over MCP (SEP-2640): `skill://index.json` lists them
@@ -91,7 +135,7 @@ function useDoor(door) {
  * installed one unless given) serves the Atlas door's tools beside them.
  */
 async function handleMcp(msg, { registry, ctx, writes = false, door = installedDoor }) {
-  const allowed = new Set([...READ_TOOLS, ...(writes ? WRITE_TOOLS : [])]);
+  const allowed = new Set([...READ_TOOLS, ...SCREEN_TOOLS, ...(writes ? WRITE_TOOLS : [])]);
   if (!msg || msg.jsonrpc !== '2.0' || typeof msg.method !== 'string') {
     return { jsonrpc: '2.0', id: msg?.id ?? null, error: { code: -32600, message: 'invalid request' } };
   }
@@ -133,11 +177,18 @@ async function handleMcp(msg, { registry, ctx, writes = false, door = installedD
       .schemas()
       .filter((t) => allowed.has(t.function.name))
       .map((t) => ({ name: t.function.name, description: t.function.description, inputSchema: t.function.parameters }));
-    const taken = new Set(notes.map((t) => t.name));
-    return ok({ tools: [...notes, ...(door ? door.list().filter((t) => !taken.has(t.name)) : [])] });
+    const agentTools = writes && ctx && ctx.agent ? AGENT_TOOLS : [];
+    const taken = new Set([...notes, ...agentTools].map((t) => t.name));
+    return ok({ tools: [...notes, ...agentTools, ...(door ? door.list().filter((t) => !taken.has(t.name)) : [])] });
   }
   if (method === 'tools/call') {
     const name = params.name;
+    if (AGENT_TOOLS.some((t) => t.name === name)) {
+      const why = !writes ? `${name} drives the Agent; the user allows reads only (SecondBrain → Settings → Share)` : !(ctx && ctx.agent) ? 'the Agent is not running here' : null;
+      const out = why ? { error: why } : agentCall(name, params.arguments || {}, ctx);
+      if (typeof out === 'string') return ok({ content: [{ type: 'text', text: out }], isError: false });
+      return ok({ content: [{ type: 'text', text: out.error }], isError: true });
+    }
     if (!allowed.has(name) && !WRITE_TOOLS.includes(name) && door && door.has(name)) {
       const out = await door.call(name, params.arguments || {}, ctx && ctx.caller);
       return ok({ content: [{ type: 'text', text: out.text }], isError: out.isError });
@@ -163,4 +214,4 @@ function keyOk(header, key) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-module.exports = { atlasServer, withAtlas, handleMcp, useDoor, keyOk, DEFAULT_TOOLS, READ_TOOLS, WRITE_TOOLS };
+module.exports = { atlasServer, withAtlas, handleMcp, useDoor, keyOk, DEFAULT_TOOLS, READ_TOOLS, WRITE_TOOLS, AGENT_TOOLS, SCREEN_TOOLS };

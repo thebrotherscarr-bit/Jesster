@@ -70,6 +70,56 @@ test("Steward gets the long-term memory and the vault's skills (SEP-2640 resourc
   assert.equal(missing.error.code, -32002);
 });
 
+test('agent_send types into the Agent tab and agent_read reads it back, only while writes are allowed', async () => {
+  const { registry, ctx } = setup();
+  const asked = [];
+  const shown = [];
+  const agent = {
+    sessions: new Map(),
+    ask: (o) => (asked.push(o), Promise.resolve({ sessionId: o.sessionId, answer: 'ok' })),
+    open: (id) => ({ sessionId: id, busy: false, messages: [{ role: 'user', content: 'hello' }] }),
+  };
+  const withAgent = { ...ctx, agent, showAgent: (id) => shown.push(id) };
+  const off = await atlas.handleMcp({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, { registry, ctx: withAgent });
+  assert.ok(!off.result.tools.some((t) => t.name === 'agent_send'), 'not served while writes are off');
+  const refused = await atlas.handleMcp({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'agent_send', arguments: { text: 'hello' } } }, { registry, ctx: withAgent });
+  assert.equal(refused.result.isError, true);
+  assert.equal(asked.length, 0);
+  const on = await atlas.handleMcp({ jsonrpc: '2.0', id: 3, method: 'tools/list' }, { registry, ctx: withAgent, writes: true });
+  assert.ok(on.result.tools.some((t) => t.name === 'agent_send') && on.result.tools.some((t) => t.name === 'agent_read'));
+  const sent = await atlas.handleMcp({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'agent_send', arguments: { text: 'hello' } } }, { registry, ctx: withAgent, writes: true });
+  assert.equal(sent.result.isError, false);
+  const { session_id } = JSON.parse(sent.result.content[0].text);
+  assert.deepEqual(asked, [{ text: 'hello', sessionId: session_id, source: 'app' }], 'sent as if typed in the tab');
+  assert.deepEqual(shown, [session_id], 'the window opens the conversation');
+  const read = await atlas.handleMcp({ jsonrpc: '2.0', id: 5, method: 'tools/call', params: { name: 'agent_read', arguments: { session_id } } }, { registry, ctx: withAgent, writes: true });
+  assert.equal(JSON.parse(read.result.content[0].text).messages[0].content, 'hello');
+  agent.sessions.set(session_id, { busy: true });
+  const busy = await atlas.handleMcp({ jsonrpc: '2.0', id: 6, method: 'tools/call', params: { name: 'agent_send', arguments: { text: 'again', session_id } } }, { registry, ctx: withAgent, writes: true });
+  assert.equal(busy.result.isError, true);
+  assert.equal(asked.length, 1);
+});
+
+test('the browser and computer use are served to Steward while they are switched on', async () => {
+  const { registry, ctx } = setup();
+  const off = await atlas.handleMcp({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, { registry, ctx });
+  assert.ok(!off.result.tools.some((t) => t.name === 'browser_open'), 'switched off: not in the registry, not served');
+  const clicked = [];
+  registry.add([
+    { name: 'browser_open', description: 'open', parameters: { type: 'object', properties: {} }, run: async () => 'Page: Google' },
+    { name: 'browser_click', description: 'click', parameters: { type: 'object', properties: {} }, run: async (a) => (clicked.push(a.ref), 'Clicked') },
+    { name: 'computer_task', description: 'desktop', parameters: { type: 'object', properties: {} }, run: async () => 'Did it' },
+  ]);
+  const on = await atlas.handleMcp({ jsonrpc: '2.0', id: 2, method: 'tools/list' }, { registry, ctx });
+  const names = on.result.tools.map((t) => t.name);
+  assert.ok(['browser_open', 'browser_click', 'computer_task'].every((n) => names.includes(n)));
+  const out = await atlas.handleMcp({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'browser_click', arguments: { ref: '4' } } }, { registry, ctx });
+  assert.equal(out.result.isError, false);
+  assert.deepEqual(clicked, ['4']);
+  const desk = await atlas.handleMcp({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'computer_task', arguments: { task: 'x' } } }, { registry, ctx });
+  assert.equal(desk.result.content[0].text, 'Did it');
+});
+
 test('the bearer key is checked in constant time and never optional', () => {
   assert.equal(atlas.keyOk('Bearer abc123', 'abc123'), true);
   assert.equal(atlas.keyOk('Bearer abc124', 'abc123'), false);
