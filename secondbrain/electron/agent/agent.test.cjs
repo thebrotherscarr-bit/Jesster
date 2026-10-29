@@ -120,3 +120,64 @@ test('sessions are saved as notes and can be continued', () => {
     { role: 'assistant', content: 'Friday.' },
   ]);
 });
+
+test("Steward's turn is streamed: tool calls, results and text reach the tab as they happen", async () => {
+  const { turn } = require('./steward.cjs');
+  const bodies = [];
+  const frame = (type, data) => `event: ${type}\r\ndata: ${JSON.stringify({ type, ...data })}\r\n\r\n`;
+  const server = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (d) => (body += d));
+    req.on('end', () => {
+      bodies.push(JSON.parse(body));
+      res.setHeader('Content-Type', 'text/event-stream');
+      if (bodies.length === 1) {
+        res.write(frame('response.output_item.done', { item: { id: 'c1', type: 'function_call', name: 'read_note', call_id: 'k1', arguments: '{"id":"a"}' } }));
+        res.write(frame('response.output_item.done', { item: { id: 'o1', type: 'function_call_output', call_id: 'k1', output: 'note a' } }));
+        res.write(frame('response.output_item.done', { item: { id: 'p1', type: 'mcp_approval_request', name: 'git_commit', arguments: '{"message":"x"}' } }));
+        res.end(frame('response.completed', { response: { id: 'r1', status: 'completed', output: [] } }));
+      } else {
+        res.write(frame('response.output_text.delta', { delta: 'Com' }));
+        res.write(frame('response.output_text.delta', { delta: 'mitted.' }));
+        const msg = { id: 'm1', type: 'message', content: [{ type: 'output_text', text: 'Committed.' }] };
+        res.write(frame('response.output_item.done', { item: msg }));
+        res.end(frame('response.completed', { response: { id: 'r2', status: 'completed', output: [msg] } }));
+      }
+    });
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  const events = [];
+  const r = await turn({ base: `http://127.0.0.1:${server.address().port}`, text: 'commit it', previous: null, approve: async () => true, onEvent: (e) => events.push(e) });
+  server.close();
+  assert.equal(r.answer, 'Committed.');
+  assert.equal(r.previous, 'r2');
+  assert.deepEqual(events.map((e) => e.type), ['tool', 'result', 'delta', 'delta', 'answer']);
+  assert.equal(r.calls[0].result, 'note a');
+  assert.ok(bodies.every((b) => b.stream === true), 'every request asks for a stream');
+  assert.deepEqual(bodies[1].input, [{ type: 'mcp_approval_response', approval_request_id: 'p1', approve: true }]);
+});
+
+test("a conversation keeps Steward's thread and mode across a restart", async () => {
+  const { threads } = require('./steward.cjs');
+  const { AgentService } = require('./service.cjs');
+  const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'threads-')), 'steward-threads.json');
+  const vault = vaultWith([]);
+  const seen = [];
+  const steward = {
+    ensure: async () => 'http://steward',
+    turn: async ({ previous, responseFormat }) => {
+      seen.push({ previous, planning: Boolean(responseFormat) });
+      return { answer: 'ok', previous: `r${seen.length}`, calls: seen.length === 1 ? [{ name: 'mode_set', arguments: { mode: 'execute' } }] : [] };
+    },
+  };
+  const model = () => ({ backend: 'steward' });
+  const first = new AgentService({ getVault: () => vault, getModel: model, steward, threads: threads(file) });
+  const { sessionId } = await first.ask({ text: 'switch to execute mode' });
+  // a new service is what SecondBrain has after a restart
+  const second = new AgentService({ getVault: () => vault, getModel: model, steward, threads: threads(file) });
+  await second.ask({ text: "what's on my watchlist?", sessionId });
+  assert.deepEqual(seen, [
+    { previous: undefined, planning: true },
+    { previous: 'r1', planning: false },
+  ]);
+});

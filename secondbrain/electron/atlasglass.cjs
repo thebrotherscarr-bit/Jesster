@@ -272,4 +272,4 @@ function register({ app, ipcMain, guard, getSettings, vaultDir, shell, door }) {
   app.on('will-quit', stopOwned);
 }
 
-module.exports = { register, boot, superviseGlass, openWindow, stopOwned, findGround, serviceWire, openSitting, portOwner, GLASS_URL, DOOR_PORT, GLASS_PORT };
+module.exports = { register, boot, superviseGlass, openWindow, stopOwned, startOwned, answering, waitFor, findGround, serviceWire, openSitting, portOwner, GLASS_URL, DOOR_PORT, GLASS_PORT };

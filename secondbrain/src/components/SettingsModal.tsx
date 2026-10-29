@@ -8,6 +8,7 @@ import { TerminalSection } from './settings/TerminalSection.tsx';
 import { AtlasSection } from './settings/AtlasSection.tsx';
 import { ArchiveSection } from './settings/ArchiveSection.tsx';
 import { BrowserSection } from './settings/BrowserSection.tsx';
+import { CheckSection } from './settings/CheckSection.tsx';
 import { ComputerSection } from './settings/ComputerSection.tsx';
 import { ReportBack } from './settings/ReportBack.tsx';
 
@@ -126,6 +127,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
         <AutomationsSection />
         <McpSection />
         <TerminalSection />
+        <CheckSection />
         <BrowserSection />
         <ComputerSection />
         {children}

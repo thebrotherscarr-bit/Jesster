@@ -39,6 +39,12 @@ contextBridge.exposeInMainWorld('secondbrainDesktop', {
       ipcRenderer.on('agent:approval', fn);
       return () => ipcRenderer.removeListener('agent:approval', fn);
     },
+    // a conversation started from outside (agent_send over MCP): the window opens it
+    onShow: (cb) => {
+      const fn = (_e, id) => cb(id);
+      ipcRenderer.on('agent:show', fn);
+      return () => ipcRenderer.removeListener('agent:show', fn);
+    },
   },
   schedules: {
     list: () => ipcRenderer.invoke('schedules:list'),
