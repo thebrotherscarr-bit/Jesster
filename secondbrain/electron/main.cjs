@@ -15,6 +15,8 @@ const archive = require('./archive.cjs');
 const integrations = require('./integrations.cjs');
 const whisper = require('./whisper.cjs');
 const { AgentService } = require('./agent/service.cjs');
+const steward = require('./agent/steward.cjs');
+const checker = require('./agent/checker.cjs');
 const memory = require('./agent/memory.cjs');
 const sched = require('./agent/schedules.cjs');
 const { McpClient } = require('./agent/mcp.cjs');
@@ -408,6 +410,28 @@ ipcMain.handle('inbox:disconnect', (event) => {
 });
 
 // ---- the agent -----------------------------------------------------------
+// Steward is the Agent tab's agent (agent/steward.cjs): his service is SecondBrain's child, as the glass is
+const stewardService = steward.service({
+  getConfig: () => getSettings().get('agent').steward,
+  vaultDir,
+  answering: atlasGlass.answering,
+  waitFor: atlasGlass.waitFor,
+  startOwned: atlasGlass.startOwned,
+});
+// Claude's check of each Steward turn (agent/checker.cjs): on the Claude key and model in
+// Integrations, with Steward's Charter note, only while Settings → Claude's check is on
+function checkStewardTurn({ turn, signal }) {
+  if (!getSettings().get('agent').check) return null;
+  const claude = getSettings().get('integrations').anthropic;
+  const charter = getVault().load().find((n) => n.id === 'steward-charter');
+  return checker.check({
+    chat: integrations.chat,
+    config: { key: claude.key, model: claude.model || integrations.PROVIDERS.anthropic.defaultModel },
+    charter: charter && charter.content,
+    turn,
+    signal,
+  });
+}
 let agent = null;
 function getAgent() {
   if (!agent) {
@@ -416,6 +440,9 @@ function getAgent() {
       getModel: () => getSettings().get('agent'),
       emit: (channel, payload) => mainWindow && mainWindow.webContents.send(channel, payload),
       extras: (opts) => Promise.all(agentExtras.map((fn) => fn(opts))).then((xs) => xs.flat()),
+      steward: { ensure: stewardService.ensure, turn: steward.turn },
+      checker: checkStewardTurn,
+      threads: steward.threads(path.join(app.getPath('userData'), 'steward-threads.json')),
     });
     for (const fn of agentPlugins) fn(agent);
   }
@@ -486,7 +513,9 @@ ipcMain.handle('agent:send', (event, text, sessionId, model) => {
     if (typeof host === 'string' && typeof name === 'string') getSettings().set('agent', { host, model: name });
   }
   const id = sessionId || require('./agent/agent.cjs').newSessionId();
-  getAgent().ask({ text, sessionId: id, source: 'app' });
+  // the planning approval sets the mode before it sends, as the guide's console does
+  const mode = model && ['plan', 'execute'].includes(model.mode) ? model.mode : undefined;
+  getAgent().ask({ text, sessionId: id, source: 'app', mode });
   return { sessionId: id };
 });
 ipcMain.handle('agent:sessions', (event) => {
@@ -694,7 +723,14 @@ async function serveMcp(req, res) {
   if (!['127.0.0.1', 'localhost', '[::1]'].includes(host)) return res.status(421).json({ error: 'loopback only' });
   if (!atlas.keyOk(req.headers.authorization, share.key)) return res.status(401).json({ error: 'a bearer key is required' });
   try {
-    const ctx = { vault: getVault(), source: 'atlas', touched: () => mainWindow && mainWindow.webContents.send('vault:changed') };
+    const ctx = {
+      vault: getVault(),
+      source: 'atlas',
+      touched: () => mainWindow && mainWindow.webContents.send('vault:changed'),
+      // agent_send / agent_read: the Agent tab, typed into from outside
+      agent: getAgent(),
+      showAgent: (id) => mainWindow && mainWindow.webContents.send('agent:show', id),
+    };
     const out = await atlas.handleMcp(req.body, { registry: getAgent().registry, ctx, writes: Boolean(share.writes) });
     if (out === null) return res.status(202).end();
     res.json(out);
@@ -792,6 +828,8 @@ if (!gotSingleInstanceLock) {
     schedulerTimer = setInterval(schedulerTick, 30000);
     setTimeout(() => getTelegram().start(), 2000);
     setTimeout(schedulerTick, 15000);
+    // Steward warms up with the app, so the Agent tab's first message does not wait for his start
+    if (getSettings().get('agent').backend === 'steward') stewardService.ensure().catch((e) => console.error('[SecondBrain] steward:', e.message));
     // downloads from past updates (the hand-over cannot delete its own exe)
     const asar = process.noAsar;
     process.noAsar = true; // an old build's app.asar is a file to delete
