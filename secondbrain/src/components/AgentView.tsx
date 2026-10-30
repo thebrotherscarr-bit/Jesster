@@ -6,10 +6,10 @@ import { OllamaConfig } from '../types/index.ts';
 import { renderMarkdown } from '../utils/markdown.ts';
 
 interface Turn {
-  role: 'user' | 'assistant' | 'tool' | 'error' | 'check';
+  role: 'user' | 'assistant' | 'thinking' | 'tool' | 'error' | 'check';
   text: string;
   name?: string;
-  // assistant text still arriving from Steward's stream
+  // assistant text or thinking still arriving from Steward's stream
   live?: boolean;
 }
 
@@ -117,6 +117,13 @@ export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice }) => 
             }
           }
           return last;
+        }
+        // his thinking, collected live into one line until something else arrives (MAF's
+        // console shows it the same way: observers/reasoning_display.py)
+        if (e.type === 'thinking') {
+          const last = t[t.length - 1];
+          if (last?.role === 'thinking' && last.live) return [...t.slice(0, -1), { ...last, text: last.text + e.text }];
+          return [...t, { role: 'thinking', text: e.text, live: true }];
         }
         if (e.type === 'delta') {
           const last = t[t.length - 1];
@@ -278,6 +285,10 @@ export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice }) => 
               <div key={i} className="text-[11px] text-neutral-500 font-mono whitespace-pre-wrap break-words pl-2 border-l border-neutral-800">
                 <Wrench className="inline w-3 h-3 mr-1 -mt-0.5" />
                 {t.name} {t.text}
+              </div>
+            ) : t.role === 'thinking' ? (
+              <div key={i} className="text-xs text-neutral-500 italic whitespace-pre-wrap break-words pl-2 border-l border-neutral-800" aria-label="Thinking">
+                💭 {t.text}
               </div>
             ) : t.role === 'check' ? (
               <div key={i} className="rounded-xl border border-violet-900 bg-violet-950/30 px-3 py-2 space-y-1" aria-label="Claude's check">

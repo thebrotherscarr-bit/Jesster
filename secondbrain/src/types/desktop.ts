@@ -47,6 +47,7 @@ export type AgentEvent =
   | { sessionId: string; type: 'step'; step: number }
   | { sessionId: string; type: 'tool'; name: string; args: Record<string, unknown> }
   | { sessionId: string; type: 'result'; name: string; text: string }
+  | { sessionId: string; type: 'thinking'; text: string }
   | { sessionId: string; type: 'delta'; text: string }
   | { sessionId: string; type: 'answer'; text: string }
   | { sessionId: string; type: 'check'; text: string }

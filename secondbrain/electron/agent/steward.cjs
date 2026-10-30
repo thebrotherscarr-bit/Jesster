@@ -147,8 +147,9 @@ function textOf(item) {
  * `approve(name, args, summary)` resolves true/false for each approval request. Resolves
  * { answer, previous, calls }: calls are { name, arguments } for the session note.
  *
- * The turn is streamed: each tool call, tool result and piece of text is sent to `onEvent` as
- * Steward produces it ('tool', 'result', 'delta'), instead of all at once when the turn ends.
+ * The turn is streamed: each tool call, tool result, piece of thinking and piece of text is sent to
+ * `onEvent` as Steward produces it ('tool', 'result', 'thinking', 'delta'), instead of all at once
+ * when the turn ends.
  */
 async function turn({ base, text, previous, approve, onEvent = () => {}, signal, stream = postStream, responseFormat = null }) {
   // responseFormat: the console's planning observer in plan mode asks for PlanningResponse and
@@ -183,6 +184,11 @@ async function turn({ base, text, previous, approve, onEvent = () => {}, signal,
     const r = await stream(`${base}/responses`, body, signal, (e) => {
       if (e.type === 'response.output_text.delta' && e.delta) {
         if (!responseFormat) onEvent({ type: 'delta', text: e.delta });
+      }
+      // his thinking, as MAF's hosting streams text_reasoning content (reasoning summary deltas); the
+      // guide's console shows it live (observers/reasoning_display.py), and so does the Agent tab
+      else if (e.type === 'response.reasoning_summary_text.delta' && e.delta) {
+        if (!responseFormat) onEvent({ type: 'thinking', text: e.delta });
       }
       else if (e.type === 'response.output_item.done' && e.item) take(e.item);
     });
