@@ -39,7 +39,7 @@ test('the six git verbs run here, not in the inner door', () => {
     assert.ok(door.PORTED.includes(n) && !door.REMAINING.includes(n), n);
   }
   const reg = door.build(door.worldsFor(fs.mkdtempSync(path.join(os.tmpdir(), 'gitctl-g-'))));
-  assert.deepEqual(reg.tenants.names(), ['atlas', 'research', 'secondbrain'], 'SecondBrain is the third world');
+  assert.deepEqual(reg.tenants.names(), ['atlas', 'research', 'secondbrain', 'steward'], 'SecondBrain is the third world, Steward the fourth');
 });
 
 test('a save: a message or nothing; everything, or only what is named, never outside the world', async () => {

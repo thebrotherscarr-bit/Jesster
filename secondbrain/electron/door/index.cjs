@@ -149,13 +149,16 @@ function innerHolds(reg, getInner) {
  * The worlds the door carries for a Manjuel ground: the two the glass's door line carries, and
  * since 2026-10-23 SecondBrain's own checkout (his card: "Yes, all three"), so the GitHub shelf
  * keeps all three repositories. The inner door carries only the first two, so a forwarded tool
- * asked of `secondbrain` is refused there by name.
+ * asked of `secondbrain` is refused there by name. Since 2026-10-30 (Steward's ADR-0001, item 5)
+ * also Steward's own repository, so his git tools reach it through the door under a key of his own,
+ * with every write held for the operator.
  */
 function worldsFor(ground) {
   return [
     ['research', ground],
     ['atlas', path.join(ground, 'atlas')],
     ['secondbrain', path.join(ground, 'worlds', 'jesster')],
+    ['steward', path.join(ground, 'worlds', 'steward')],
   ];
 }
 
