@@ -137,6 +137,8 @@ test("Steward's turn is streamed: tool calls, results and text reach the tab as 
         res.write(frame('response.output_item.done', { item: { id: 'p1', type: 'mcp_approval_request', name: 'git_commit', arguments: '{"message":"x"}' } }));
         res.end(frame('response.completed', { response: { id: 'r1', status: 'completed', output: [] } }));
       } else {
+        res.write(frame('response.reasoning_summary_text.delta', { delta: 'Approved, ' }));
+        res.write(frame('response.reasoning_summary_text.delta', { delta: 'so report it.' }));
         res.write(frame('response.output_text.delta', { delta: 'Com' }));
         res.write(frame('response.output_text.delta', { delta: 'mitted.' }));
         const msg = { id: 'm1', type: 'message', content: [{ type: 'output_text', text: 'Committed.' }] };
@@ -151,7 +153,8 @@ test("Steward's turn is streamed: tool calls, results and text reach the tab as 
   server.close();
   assert.equal(r.answer, 'Committed.');
   assert.equal(r.previous, 'r2');
-  assert.deepEqual(events.map((e) => e.type), ['tool', 'result', 'delta', 'delta', 'answer']);
+  assert.deepEqual(events.map((e) => e.type), ['tool', 'result', 'thinking', 'thinking', 'delta', 'delta', 'answer']);
+  assert.equal(events.filter((e) => e.type === 'thinking').map((e) => e.text).join(''), 'Approved, so report it.');
   assert.equal(r.calls[0].result, 'note a');
   assert.ok(bodies.every((b) => b.stream === true), 'every request asks for a stream');
   assert.deepEqual(bodies[1].input, [{ type: 'mcp_approval_response', approval_request_id: 'p1', approve: true }]);
@@ -167,17 +170,17 @@ test("a conversation keeps Steward's thread and mode across a restart", async ()
     ensure: async () => 'http://steward',
     turn: async ({ previous, responseFormat }) => {
       seen.push({ previous, planning: Boolean(responseFormat) });
-      return { answer: 'ok', previous: `r${seen.length}`, calls: seen.length === 1 ? [{ name: 'mode_set', arguments: { mode: 'execute' } }] : [] };
+      return { answer: 'ok', previous: `r${seen.length}`, calls: seen.length === 1 ? [{ name: 'mode_set', arguments: { mode: 'plan' } }] : [] };
     },
   };
   const model = () => ({ backend: 'steward' });
   const first = new AgentService({ getVault: () => vault, getModel: model, steward, threads: threads(file) });
-  const { sessionId } = await first.ask({ text: 'switch to execute mode' });
+  const { sessionId } = await first.ask({ text: 'switch to plan mode' });
   // a new service is what SecondBrain has after a restart
   const second = new AgentService({ getVault: () => vault, getModel: model, steward, threads: threads(file) });
   await second.ask({ text: "what's on my watchlist?", sessionId });
   assert.deepEqual(seen, [
-    { previous: undefined, planning: true },
-    { previous: 'r1', planning: false },
+    { previous: undefined, planning: false },
+    { previous: 'r1', planning: true },
   ]);
 });

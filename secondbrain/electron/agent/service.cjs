@@ -130,9 +130,10 @@ class AgentService {
    */
   async askSteward(s, text, id, send, approve) {
     const base = await this.steward.ensure();
-    // plan mode, as the guide's console: the harness starts in plan, and the reply is asked for as
-    // MAF's PlanningResponse (a clarification or an approval); Steward's mode_set calls move it
-    const mode = s.mode || 'plan';
+    // the mode, as the guide's console: it starts where Steward does (Part 2's
+    // initial_mode="execute"); in plan mode the reply is asked for as MAF's PlanningResponse (a
+    // clarification or an approval); Steward's mode_set calls move it
+    const mode = s.mode || 'execute';
     const r = await this.steward.turn({ base, text, previous: s.stewardPrevious, approve: approve || this.approveInWindow(id), onEvent: send, signal: s.abort.signal, responseFormat: mode === 'plan' ? PLANNING_RESPONSE : null });
     s.stewardPrevious = r.previous;
     const set = r.calls.filter((c) => c.name === 'mode_set' && c.arguments?.mode).pop();
