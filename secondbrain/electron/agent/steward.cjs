@@ -21,6 +21,10 @@ const path = require('path');
 
 const PORT = 43120;
 const SCRIPT = ['harness', 'steward', 'step04_production_ready', 'hosted.py'];
+// Steward as an MCP tool (step 4's mcp_app.py, ADR-0001 item 10), for Manjuel's mcp_call: started
+// the same way as his service, on the port MAF's MCP hosting samples use (mcp_app.py's PORT)
+const MCP_PORT = 8000;
+const MCP_SCRIPT = ['harness', 'steward', 'step04_production_ready', 'mcp_app.py'];
 const PYTHON = ['.venv', 'Scripts', 'python.exe'];
 const MAX_ROUNDS = 20; // approval round-trips in one turn
 // MAF's PlanningResponse (harness/console/observers/planning_models.py, PlanningResponse.model_json_schema()):
@@ -28,9 +32,9 @@ const MAX_ROUNDS = 20; // approval round-trips in one turn
 const PLANNING_RESPONSE = {"$defs": {"PlanningQuestion": {"description": "A single question or item within a PlanningResponse.\n\nFor clarification: contains the question text and optional choices.\nFor approval: contains the plan summary for the user to approve.", "properties": {"message": {"description": "For clarifications, this has the question that needs to be clarified with the user. For approvals, this would contain a summary of the execution plan that the user needs to approve.", "title": "Message", "type": "string"}, "choices": {"anyOf": [{"items": {"type": "string"}, "type": "array"}, {"type": "null"}], "default": null, "description": "For clarifications, this has a list of options that the user can choose from. null for approvals.\n\nNote: for clarifications, the user will always also be presented with a free form input option, so make sure that each choice provided here is a valid input for the next turn.\nE.g. if the question is \"Which stock are you referring to?\" then valid choices might be [\"AAPL\", \"MSFT\", \"GOOG\"], and the user could also type their own answer.\nInvalid choices would be [\"Enter tickers directly\", \"Paste tickers\"], since these conflict with the already existing freeform option, and don't directly provide valid inputs for the next turn.", "title": "Choices"}}, "required": ["message"], "title": "PlanningQuestion", "type": "object"}, "PlanningResponseType": {"description": "Type of planning response from the agent.", "enum": ["clarification", "approval"], "title": "PlanningResponseType", "type": "string"}}, "description": "Structured response from the agent while in planning mode.\n\nUsed with structured output (`response_format`) to enable consistent\nrendering of clarification questions and approval requests.", "properties": {"type": {"$ref": "#/$defs/PlanningResponseType", "description": "Use 'clarification' when you need clarification around the user request and you want to present the user with options to choose from. Use 'approval' when you are ready to start execution, but need approval to start executing."}, "questions": {"description": "For clarifications, this has one or more questions to ask the user (each with choices). For approvals, this has exactly one item containing the plan summary for the user to approve.", "items": {"$ref": "#/$defs/PlanningQuestion"}, "title": "Questions", "type": "array"}}, "required": ["type", "questions"], "title": "PlanningResponse", "type": "object"};
 
 /** Steward's folder: the one Settings names, else worlds\steward beside the notes folder. */
-function findSteward(settingsDir, vaultDir) {
+function findSteward(settingsDir, vaultDir, script = SCRIPT) {
   for (const d of [settingsDir, vaultDir && path.resolve(vaultDir, '..', 'steward')]) {
-    if (d && fs.existsSync(path.join(d, ...SCRIPT))) return d;
+    if (d && fs.existsSync(path.join(d, ...script))) return d;
   }
   return null;
 }
@@ -214,22 +218,25 @@ async function turn({ base, text, previous, approve, onEvent = () => {}, signal,
 /**
  * The service, started when needed. `ensure()` resolves the base URL once something answers on
  * the port, starting Steward first when nothing does; or rejects with what is missing.
+ *
+ * `script`, `port` and `log` name what is started: his service by default, or his MCP door
+ * (MCP_SCRIPT on MCP_PORT, its own log), which SecondBrain starts and stops the same way.
  */
-function service({ getConfig, vaultDir, answering, waitFor, startOwned, wait = 90000 }) {
+function service({ getConfig, vaultDir, answering, waitFor, startOwned, wait = 90000, script = SCRIPT, port: fixedPort = 0, log = 'steward.log' }) {
   let starting = null;
   async function ensure() {
     const cfg = getConfig() || {};
-    const port = Number(cfg.port) || PORT;
+    const port = fixedPort || Number(cfg.port) || PORT;
     const base = `http://127.0.0.1:${port}`;
     if (await answering(port)) return base;
     if (!starting) {
       starting = (async () => {
-        const dir = findSteward(cfg.dir, vaultDir());
+        const dir = findSteward(cfg.dir, vaultDir(), script);
         if (!dir) throw new Error('Steward was not found: SecondBrain looks for worlds\\steward beside the notes folder, or the folder in Settings (agent.steward.dir).');
         const python = path.join(dir, ...PYTHON);
         if (!fs.existsSync(python)) throw new Error(`Steward's Python was not found at ${python}.`);
-        startOwned(python, [path.join(...SCRIPT)], dir, { ...process.env, STEWARD_PORT: String(port) }, ['steward.log', 'steward.log']);
-        if (!(await waitFor(port, wait))) throw new Error(`Steward's service did not answer on port ${port}; its log is ${path.join(dir, 'steward.log')}.`);
+        startOwned(python, [path.join(...script)], dir, { ...process.env, STEWARD_PORT: String(port) }, [log, log]);
+        if (!(await waitFor(port, wait))) throw new Error(`Steward's ${script[script.length - 1]} did not answer on port ${port}; its log is ${path.join(dir, log)}.`);
         return base;
       })().finally(() => {
         starting = null;
@@ -263,4 +270,4 @@ function threads(file) {
   };
 }
 
-module.exports = { turn, service, findSteward, postJson, postStream, threads, PORT, PLANNING_RESPONSE };
+module.exports = { turn, service, findSteward, postJson, postStream, threads, PORT, MCP_PORT, MCP_SCRIPT, PLANNING_RESPONSE };

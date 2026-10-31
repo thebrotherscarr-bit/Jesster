@@ -18,3 +18,12 @@ venv/
 # a notes vault is personal - never commit one
 JessterNotes/
 vault/
+
+# the app's builds and their kept copies - rebuilt from source, never committed
+SecondBrain-win32-x64/
+SecondBrain-win32-x64.old-*/
+SecondBrain-win32-x64.zip
+dist/
+dist-desktop/
+node_modules/
+.aistudio/

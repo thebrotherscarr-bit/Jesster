@@ -418,6 +418,18 @@ const stewardService = steward.service({
   waitFor: atlasGlass.waitFor,
   startOwned: atlasGlass.startOwned,
 });
+// Steward as an MCP tool (mcp_app.py on 127.0.0.1:8000, ADR-0001 item 10), so Manjuel's mcp_call reaches
+// him: started and stopped with SecondBrain the same way, from the same folder; its own log, steward-mcp.log
+const stewardMcp = steward.service({
+  getConfig: () => ({ dir: (getSettings().get('agent').steward || {}).dir }),
+  vaultDir,
+  answering: atlasGlass.answering,
+  waitFor: atlasGlass.waitFor,
+  startOwned: atlasGlass.startOwned,
+  script: steward.MCP_SCRIPT,
+  port: steward.MCP_PORT,
+  log: 'steward-mcp.log',
+});
 // Claude's check of each Steward turn (agent/checker.cjs): on the Claude key and model in
 // Integrations, with Steward's Charter note, only while Settings → Claude's check is on
 function checkStewardTurn({ turn, signal }) {
@@ -830,6 +842,8 @@ if (!gotSingleInstanceLock) {
     setTimeout(schedulerTick, 15000);
     // Steward warms up with the app, so the Agent tab's first message does not wait for his start
     if (getSettings().get('agent').backend === 'steward') stewardService.ensure().catch((e) => console.error('[SecondBrain] steward:', e.message));
+    // and his MCP door, for Manjuel
+    if (getSettings().get('agent').backend === 'steward') stewardMcp.ensure().catch((e) => console.error('[SecondBrain] steward mcp:', e.message));
     // downloads from past updates (the hand-over cannot delete its own exe)
     const asar = process.noAsar;
     process.noAsar = true; // an old build's app.asar is a file to delete
