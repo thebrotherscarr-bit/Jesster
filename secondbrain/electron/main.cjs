@@ -792,7 +792,8 @@ ipcMain.handle('atlas:connect', async (event, opts) => {
 });
 
 // ---- Atlas comes from SecondBrain: the door at /mcp and on 8090, the glass its child ----------
-const theDoor = door.register({ atlas, ipcMain, guard, getSettings, vaultDir }); // Atlas's tools, writes held
+// Atlas's tools, writes held; and the Agent tab's agent_send / agent_read, a send held for his Approve
+const theDoor = door.register({ atlas, ipcMain, guard, getSettings, vaultDir, getAgent, showAgent: (id) => mainWindow && mainWindow.webContents.send('agent:show', id) });
 atlasGlass.register({ app, ipcMain, guard, getSettings, vaultDir, shell, door: theDoor }); // 8090 and the glass at start; the button opens it
 
 // ---- the archive digger (Settings → Archive), run by the notes kernel ----------

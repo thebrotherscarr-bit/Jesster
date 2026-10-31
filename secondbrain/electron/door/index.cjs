@@ -75,7 +75,7 @@ const noInner = () => {
   throw new Error('this tool is forwarded to the inner Atlas door, and none is running here');
 };
 
-function build(worlds, { defaultProject = '', holdWrites = true, coreCmd = '', getInner = noInner } = {}) {
+function build(worlds, { defaultProject = '', holdWrites = true, coreCmd = '', getInner = noInner, extra = [] } = {}) {
   const tenants = new Tenants();
   const byName = [...worlds].map(([n, h]) => [String(n).toLowerCase(), h]).sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
   for (const [name, home] of byName) tenants.add(name, home);
@@ -89,7 +89,41 @@ function build(worlds, { defaultProject = '', holdWrites = true, coreCmd = '', g
     if (t) reg.add(t);
   }
   innerHolds(reg, getInner);
+  // the app's own, beyond the Go door's surface (agentTools); a bare door carries none
+  for (const t of extra) reg.add(t);
   return reg;
+}
+
+/**
+ * THE AGENT TAB, AT THE DOOR (2026-10-31, his word: "do it"). agent_send and agent_read, as /mcp
+ * serves them (atlas.cjs), so any client of the door can message Steward in the Agent tab without a
+ * connection of its own. agent_send writes, so a client's send is HELD and goes to the Agent only on
+ * his Approve; agent_read reads. Only the app adds them (register), so ORDER stays the Go door's.
+ */
+function agentTools(getAgent, showAgent) {
+  const { agentCall } = require('../atlas.cjs');
+  const run = (name) => async (t, args) => {
+    const out = agentCall(name, args, { agent: getAgent(), showAgent });
+    if (typeof out !== 'string') throw new Error(out.error);
+    return out;
+  };
+  return [
+    {
+      name: 'agent_send',
+      writes: true,
+      description:
+        "type a message into SecondBrain's Agent tab, as the user would: it goes to Steward and the window shows the conversation live. It writes, so it waits for the operator's Approve; name a new session_id (like session-20261031-2100-ab12) to read the answer with agent_read once it runs",
+      args: ['text', 'session_id?', 'project?'],
+      fn: run('agent_send'),
+    },
+    {
+      name: 'agent_read',
+      writes: false,
+      description: "one Agent-tab conversation: whether Steward is still working on it, and its messages so far",
+      args: ['session_id', 'project?'],
+      fn: run('agent_read'),
+    },
+  ];
 }
 
 /**
@@ -256,10 +290,10 @@ async function flowCall(door, name, args) {
   return door.call(name, args, FLOW);
 }
 
-/** main.cjs's one line: the door into atlas.handleMcp, and the operator's hand over IPC. */
-function register({ atlas, ipcMain, guard, getSettings, vaultDir }) {
+/** main.cjs's one line: the door into atlas.handleMcp, and the operator's hand over IPC; with getAgent, the Agent tab's two (agentTools). */
+function register({ atlas, ipcMain, guard, getSettings, vaultDir, getAgent, showAgent }) {
   const { findGround } = require('../atlasglass.cjs');
-  const door = serve(() => findGround((getSettings().get('atlas') || {}).ground, vaultDir()));
+  const door = serve(() => findGround((getSettings().get('atlas') || {}).ground, vaultDir()), { extra: getAgent ? agentTools(getAgent, showAgent) : [] });
   atlas.useDoor(door);
   process.on('exit', () => door.stop());
   ipcMain.handle('door:holds', async (event, project) => {
@@ -288,4 +322,4 @@ function register({ atlas, ipcMain, guard, getSettings, vaultDir }) {
   return door;
 }
 
-module.exports = { register, serve, build, worldsFor, engines, ORDER, PORTED, REMAINING, INSTRUCTIONS, OPERATOR, CLIENT, SHELF_TOOLS, flowCall };
+module.exports = { register, serve, build, agentTools, worldsFor, engines, ORDER, PORTED, REMAINING, INSTRUCTIONS, OPERATOR, CLIENT, SHELF_TOOLS, flowCall };
