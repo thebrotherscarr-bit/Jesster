@@ -15,12 +15,13 @@
  * `--all`, `--mirror` or `--tags`.
  *
  * Every verb here writes, so SecondBrain's gate (registry.cjs) parks a client's call
- * for the operator's Approve before anything runs; git_pr is his hand alone.
+ * for the operator's Approve before anything runs. git_pr was his hand alone; since
+ * 2026-10-31 (his word, for Steward: "Yes, give it to him") a client's open or merge
+ * parks the same way, and its list reads.
  */
 const path = require('path');
 const { struct, marshal, spawn, dial, str } = require('./util.cjs');
 const { gitRun, isRepo, mainLine, mainByPullRequest, NOT_A_REPO } = require('./git.cjs');
-const { callerOf } = require('./registry.cjs');
 const TABLE = require('./tools.json');
 
 // ---- shared -----------------------------------------------------------------------
@@ -702,7 +703,6 @@ async function prMerge(t, args) {
 }
 
 async function toolGitPR(t, args) {
-  if (!callerOf(args).service) throw new Error("git_pr is the operator's own hand: his glass alone may call it");
   if (!(await isRepo(t))) return NOT_A_REPO;
   if (!dial(t.home, 'GIT_REMOTE')) return walled('Pull requests');
   const action = actionOf(args);
@@ -719,9 +719,21 @@ async function toolGitPR(t, args) {
 
 const FNS = { git_commit: toolGitCommit, git_push: toolGitPush, git_pull: toolGitPull, git_branch: toolGitBranch, git_tag: toolGitTag, git_pr: toolGitPR };
 
+// SecondBrain's own rulings over the Go door's table, which tools.json keeps as it is. git_pr (2026-10-31, his word
+// for Steward: "Yes, give it to him"): no longer the glass's alone; a client's open or merge is a held write like
+// every other, so it runs only on his Approve, and list reads.
+const OVERRIDES = {
+  git_pr: (d) => ({
+    writes: true,
+    serviceOnly: false,
+    description: d.description.replace(/His glass alone may call it$/, "A client's open or merge waits for the operator's Approve, like every other write; list reads"),
+  }),
+};
+
 const gitctlTools = Object.entries(FNS).map(([name, fn]) => {
   const d = TABLE.find((x) => x.name === name);
-  return { name, description: d.description, args: d.args, writes: d.writes, reads: d.reads, serviceOnly: d.serviceOnly, secrets: d.secrets, fn };
+  const own = OVERRIDES[name] ? OVERRIDES[name](d) : {};
+  return { name, description: d.description, args: d.args, writes: d.writes, reads: d.reads, serviceOnly: d.serviceOnly, secrets: d.secrets, fn, ...own };
 });
 
 module.exports = { gitctlTools, gh, prChecks, prNumber, prWaitOf, badBranchName, badTagName, badMarkName, cargoVersion, jailed, walled };
