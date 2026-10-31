@@ -154,10 +154,13 @@ test('version marks: the name equals the declared version, on the main line, nev
   assert.equal(cargoVersion('[package]\nname = "x"\nversion = "1.2.3"\n[dependencies]\nversion = "9"\n'), '1.2.3');
 });
 
-test('pull requests: the glass alone; listed with their checks as one word; merged only when green, at the head that was read, and main comes down', async () => {
+test('pull requests: a client\'s open or merge waits for the operator; listed with their checks as one word; merged only when green, at the head that was read, and main comes down', async () => {
   const { root, origin, home, t } = world();
   const reg = door.build([['w', home]], { defaultProject: 'w' });
-  await assert.rejects(reg.call('git_pr', { action: 'list' }, { name: 'client', service: false }), /the operator's own hand/);
+  const CLIENT = { name: 'client', service: false };
+  // since 2026-10-31 git_pr is no longer the glass's alone: a client's writes park like every other
+  assert.match(await reg.call('git_pr', { action: 'open' }, CLIENT), /^HELD: "git_pr" writes/);
+  assert.match(await reg.call('git_pr', { action: 'merge', number: 7 }, CLIENT), /^HELD: "git_pr" writes/);
   assert.equal(prChecks([]), 'none');
   assert.equal(prChecks([{ status: 'COMPLETED', conclusion: 'SUCCESS' }, { state: 'SUCCESS' }]), 'passed');
   assert.equal(prChecks([{ status: 'IN_PROGRESS' }]), 'pending');
@@ -186,6 +189,8 @@ test('pull requests: the glass alone; listed with their checks as one word; merg
   try {
     const OP = { name: '', service: true };
     assert.deepEqual(JSON.parse(await reg.call('git_pr', { action: 'list' }, OP)).pull_requests[0], { number: 7, title: 'T', line: 'work', into: 'main', url: 'u', checks: 'pending' });
+    assert.equal(JSON.parse(await reg.call('git_pr', { action: 'list' }, CLIENT)).pull_requests[0].number, 7, "a client's list reads at once");
+    assert.ok(!calls.some((c) => c.startsWith('pr create') || c.startsWith('pr merge')), 'nothing a client asked was run before his Approve');
     assert.match(await reg.call('git_pr', { action: 'merge', number: '#7' }, OP), /checks are still running/);
     checks = [{ status: 'COMPLETED', conclusion: 'SUCCESS' }];
     const merged = await reg.call('git_pr', { action: 'merge', number: 7 }, OP);
