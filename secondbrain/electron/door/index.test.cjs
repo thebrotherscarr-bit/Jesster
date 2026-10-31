@@ -122,6 +122,48 @@ test('the GitHub shelf presses the door\'s git and hold tools over IPC as the op
   }
 });
 
+test('the Agent tab at the door: a client\'s agent_send waits for his Approve, then reaches the Agent; agent_read reads at once', async () => {
+  const g = ground();
+  const asked = [];
+  const shown = [];
+  const agent = {
+    sessions: new Map(),
+    ask: async (m) => asked.push(m),
+    open: (id) => ({ sessionId: id, busy: false, messages: [{ role: 'user', content: 'hi' }] }),
+  };
+  const handlers = {};
+  const d = door.register({
+    atlas: { useDoor: () => {} },
+    ipcMain: { handle: (ch, fn) => (handlers[ch] = fn) },
+    guard: () => {},
+    getSettings: () => ({ get: () => ({ ground: g }) }),
+    vaultDir: () => '',
+    getAgent: () => agent,
+    showAgent: (id) => shown.push(id),
+  });
+  try {
+    const names = d.list().map((t) => t.name);
+    assert.deepEqual(names.slice(0, door.ORDER.length), door.ORDER, 'the Go door\'s 97 first, as they were');
+    assert.deepEqual(names.slice(door.ORDER.length), ['agent_send', 'agent_read']);
+    const held = (await d.call('agent_send', { text: 'hi', session_id: 'session-20261031-2100-ab12' })).text;
+    assert.match(held, /^HELD: "agent_send" writes/);
+    assert.equal(asked.length, 0, 'nothing reaches the Agent before his Approve');
+    const id = held.match(/parked as (hold_\S+)/)[1];
+    const ran = await handlers['door:answer']({}, id, 'approve');
+    assert.equal(ran.isError, false);
+    assert.match(ran.text, /"session_id":"session-20261031-2100-ab12"/);
+    assert.deepEqual(asked.map((m) => [m.text, m.sessionId, m.source]), [['hi', 'session-20261031-2100-ab12', 'app']]);
+    assert.deepEqual(shown, ['session-20261031-2100-ab12'], 'the window opens the conversation');
+    const read = await d.call('agent_read', { session_id: 'session-20261031-2100-ab12' });
+    assert.equal(read.isError, false);
+    assert.equal(JSON.parse(read.text).messages[0].content, 'hi');
+    const empty = await d.call('agent_read', {});
+    assert.equal(empty.isError, true);
+  } finally {
+    d.stop();
+  }
+});
+
 test('a flow\'s git block: reads and bringing level run, other writes wait for him, pull requests too, and nothing moves the ground under a sitting', async () => {
   const g = ground();
   const d = door.serve(() => g);
