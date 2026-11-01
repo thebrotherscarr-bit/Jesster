@@ -182,3 +182,26 @@ test('a flow\'s git block: reads and bringing level run, other writes wait for h
     d.stop();
   }
 });
+
+test("each window gets its own cards: SecondBrain's share key and flows in SecondBrain, the Atlas door's keys in Atlas", async () => {
+  const g = ground();
+  const d = door.serve(() => g);
+  const glass = { name: '', service: true };
+  try {
+    const sb = (await d.call('remember', { text: 'through SecondBrain' })).text;
+    assert.match(sb, /^HELD: "remember".*on the card in SecondBrain/s);
+    const at = (await d.call('remember', { text: 'through Atlas' }, { name: 'k-test', service: false })).text;
+    assert.match(at, /on the card in Atlas/);
+    const sbId = sb.match(/parked as (hold_\S+)/)[1];
+    const atId = at.match(/parked as (hold_\S+)/)[1];
+    const ids = async (caller) => JSON.parse((await d.call('hold_list', {}, caller)).text).held.map((h) => h.id);
+    assert.deepEqual(await ids(door.OPERATOR), [sbId], "SecondBrain's window lists its own card only");
+    assert.deepEqual(await ids(glass), [atId], "the Atlas glass lists its own card only");
+    assert.match((await d.call('hold_answer', { id: sbId, decision: 'approve' }, glass)).text, /is SecondBrain's card; answer it in SecondBrain/);
+    assert.match((await d.call('hold_answer', { id: atId, decision: 'deny' }, door.OPERATOR)).text, /is Atlas's card; answer it in Atlas/);
+    assert.match((await d.call('hold_answer', { id: sbId, decision: 'deny' }, door.OPERATOR)).text, /^Denied/);
+    assert.match((await d.call('hold_answer', { id: atId, decision: 'deny' }, glass)).text, /^Denied/);
+  } finally {
+    d.stop();
+  }
+});
