@@ -155,11 +155,14 @@ function textOf(item) {
  * `onEvent` as Steward produces it ('tool', 'result', 'thinking', 'delta'), instead of all at once
  * when the turn ends.
  */
-async function turn({ base, text, previous, approve, onEvent = () => {}, signal, stream = postStream, responseFormat = null }) {
+async function turn({ base, text, previous, approve, onEvent = () => {}, signal, stream = postStream, responseFormat = null, switchTo = null }) {
   // responseFormat: the console's planning observer in plan mode asks for PlanningResponse and
   // collects the text silently, so no 'delta' events are sent while it is set
   const extra = responseFormat ? { response_format: responseFormat } : {};
-  let body = { input: text, stream: true, ...extra, ...(previous ? { previous_response_id: previous } : {}) };
+  // switchTo: an Approve's mode, sent as metadata.agent_mode (hosted.py's AGENT_MODE_KEY) on the
+  // turn's first request; Steward's service switches his session before the turn runs
+  const switching = switchTo ? { metadata: { agent_mode: switchTo } } : {};
+  let body = { input: text, stream: true, ...extra, ...switching, ...(previous ? { previous_response_id: previous } : {}) };
   const calls = [];
   const answers = [];
   for (let round = 1; round <= MAX_ROUNDS; round++) {
