@@ -578,7 +578,8 @@ async function dirtyTracked(t) {
 
 /**
  * The line a pull request goes into: the main line, or the line named by `into` (2026-10-31, his word "go": the app's
- * release line, secondbrain-app, takes main through a pull request the door opens and merges). [base, refusal].
+ * release line then, secondbrain-app, takes main through a pull request the door opens and merges; the release builds from
+ * main since the same night, and into stays for any line GitHub has). [base, refusal].
  */
 async function prBase(t, args) {
   const into = str(args, 'into').trim();
@@ -753,7 +754,8 @@ const FNS = { git_commit: toolGitCommit, git_push: toolGitPush, git_pull: toolGi
 // SecondBrain's own rulings over the Go door's table, which tools.json keeps as it is. git_pr (2026-10-31, his word
 // for Steward: "Yes, give it to him"): no longer the glass's alone; a client's open or merge is a held write like
 // every other, so it runs only on his Approve, and list reads. And `into` (2026-10-31, his word "go"): open and merge
-// take the named line instead of the main line, so main reaches the app's release line (secondbrain-app) through the door.
+// take the named line instead of the main line (built for secondbrain-app, the app's release line until the release moved to
+// main the same night; kept for any line GitHub has).
 const OVERRIDES = {
   git_pr: (d) => ({
     writes: true,
@@ -761,7 +763,7 @@ const OVERRIDES = {
     args: [...d.args, 'into?'],
     description: d.description.replace(
       /His glass alone may call it$/,
-      "With into, open and merge take that named line instead of the main line (main into secondbrain-app, the app's release line); open counts only unsaved changes to tracked files. " +
+      'With into, open and merge take that named line, one GitHub has, instead of the main line; open counts only unsaved changes to tracked files. ' +
         "A client's open or merge waits for the operator's Approve, like every other write; list reads",
     ),
   }),

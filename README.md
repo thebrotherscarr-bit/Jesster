@@ -73,8 +73,8 @@ prove it with `python notes/prove_notes.py`.
 ## secondbrain — the notes app
 
 `secondbrain/` is SecondBrain, the notes app (React + Vite PWA, and an
-Electron desktop app built as `secondbrain-b<N>` releases from the
-`secondbrain-app` branch). Served by `python notes/cli.py serve`, it keeps
+Electron desktop app built as `secondbrain-b<N>` releases from `main`;
+the `secondbrain-app` branch was the release line until 2026-10-31). Served by `python notes/cli.py serve`, it keeps
 notes through the kernel. See [`secondbrain/README.md`](secondbrain/README.md).
 
 ## License
