@@ -203,6 +203,52 @@ test('pull requests: a client\'s open or merge waits for the operator; listed wi
   }
 });
 
+test('pull requests into a named line: main opens into it past untracked files, a merge is held to the line named, and without into main stays the base', async () => {
+  const { home, t } = world();
+  git(home, 'push', '-q', 'origin', 'main:app'); // the release line on GitHub
+  fs.writeFileSync(path.join(home, 'c.txt'), 'c\n');
+  git(home, 'add', '-A');
+  git(home, 'commit', '-q', '-m', 'on main');
+  git(home, 'push', '-q', 'origin', 'main');
+  fs.mkdirSync(path.join(home, 'dist'));
+  fs.writeFileSync(path.join(home, 'dist', 'built.txt'), 'a build, never saved\n');
+  assert.ok(door.build([['w', home]], { defaultProject: 'w' }).schemas().find((s) => s.name === 'git_pr').inputSchema.properties.into, 'into is declared');
+  const calls = [];
+  const view = { number: 9, title: 'T', state: 'OPEN', baseRefName: 'app', headRefName: 'main', headRefOid: 'abc', mergeable: 'MERGEABLE', statusCheckRollup: [{ status: 'COMPLETED', conclusion: 'SUCCESS' }] };
+  const real = gh.run;
+  gh.run = async (tt, timeout, ...args) => {
+    calls.push(args.join(' '));
+    if (args[1] === 'create') return { out: 'https://example/pull/9', err: null };
+    if (args[1] === 'view') return { out: JSON.stringify(view), err: null };
+    if (args[1] === 'merge') {
+      git(home, 'push', '-q', 'origin', 'main:app'); // GitHub's merge, played by the origin
+      return { out: '', err: null };
+    }
+    return { out: 'unexpected', err: new Error('exit status 1') };
+  };
+  OPEN();
+  try {
+    const pr = tool('git_pr');
+    assert.match(await pr(t, { action: 'open' }), /^Refused: you are standing on "main", the main line/);
+    assert.match(await pr(t, { action: 'open', into: 'main' }), /does not take a line into itself/);
+    assert.match(await pr(t, { action: 'open', into: 'nowhere' }), /^Refused: GitHub has no line "nowhere"/);
+    assert.match(await pr(t, { action: 'open', into: 'a..b' }), /not a lawful branch name/);
+    assert.match(await pr(t, { action: 'open', into: 'app' }), /^Opened a pull request for "main" into "app": https:\/\/example\/pull\/9\./);
+    assert.ok(calls.some((c) => /^pr create --base app --head main --title on main --body The saves on main:\n\n- on main/.test(c)), calls.join(' | '));
+    assert.match(await pr(t, { action: 'merge', number: 9 }), /goes into "app", not the main line "main"/, 'without into, only the main line');
+    view.baseRefName = 'main';
+    assert.match(await pr(t, { action: 'merge', number: 9, into: 'app' }), /goes into "main", not "app", the line you named/);
+    view.baseRefName = 'app';
+    const merged = await pr(t, { action: 'merge', number: 9, into: 'app' });
+    assert.match(merged, /^Merged pull request #9 on GitHub as a merge commit: "T", main into app\.\n\nThe new app is down on this machine: [0-9a-f]+ "on main"/);
+    assert.ok(calls.includes('pr merge 9 --merge --match-head-commit abc'), 'merged at exactly the head that was read');
+    assert.equal(git(home, 'rev-parse', 'app'), git(home, 'rev-parse', 'main'));
+  } finally {
+    gh.run = real;
+    SHUT();
+  }
+});
+
 test('a client\'s git write parks for the operator; nothing is staged', async () => {
   const { home } = world();
   const reg = door.build([['w', home]], { defaultProject: 'w' });

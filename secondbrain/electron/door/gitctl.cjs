@@ -570,24 +570,52 @@ async function prList(t) {
   return marshal({ pull_requests: rows });
 }
 
-async function prOpen(t) {
+/** Unsaved changes to tracked files only: a pull request carries saves, so untracked files (a build's output) do not bar one. */
+async function dirtyTracked(t) {
+  const r = await gitRun(t, 15000, 'status', '--porcelain', '--untracked-files=no');
+  return !r.err && r.out.trim() !== '';
+}
+
+/**
+ * The line a pull request goes into: the main line, or the line named by `into` (2026-10-31, his word "go": the app's
+ * release line, secondbrain-app, takes main through a pull request the door opens and merges). [base, refusal].
+ */
+async function prBase(t, args) {
+  const into = str(args, 'into').trim();
+  if (!into) return [await mainLine(t), ''];
+  const bad = badBranchName(into);
+  if (bad) return ['', bad];
+  return [into, ''];
+}
+
+async function prOpen(t, args) {
   const line = await currentBranch(t);
   if (!line) return 'Refused: this world stands on no line of work, so there is nothing to ask to land.';
   const mainName = await mainLine(t);
-  if (line === mainName) return `Refused: you are standing on ${q(mainName)}, the main line. A pull request takes a line of work into it: move to one first.`;
-  if (await dirty(t)) return 'Refused: there is unsaved work here. Save it first; a pull request carries saves, not a tree.';
+  const [base, badInto] = await prBase(t, args);
+  if (badInto) return badInto;
+  const named = str(args, 'into').trim() !== '';
+  if (!named && line === mainName) {
+    return `Refused: you are standing on ${q(mainName)}, the main line. A pull request takes a line of work into it: move to one first, or name another line to take it into (into).`;
+  }
+  if (named && line === base) return `Refused: you are standing on ${q(base)}; a pull request does not take a line into itself.`;
+  const baseRef = named ? 'refs/remotes/origin/' + base : mainName;
+  if (named && (await gitRun(t, 10000, 'rev-parse', '--verify', '--quiet', baseRef)).err) {
+    return `Refused: GitHub has no line ${q(base)}, as this machine last saw it, so there is nothing to open a pull request into.`;
+  }
+  if (await dirtyTracked(t)) return 'Refused: there is unsaved work here. Save it first; a pull request carries saves, not a tree.';
   const here = (await gitRun(t, 10000, 'rev-parse', 'HEAD')).out.trim();
   const there = await gitRun(t, 10000, 'rev-parse', '@{upstream}');
   if (there.err || here !== there.out.trim()) return `Refused: GitHub does not have ${q(line)} exactly as it stands here. Send it first, then open the pull request.`;
   const title = (await gitRun(t, 10000, 'log', '-1', '--format=%s')).out.trim();
-  const saves = (await gitRun(t, 10000, 'log', '--reverse', '--format=- %s', line, '--not', mainName)).out;
-  const r = await gh.run(t, 60000, 'pr', 'create', '--base', mainName, '--head', line, '--title', title, '--body', 'The saves on ' + line + ':\n\n' + saves);
+  const saves = (await gitRun(t, 10000, 'log', '--reverse', '--format=- %s', line, '--not', baseRef)).out;
+  const r = await gh.run(t, 60000, 'pr', 'create', '--base', base, '--head', line, '--title', title, '--body', 'The saves on ' + line + ':\n\n' + saves);
   if (r.err) return 'Refused: gh could not open the pull request -- ' + firstLine(r.out);
   const said = r.out.trim().split('\n');
   const url = said[said.length - 1];
   return (
-    `Opened a pull request for ${q(line)} into ${q(mainName)}: ${url}. CI runs on it; when every check on it has passed, Merge on GitHub (the GitHub tab, ` +
-    `Pull requests) merges it there and brings ${q(mainName)} down here.`
+    `Opened a pull request for ${q(line)} into ${q(base)}: ${url}. CI runs on it; when every check on it has passed, Merge on GitHub (the GitHub tab, ` +
+    `Pull requests) merges it there and brings ${q(base)} down here.`
   );
 }
 
@@ -662,7 +690,9 @@ async function prMerge(t, args) {
     if (!(pr.number >= 1) || pr.headRefName !== line) return `Refused: gh answered with pull request #${pr.number || 0} from ${q(pr.headRefName || '')}, not from ${q(line)}, so nothing was merged.`;
     n = pr.number;
   }
-  const mainName = await mainLine(t);
+  const [mainName, badInto] = await prBase(t, args);
+  if (badInto) return badInto;
+  const named = str(args, 'into').trim() !== '';
   const state = String(pr.state).toLowerCase();
   if (state !== 'open') {
     if (line && state === 'merged' && mainName && pr.baseRefName === mainName) {
@@ -672,7 +702,8 @@ async function prMerge(t, args) {
   }
   if (!mainName) return 'Refused: this world has no main line -- no `main` or `master` branch -- so there is nowhere here for the merge to come down to.';
   if (pr.baseRefName !== mainName) {
-    return `Refused: pull request #${n} goes into ${q(pr.baseRefName)}, not the main line ${q(mainName)}. Merge on GitHub takes a line of work into the main line and nothing else.`;
+    if (named) return `Refused: pull request #${n} goes into ${q(pr.baseRefName)}, not ${q(mainName)}, the line you named. Nothing was merged.`;
+    return `Refused: pull request #${n} goes into ${q(pr.baseRefName)}, not the main line ${q(mainName)}. Merge on GitHub takes a line of work into the main line and nothing else -- or name the line it goes into (into).`;
   }
   for (let i = 0; i < wait * Math.floor(60000 / gh.poll); i++) {
     const c = prChecks(pr.statusCheckRollup);
@@ -707,11 +738,11 @@ async function toolGitPR(t, args) {
   if (!dial(t.home, 'GIT_REMOTE')) return walled('Pull requests');
   const action = actionOf(args);
   if (action === '' || action === 'list') return prList(t);
-  if (action === 'open') return prOpen(t);
+  if (action === 'open') return prOpen(t, args);
   if (action === 'merge') return prMerge(t, args);
   return (
     `Refused: ${q(action)} is not something this does. It lists the open pull requests (list), opens one from the line you stand on (open), ` +
-    'or merges one on GitHub once every check on it has passed (merge, with its number or its line).'
+    'or merges one on GitHub once every check on it has passed (merge, with its number or its line); either goes into the main line, or into the line named by into.'
   );
 }
 
@@ -721,12 +752,18 @@ const FNS = { git_commit: toolGitCommit, git_push: toolGitPush, git_pull: toolGi
 
 // SecondBrain's own rulings over the Go door's table, which tools.json keeps as it is. git_pr (2026-10-31, his word
 // for Steward: "Yes, give it to him"): no longer the glass's alone; a client's open or merge is a held write like
-// every other, so it runs only on his Approve, and list reads.
+// every other, so it runs only on his Approve, and list reads. And `into` (2026-10-31, his word "go"): open and merge
+// take the named line instead of the main line, so main reaches the app's release line (secondbrain-app) through the door.
 const OVERRIDES = {
   git_pr: (d) => ({
     writes: true,
     serviceOnly: false,
-    description: d.description.replace(/His glass alone may call it$/, "A client's open or merge waits for the operator's Approve, like every other write; list reads"),
+    args: [...d.args, 'into?'],
+    description: d.description.replace(
+      /His glass alone may call it$/,
+      "With into, open and merge take that named line instead of the main line (main into secondbrain-app, the app's release line); open counts only unsaved changes to tracked files. " +
+        "A client's open or merge waits for the operator's Approve, like every other write; list reads",
+    ),
   }),
 };
 
