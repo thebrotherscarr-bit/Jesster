@@ -525,9 +525,7 @@ ipcMain.handle('agent:send', (event, text, sessionId, model) => {
     if (typeof host === 'string' && typeof name === 'string') getSettings().set('agent', { host, model: name });
   }
   const id = sessionId || require('./agent/agent.cjs').newSessionId();
-  // the planning approval sets the mode before it sends, as the guide's console does
-  const mode = model && ['plan', 'execute'].includes(model.mode) ? model.mode : undefined;
-  getAgent().ask({ text, sessionId: id, source: 'app', mode });
+  getAgent().ask({ text, sessionId: id, source: 'app' });
   return { sessionId: id };
 });
 ipcMain.handle('agent:sessions', (event) => {

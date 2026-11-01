@@ -6,7 +6,6 @@
 const crypto = require('crypto');
 const { Registry, core } = require('./tools.cjs');
 const { runTurn, newSessionId, saveSession, messagesFromNote } = require('./agent.cjs');
-const { PLANNING_RESPONSE } = require('./steward.cjs');
 
 class AgentService {
   /**
@@ -23,8 +22,8 @@ class AgentService {
     this.steward = steward;
     // checker({ turn, signal }) -> Claude's check of a Steward turn, or null while it is switched off
     this.checker = checker;
-    // threads: { get(id), set(id, { previous, mode }) } (steward.cjs), so a conversation keeps
-    // Steward's thread and mode across a restart
+    // threads: { get(id), set(id, { previous }) } (steward.cjs), so a conversation keeps
+    // Steward's thread across a restart (his service keeps his mode with it)
     this.threads = threads;
     this.registry = new Registry().add(core);
     this.sessions = new Map(); // id -> { messages, busy, abort }
@@ -40,7 +39,7 @@ class AgentService {
         messages: note ? messagesFromNote(note) : [],
         busy: false,
         abort: null,
-        ...(thread ? { stewardPrevious: thread.previous, mode: thread.mode } : {}),
+        ...(thread ? { stewardPrevious: thread.previous } : {}),
       });
     }
     return this.sessions.get(id);
@@ -71,13 +70,10 @@ class AgentService {
    * (app, telegram, schedule, subagent); `approve` overrides how risky tools
    * are confirmed; `only` limits the tools offered.
    */
-  async ask({ text, sessionId, source = 'app', approve, only, onEvent, save = true, maxSteps, mode }) {
+  async ask({ text, sessionId, source = 'app', approve, only, onEvent, save = true, maxSteps }) {
     const id = sessionId || newSessionId();
     const s = this.session(id);
     if (s.busy) throw new Error('this session is still working on the last message');
-    // an Approve names the mode to switch to; Steward switches his session before the turn runs
-    const switchTo = mode || null;
-    if (mode) s.mode = mode;
     s.busy = true;
     s.abort = new AbortController();
     s.messages.push({ role: 'user', content: text });
@@ -91,7 +87,7 @@ class AgentService {
     try {
       // the Agent tab talks to Steward; schedules and subagents keep the local loop for now
       if (this.steward && backend === 'steward' && source === 'app') {
-        return { sessionId: id, answer: await this.askSteward(s, text, id, send, approve, switchTo) };
+        return { sessionId: id, answer: await this.askSteward(s, text, id, send, approve) };
       }
       const answer = await runTurn({
         host,
@@ -130,18 +126,13 @@ class AgentService {
    * One turn with Steward: his service is started if needed, the conversation continues from
    * this session's last response id, and his approval requests come to the window's cards.
    */
-  async askSteward(s, text, id, send, approve, switchTo = null) {
+  async askSteward(s, text, id, send, approve) {
     const base = await this.steward.ensure();
-    // the mode, as the guide's console: it starts where Steward does (plan, MAF's default, since
-    // Steward #22); in plan mode the reply is MAF's PlanningResponse (a clarification or an
-    // approval), which his service asks for (hosted.py, plan_mode_turns); an Approve switches him
-    // (switchTo), and his own mode_set calls move it too
-    const mode = s.mode || 'plan';
-    const r = await this.steward.turn({ base, text, previous: s.stewardPrevious, approve: approve || this.approveInWindow(id), onEvent: send, signal: s.abort.signal, responseFormat: mode === 'plan' ? PLANNING_RESPONSE : null, switchTo });
+    // his mode lives in his own session: plan mode is plain conversation, and his switch to execute
+    // is an approval card (request_execute) like any other, answered in the window
+    const r = await this.steward.turn({ base, text, previous: s.stewardPrevious, approve: approve || this.approveInWindow(id), onEvent: send, signal: s.abort.signal });
     s.stewardPrevious = r.previous;
-    const set = r.calls.filter((c) => c.name === 'mode_set' && c.arguments?.mode).pop();
-    s.mode = set ? String(set.arguments.mode).toLowerCase() : mode;
-    this.threads?.set(id, { previous: s.stewardPrevious, mode: s.mode });
+    this.threads?.set(id, { previous: s.stewardPrevious });
     // the session note shows his tool calls the way it shows the local loop's
     if (r.calls.length) s.messages.push({ role: 'assistant', content: '', tool_calls: r.calls.map((c) => ({ function: { name: c.name, arguments: c.arguments } })) });
     s.messages.push({ role: 'assistant', content: r.answer });
