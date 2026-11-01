@@ -27,6 +27,9 @@ const MCP_PORT = 8000;
 const MCP_SCRIPT = ['harness', 'steward', 'step04_production_ready', 'mcp_app.py'];
 const PYTHON = ['.venv', 'Scripts', 'python.exe'];
 const MAX_ROUNDS = 20; // approval round-trips in one turn
+// MAF's PlanningResponse (harness/console/observers/planning_models.py, PlanningResponse.model_json_schema()):
+// in plan mode the guide's console asks for it as response_format, and so does the Agent tab.
+const PLANNING_RESPONSE = {"$defs": {"PlanningQuestion": {"description": "A single question or item within a PlanningResponse.\n\nFor clarification: contains the question text and optional choices.\nFor approval: contains the plan summary for the user to approve.", "properties": {"message": {"description": "For clarifications, this has the question that needs to be clarified with the user. For approvals, this would contain a summary of the execution plan that the user needs to approve.", "title": "Message", "type": "string"}, "choices": {"anyOf": [{"items": {"type": "string"}, "type": "array"}, {"type": "null"}], "default": null, "description": "For clarifications, this has a list of options that the user can choose from. null for approvals.\n\nNote: for clarifications, the user will always also be presented with a free form input option, so make sure that each choice provided here is a valid input for the next turn.\nE.g. if the question is \"Which stock are you referring to?\" then valid choices might be [\"AAPL\", \"MSFT\", \"GOOG\"], and the user could also type their own answer.\nInvalid choices would be [\"Enter tickers directly\", \"Paste tickers\"], since these conflict with the already existing freeform option, and don't directly provide valid inputs for the next turn.", "title": "Choices"}}, "required": ["message"], "title": "PlanningQuestion", "type": "object"}, "PlanningResponseType": {"description": "Type of planning response from the agent.", "enum": ["clarification", "approval"], "title": "PlanningResponseType", "type": "string"}}, "description": "Structured response from the agent while in planning mode.\n\nUsed with structured output (`response_format`) to enable consistent\nrendering of clarification questions and approval requests.", "properties": {"type": {"$ref": "#/$defs/PlanningResponseType", "description": "Use 'clarification' when you need clarification around the user request and you want to present the user with options to choose from. Use 'approval' when you are ready to start execution, but need approval to start executing."}, "questions": {"description": "For clarifications, this has one or more questions to ask the user (each with choices). For approvals, this has exactly one item containing the plan summary for the user to approve.", "items": {"$ref": "#/$defs/PlanningQuestion"}, "title": "Questions", "type": "array"}}, "required": ["type", "questions"], "title": "PlanningResponse", "type": "object"};
 
 /** Steward's folder: the one Settings names, else worlds\steward beside the notes folder. */
 function findSteward(settingsDir, vaultDir, script = SCRIPT) {
@@ -152,10 +155,14 @@ function textOf(item) {
  * `onEvent` as Steward produces it ('tool', 'result', 'thinking', 'delta'), instead of all at once
  * when the turn ends.
  */
-async function turn({ base, text, previous, approve, onEvent = () => {}, signal, stream = postStream }) {
-  // Plan mode is plain conversation: Steward's one card is his request_execute, an approval request
-  // like any other, so the turn asks for no response format (Steward's ApprovedModeSwitch, 2026-10-31)
-  let body = { input: text, stream: true, ...(previous ? { previous_response_id: previous } : {}) };
+async function turn({ base, text, previous, approve, onEvent = () => {}, signal, stream = postStream, responseFormat = null, switchTo = null }) {
+  // responseFormat: the console's planning observer in plan mode asks for PlanningResponse and
+  // collects the text silently, so no 'delta' events are sent while it is set
+  const extra = responseFormat ? { response_format: responseFormat } : {};
+  // switchTo: an Approve's mode, sent as metadata.agent_mode (hosted.py's AGENT_MODE_KEY) on the
+  // turn's first request; Steward's service switches his session before the turn runs
+  const switching = switchTo ? { metadata: { agent_mode: switchTo } } : {};
+  let body = { input: text, stream: true, ...extra, ...switching, ...(previous ? { previous_response_id: previous } : {}) };
   const calls = [];
   const answers = [];
   for (let round = 1; round <= MAX_ROUNDS; round++) {
@@ -183,12 +190,12 @@ async function turn({ base, text, previous, approve, onEvent = () => {}, signal,
     };
     const r = await stream(`${base}/responses`, body, signal, (e) => {
       if (e.type === 'response.output_text.delta' && e.delta) {
-        onEvent({ type: 'delta', text: e.delta });
+        if (!responseFormat) onEvent({ type: 'delta', text: e.delta });
       }
       // his thinking, as MAF's hosting streams text_reasoning content (reasoning summary deltas); the
       // guide's console shows it live (observers/reasoning_display.py), and so does the Agent tab
       else if (e.type === 'response.reasoning_summary_text.delta' && e.delta) {
-        onEvent({ type: 'thinking', text: e.delta });
+        if (!responseFormat) onEvent({ type: 'thinking', text: e.delta });
       }
       else if (e.type === 'response.output_item.done' && e.item) take(e.item);
     });
@@ -206,7 +213,7 @@ async function turn({ base, text, previous, approve, onEvent = () => {}, signal,
       const allow = await approve(a.name, args, `${a.name} ${JSON.stringify(args, null, 2)}`);
       decisions.push({ type: 'mcp_approval_response', approval_request_id: a.id, approve: Boolean(allow) });
     }
-    body = { input: decisions, stream: true, previous_response_id: r.id };
+    body = { input: decisions, stream: true, ...extra, previous_response_id: r.id };
   }
   throw new Error(`Steward was still asking for approvals after ${MAX_ROUNDS} rounds; the turn was stopped.`);
 }
@@ -245,7 +252,7 @@ function service({ getConfig, vaultDir, answering, waitFor, startOwned, wait = 9
 
 /**
  * Each Agent-tab conversation's thread with Steward, kept across restarts: his last response id
- * (his service keeps the replies themselves, and his mode). One small JSON file.
+ * (his service keeps the replies themselves) and the conversation's mode. One small JSON file.
  */
 function threads(file) {
   const read = () => {
@@ -266,4 +273,4 @@ function threads(file) {
   };
 }
 
-module.exports = { turn, service, findSteward, postJson, postStream, threads, PORT, MCP_PORT, MCP_SCRIPT };
+module.exports = { turn, service, findSteward, postJson, postStream, threads, PORT, MCP_PORT, MCP_SCRIPT, PLANNING_RESPONSE };

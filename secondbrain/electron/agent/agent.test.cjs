@@ -186,7 +186,7 @@ test("Steward's MCP door starts like his service: mcp_app.py on 8000, from his f
   assert.equal(started.length, 2);
 });
 
-test("a conversation keeps Steward's thread across a restart, and asks no response format", async () => {
+test("a conversation keeps Steward's thread and mode across a restart", async () => {
   const { threads } = require('./steward.cjs');
   const { AgentService } = require('./service.cjs');
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'threads-')), 'steward-threads.json');
@@ -194,30 +194,36 @@ test("a conversation keeps Steward's thread across a restart, and asks no respon
   const seen = [];
   const steward = {
     ensure: async () => 'http://steward',
-    turn: async (args) => {
-      seen.push({ previous: args.previous, extra: Object.keys(args).filter((k) => !['base', 'text', 'previous', 'approve', 'onEvent', 'signal'].includes(k)) });
-      return { answer: 'ok', previous: `r${seen.length}`, calls: [] };
+    turn: async ({ previous, responseFormat, switchTo }) => {
+      seen.push({ previous, planning: Boolean(responseFormat), switchTo });
+      return { answer: 'ok', previous: `r${seen.length}`, calls: seen.length === 2 ? [{ name: 'mode_set', arguments: { mode: 'plan' } }] : [] };
     },
   };
   const model = () => ({ backend: 'steward' });
   const first = new AgentService({ getVault: () => vault, getModel: model, steward, threads: threads(file) });
+  // a new conversation starts in plan mode, as Steward does (Steward #22)
   const { sessionId } = await first.ask({ text: 'read the ADR note and report' });
-  // a new service is what SecondBrain has after a restart
+  // the plan card's Approve: Steward is told to switch, and the turn is not asked for a plan
+  await first.ask({ text: 'Approve and switch to execute mode', sessionId, mode: 'execute' });
+  // a new service is what SecondBrain has after a restart; his mode_set('plan') was kept
   const second = new AgentService({ getVault: () => vault, getModel: model, steward, threads: threads(file) });
   await second.ask({ text: "what's on my watchlist?", sessionId });
   assert.deepEqual(seen, [
-    { previous: undefined, extra: [] },
-    { previous: 'r1', extra: [] },
+    { previous: undefined, planning: true, switchTo: null },
+    { previous: 'r1', planning: false, switchTo: 'execute' },
+    { previous: 'r2', planning: true, switchTo: null },
   ]);
 });
 
-test("Steward's turn sends no response_format: plan mode is plain conversation", async () => {
+test("an Approve's mode reaches Steward's service as metadata.agent_mode", async () => {
   const { turn } = require('./steward.cjs');
   const bodies = [];
   const stream = async (url, body) => {
     bodies.push(body);
     return { id: 'r1', status: 'completed', output: [] };
   };
-  await turn({ base: 'http://steward', text: 'hello', previous: 'r0', approve: async () => true, stream });
-  assert.deepEqual(Object.keys(bodies[0]).sort(), ['input', 'previous_response_id', 'stream']);
+  await turn({ base: 'http://steward', text: 'Approve and switch to execute mode', previous: 'r0', approve: async () => true, stream, switchTo: 'execute' });
+  await turn({ base: 'http://steward', text: 'hello', previous: 'r1', approve: async () => true, stream });
+  assert.deepEqual(bodies[0].metadata, { agent_mode: 'execute' });
+  assert.equal(bodies[1].metadata, undefined);
 });
