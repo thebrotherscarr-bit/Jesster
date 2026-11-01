@@ -3,12 +3,16 @@ name: secondbrain-release
 # Builds SecondBrain.exe on Windows for every change to the app and publishes
 # it as release secondbrain-b<run number>. The packaged app checks these
 # releases and offers an Update button (secondbrain/electron/updater.cjs).
+#
+# Built from main since 2026-10-31 (his word: "yes, build from main"): a change
+# is one pull request into main, and its merge is the release. The branch
+# secondbrain-app, the release line from 2026-10-23, takes no more changes.
 
 on:
   workflow_dispatch:
   push:
     branches:
-      - secondbrain-app
+      - main
     paths:
       - secondbrain/**
       - .github/workflows/secondbrain-release.yml

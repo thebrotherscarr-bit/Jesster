@@ -16,8 +16,10 @@ defaults to the `gpt-oss:20b` model.
 ## Run the packaged app
 
 First install: download `SecondBrain-win32-x64.zip` from the newest
-`secondbrain-b<N>` release (built from the `secondbrain-app` branch by
-`.github/workflows/secondbrain-release.yml`), unzip it anywhere and run
+`secondbrain-b<N>` release (built from `main` by
+`.github/workflows/secondbrain-release.yml` after every merge that changes
+`secondbrain/`; the `secondbrain-app` branch was the release line until
+2026-10-31), unzip it anywhere and run
 `SecondBrain.exe`. After that, the header's **Update** button installs newer
 releases.
 
