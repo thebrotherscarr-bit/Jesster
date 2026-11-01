@@ -75,6 +75,8 @@ class AgentService {
     const id = sessionId || newSessionId();
     const s = this.session(id);
     if (s.busy) throw new Error('this session is still working on the last message');
+    // an Approve names the mode to switch to; Steward switches his session before the turn runs
+    const switchTo = mode || null;
     if (mode) s.mode = mode;
     s.busy = true;
     s.abort = new AbortController();
@@ -89,7 +91,7 @@ class AgentService {
     try {
       // the Agent tab talks to Steward; schedules and subagents keep the local loop for now
       if (this.steward && backend === 'steward' && source === 'app') {
-        return { sessionId: id, answer: await this.askSteward(s, text, id, send, approve) };
+        return { sessionId: id, answer: await this.askSteward(s, text, id, send, approve, switchTo) };
       }
       const answer = await runTurn({
         host,
@@ -128,13 +130,14 @@ class AgentService {
    * One turn with Steward: his service is started if needed, the conversation continues from
    * this session's last response id, and his approval requests come to the window's cards.
    */
-  async askSteward(s, text, id, send, approve) {
+  async askSteward(s, text, id, send, approve, switchTo = null) {
     const base = await this.steward.ensure();
-    // the mode, as the guide's console: it starts where Steward does (Part 2's
-    // initial_mode="execute"); in plan mode the reply is asked for as MAF's PlanningResponse (a
-    // clarification or an approval); Steward's mode_set calls move it
-    const mode = s.mode || 'execute';
-    const r = await this.steward.turn({ base, text, previous: s.stewardPrevious, approve: approve || this.approveInWindow(id), onEvent: send, signal: s.abort.signal, responseFormat: mode === 'plan' ? PLANNING_RESPONSE : null });
+    // the mode, as the guide's console: it starts where Steward does (plan, MAF's default, since
+    // Steward #22); in plan mode the reply is MAF's PlanningResponse (a clarification or an
+    // approval), which his service asks for (hosted.py, plan_mode_turns); an Approve switches him
+    // (switchTo), and his own mode_set calls move it too
+    const mode = s.mode || 'plan';
+    const r = await this.steward.turn({ base, text, previous: s.stewardPrevious, approve: approve || this.approveInWindow(id), onEvent: send, signal: s.abort.signal, responseFormat: mode === 'plan' ? PLANNING_RESPONSE : null, switchTo });
     s.stewardPrevious = r.previous;
     const set = r.calls.filter((c) => c.name === 'mode_set' && c.arguments?.mode).pop();
     s.mode = set ? String(set.arguments.mode).toLowerCase() : mode;

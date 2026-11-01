@@ -194,19 +194,36 @@ test("a conversation keeps Steward's thread and mode across a restart", async ()
   const seen = [];
   const steward = {
     ensure: async () => 'http://steward',
-    turn: async ({ previous, responseFormat }) => {
-      seen.push({ previous, planning: Boolean(responseFormat) });
-      return { answer: 'ok', previous: `r${seen.length}`, calls: seen.length === 1 ? [{ name: 'mode_set', arguments: { mode: 'plan' } }] : [] };
+    turn: async ({ previous, responseFormat, switchTo }) => {
+      seen.push({ previous, planning: Boolean(responseFormat), switchTo });
+      return { answer: 'ok', previous: `r${seen.length}`, calls: seen.length === 2 ? [{ name: 'mode_set', arguments: { mode: 'plan' } }] : [] };
     },
   };
   const model = () => ({ backend: 'steward' });
   const first = new AgentService({ getVault: () => vault, getModel: model, steward, threads: threads(file) });
-  const { sessionId } = await first.ask({ text: 'switch to plan mode' });
-  // a new service is what SecondBrain has after a restart
+  // a new conversation starts in plan mode, as Steward does (Steward #22)
+  const { sessionId } = await first.ask({ text: 'read the ADR note and report' });
+  // the plan card's Approve: Steward is told to switch, and the turn is not asked for a plan
+  await first.ask({ text: 'Approve and switch to execute mode', sessionId, mode: 'execute' });
+  // a new service is what SecondBrain has after a restart; his mode_set('plan') was kept
   const second = new AgentService({ getVault: () => vault, getModel: model, steward, threads: threads(file) });
   await second.ask({ text: "what's on my watchlist?", sessionId });
   assert.deepEqual(seen, [
-    { previous: undefined, planning: false },
-    { previous: 'r1', planning: true },
+    { previous: undefined, planning: true, switchTo: null },
+    { previous: 'r1', planning: false, switchTo: 'execute' },
+    { previous: 'r2', planning: true, switchTo: null },
   ]);
+});
+
+test("an Approve's mode reaches Steward's service as metadata.agent_mode", async () => {
+  const { turn } = require('./steward.cjs');
+  const bodies = [];
+  const stream = async (url, body) => {
+    bodies.push(body);
+    return { id: 'r1', status: 'completed', output: [] };
+  };
+  await turn({ base: 'http://steward', text: 'Approve and switch to execute mode', previous: 'r0', approve: async () => true, stream, switchTo: 'execute' });
+  await turn({ base: 'http://steward', text: 'hello', previous: 'r1', approve: async () => true, stream });
+  assert.deepEqual(bodies[0].metadata, { agent_mode: 'execute' });
+  assert.equal(bodies[1].metadata, undefined);
 });
