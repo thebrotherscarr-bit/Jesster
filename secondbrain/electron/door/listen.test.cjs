@@ -76,8 +76,10 @@ test('the glass\'s wire is the operator: its write runs at once; a client\'s key
     const theirs = await call('remember', { text: 'from a client' }, key);
     assert.match(theirs.result.content[0].text, /^HELD: "remember" writes, and this call did not come from the operator's own glass \(k-[0-9a-f]{8}\)/);
     assert.doesNotMatch(fs.readFileSync(path.join(g, 'state', 'remembered.jsonl'), 'utf8'), /from a client/);
-    const holds = await d.call('hold_list', {}, door.OPERATOR);
-    assert.match(holds.text, /remember/, 'the parked call waits on the operator');
+    // An Atlas-door client's card is Atlas's (registry.cjs windowOf): the glass lists it, SecondBrain's window does not.
+    const holds = await d.call('hold_list', {}, { name: '', service: true });
+    assert.match(holds.text, /remember/, 'the parked call waits on the operator, in Atlas');
+    assert.doesNotMatch((await d.call('hold_list', {}, door.OPERATOR)).text, /remember/, 'and not in SecondBrain');
     const read = await call('get_in_line', { project: 'atlas' }, key);
     assert.match(read.result.content[0].text, /atlas line/, 'a read runs for the client');
   } finally {

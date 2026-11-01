@@ -74,11 +74,34 @@ function regOf(args) {
   return (args && args[REGISTRY_KEY]) || null;
 }
 
+/**
+ * WHICH WINDOW SHOWS A CARD (Kyle, 2026-11-01: "make sure that secondbrains cards land in secondbrain and
+ * atlas's cards land in atlas, that will remove a whole load of issues with authorization"). A hold
+ * belongs to the system its call came in through, by the credential it carried: SecondBrain's MCP (its
+ * share key) and SecondBrain's own flows are SecondBrain's; the Atlas door on 8090 (an atl_ key, the
+ * glass's own cards) is Atlas's. Each window lists and answers its own cards only.
+ */
+const OPERATOR_NAME = 'operator (SecondBrain)';
+const SHARE_KEY_NAME = 'secondbrain share key';
+const FLOW_NAME = 'a flow';
+const SECONDBRAIN = 'SecondBrain';
+const ATLAS = 'Atlas';
+
+/** The window a hold's card belongs to, by the caller that asked for it. */
+function windowOf(h) {
+  return h && (h.caller === SHARE_KEY_NAME || h.caller === FLOW_NAME) ? SECONDBRAIN : ATLAS;
+}
+
+/** The window asking for the queue: SecondBrain's own (over IPC), or the Atlas glass (its service wire). */
+function windowAsking(caller) {
+  return caller && caller.name === OPERATOR_NAME ? SECONDBRAIN : ATLAS;
+}
+
 function heldAnswer(h) {
   return (
     `HELD: ${q(h.tool)} writes, and this call did not come from the operator's own glass (${h.caller}). Nothing has been written.\n\n` +
     `It is parked as ${h.id} and waits for his hand -- RULE 6: no agent commits, pushes, lands, approves, or authorises a spend. ` +
-    `He answers it on the card at the foot of the front page's terminal (or on the GitHub page), or with hold_answer.\n\n` +
+    `He answers it on the card in ${windowOf(h)}, or with hold_answer.\n\n` +
     'Do not retry this call and do not work around it. Say plainly that it is waiting.'
   );
 }
@@ -285,4 +308,7 @@ const holdTools = [
   },
 ];
 
-module.exports = { Registry, holdTools, writesFor, forbiddenWord, callerOf, regOf, shown, heldAnswer, CALLER_KEY, REGISTRY_KEY, FORBIDDEN_VERBS, HELD_EXEMPT, WITHHELD };
+module.exports = {
+  Registry, holdTools, writesFor, forbiddenWord, callerOf, regOf, shown, heldAnswer, windowOf, windowAsking,
+  CALLER_KEY, REGISTRY_KEY, FORBIDDEN_VERBS, HELD_EXEMPT, WITHHELD, OPERATOR_NAME, SHARE_KEY_NAME, FLOW_NAME, SECONDBRAIN, ATLAS,
+};

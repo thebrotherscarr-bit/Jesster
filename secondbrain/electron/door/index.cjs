@@ -20,7 +20,7 @@
  */
 const path = require('path');
 const { Tenants } = require('./tenant.cjs');
-const { Registry, holdTools, callerOf, regOf, heldAnswer } = require('./registry.cjs');
+const { Registry, holdTools, callerOf, regOf, heldAnswer, windowOf, windowAsking, OPERATOR_NAME, SHARE_KEY_NAME, FLOW_NAME, ATLAS } = require('./registry.cjs');
 const { sittingOpen } = require('./records.cjs');
 const { marshal } = require('./util.cjs');
 const { recordTools } = require('./records.cjs');
@@ -62,9 +62,9 @@ operator's hand alone. This server carries MANY projects: name the project
 you mean on every call; strangers get nothing.`;
 
 /** The operator's own hand: this app's window, never a client of /mcp. */
-const OPERATOR = Object.freeze({ name: 'operator (SecondBrain)', service: true });
+const OPERATOR = Object.freeze({ name: OPERATOR_NAME, service: true });
 /** Anything that reaches /mcp with the share key. */
-const CLIENT = Object.freeze({ name: 'secondbrain share key', service: false });
+const CLIENT = Object.freeze({ name: SHARE_KEY_NAME, service: false });
 
 /**
  * A door over named worlds: [[name, home], ...]. Carried in name order, as
@@ -145,20 +145,32 @@ function innerHolds(reg, getInner) {
       return null;
     }
   };
+  // Each window gets its own cards (registry.cjs windowOf): this door's holds by the caller that asked
+  // for them, and the inner door's (the glass's own Bash and PowerShell cards) are the Atlas glass's.
   reg.add({
     ...list,
     fn: async (tn, args) => {
       const out = await list.fn(tn, args);
-      const d = running();
-      if (!d || !callerOf(args).service) return out;
+      const caller = callerOf(args);
+      if (!caller.service) return out;
+      let mine;
       try {
-        const mine = JSON.parse(out);
-        const theirs = JSON.parse(await d.call('hold_list', { project: tn.name }));
-        mine.held = [...(mine.held || []), ...(theirs.held || [])].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-        return marshal(mine, ' ');
+        mine = JSON.parse(out);
       } catch {
         return out;
       }
+      const asking = windowAsking(caller);
+      mine.held = (mine.held || []).filter((h) => windowOf(h) === asking);
+      const d = running();
+      if (d && asking === ATLAS) {
+        try {
+          const theirs = JSON.parse(await d.call('hold_list', { project: tn.name }));
+          mine.held = [...mine.held, ...(theirs.held || [])].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+        } catch {
+          /* the inner door's list is a bonus; this door's own stands */
+        }
+      }
+      return marshal(mine, ' ');
     },
   });
   reg.add({
@@ -166,8 +178,14 @@ function innerHolds(reg, getInner) {
     fn: async (tn, args) => {
       const id = typeof args.id === 'string' ? args.id : '';
       const here = regOf(args);
+      const caller = callerOf(args);
+      const asking = windowAsking(caller);
+      const card = here && id ? here.held.get(id) : undefined;
+      if (caller.service && card && windowOf(card) !== asking) {
+        return `Refused: ${id} is ${windowOf(card)}'s card; answer it in ${windowOf(card)}.`;
+      }
       const d = running();
-      if (d && id && callerOf(args).service && here && !here.held.has(id)) {
+      if (d && id && caller.service && asking === ATLAS && here && !here.held.has(id)) {
         try {
           return await d.call('hold_answer', { id, decision: typeof args.decision === 'string' ? args.decision : '', project: tn.name });
         } catch (e) {
@@ -254,7 +272,7 @@ function serve(getGround, opts = {}) {
 /** What the GitHub shelf may press over IPC (door:call). */
 const SHELF_TOOLS = new Set(['git', 'git_diff', 'git_remote', 'git_commit', 'git_push', 'git_pull', 'git_branch', 'git_tag', 'git_pr', 'hold_list', 'hold_answer']);
 
-const FLOW = Object.freeze({ name: 'a flow', service: false });
+const FLOW = Object.freeze({ name: FLOW_NAME, service: false });
 
 /** One git act asked by a flow: { text, isError }, as door.call answers. */
 async function flowCall(door, name, args) {

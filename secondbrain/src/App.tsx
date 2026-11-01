@@ -25,6 +25,7 @@ import { SettingsModal } from './components/SettingsModal.tsx';
 import { IntegrationsModal } from './components/IntegrationsModal.tsx';
 import { FlowsView } from './components/FlowsView.tsx';
 import { AgentView } from './components/AgentView.tsx';
+import { HoldsDock } from './components/HoldsDock.tsx';
 import { useVoiceSettings } from './voice/useVoice.ts';
 import { useKernelSync } from './hooks/useKernelSync.ts';
 import { useDesktopUpdate } from './hooks/useDesktopUpdate.ts';
@@ -534,6 +535,9 @@ export default function App() {
           />
         )}
       </main>
+
+      {/* SecondBrain's own cards, on every page (the Atlas glass shows Atlas's) */}
+      <HoldsDock />
 
       {/* Modals */}
       <OllamaSetupModal
