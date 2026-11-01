@@ -4,6 +4,7 @@ import { VoiceSettings, useRecorder, speak } from '../voice/useVoice.ts';
 import { AgentEvent, ApprovalRequest } from '../types/desktop.ts';
 import { OllamaConfig } from '../types/index.ts';
 import { renderMarkdown } from '../utils/markdown.ts';
+import { Planning, planningOf } from '../utils/planning.ts';
 
 interface Turn {
   role: 'user' | 'assistant' | 'thinking' | 'tool' | 'error' | 'check';
@@ -18,6 +19,36 @@ interface AgentViewProps {
   voice?: VoiceSettings;
   onOpenNote: (id: string) => void;
 }
+
+// MAF's PlanningResponse, as the guide's console renders it in plan mode: a clarification (questions,
+// each with choices) or an approval (the plan to approve before execute mode); read by utils/planning.ts
+const APPROVE = 'Approve and switch to execute mode';
+
+const PlanningCard: React.FC<{ p: Planning; open: boolean; onAnswer: (text: string, mode?: 'execute') => void }> = ({ p, open, onAnswer }) => (
+  <div className="rounded-xl border border-cyan-900 bg-cyan-950/30 px-3 py-2 space-y-3" aria-label={p.type === 'approval' ? 'Plan to approve' : 'Clarifying questions'}>
+    {p.questions.map((q, j) => (
+      <div key={j} className="space-y-2">
+        <div className="prose prose-invert prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: renderMarkdown(q.message) }} />
+        {open && (
+          <div className="flex flex-wrap gap-2">
+            {p.type === 'approval' ? (
+              <button onClick={() => onAnswer(APPROVE, 'execute')} className="px-3 py-1.5 rounded-lg bg-emerald-600 text-xs text-white hover:bg-emerald-500">
+                {APPROVE}
+              </button>
+            ) : (
+              (q.choices || []).map((c) => (
+                <button key={c} onClick={() => onAnswer(`Q: ${q.message}\nA: ${c}`)} className="px-3 py-1.5 rounded-lg border border-neutral-700 text-xs text-neutral-200 hover:bg-neutral-800">
+                  {c}
+                </button>
+              ))
+            )}
+          </div>
+        )}
+      </div>
+    ))}
+    {open && <div className="text-[11px] text-neutral-500">Or type your own answer below.</div>}
+  </div>
+);
 
 /**
  * The agent: chat with a model that uses tools (notes, todo, web, and more
@@ -148,12 +179,12 @@ export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice }) => 
     sendText(text);
   };
 
-  const sendText = async (text: string) => {
+  const sendText = async (text: string, mode?: 'execute') => {
     if (busy) return;
     atBottom.current = true;
     setBusy(true);
     setTurns((t) => [...t, { role: 'user', text }]);
-    const r = await agent.send(text, sessionId, { host: ollamaConfig.hostUrl, model: ollamaConfig.model });
+    const r = await agent.send(text, sessionId, { host: ollamaConfig.hostUrl, model: ollamaConfig.model, mode });
     setSessionId(r.sessionId);
     current.current = r.sessionId;
   };
@@ -257,6 +288,8 @@ export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice }) => 
               <div key={i} role="alert" className="text-sm text-amber-300 bg-amber-950/40 border border-amber-900 rounded-lg px-3 py-2">
                 {t.text}
               </div>
+            ) : !t.live && planningOf(t.text) ? (
+              <PlanningCard key={i} p={planningOf(t.text)!} open={i === turns.length - 1 && !busy} onAnswer={sendText} />
             ) : (
               <div
                 key={i}
