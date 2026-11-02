@@ -63,7 +63,7 @@ export interface ApprovalRequest {
 }
 
 export interface AgentBridge {
-  send: (text: string, sessionId?: string | null, model?: { host: string; model: string; mode?: 'plan' | 'execute' } | null) => Promise<{ sessionId: string }>;
+  send: (text: string, sessionId?: string | null, model?: { host: string; model: string } | null) => Promise<{ sessionId: string }>;
   sessions: () => Promise<{ id: string; title: string; updatedAt: number; source?: string }[]>;
   open: (id: string) => Promise<{ sessionId: string; busy: boolean; messages: { role: string; content: string }[] }>;
   stop: (id: string) => Promise<boolean>;

@@ -186,7 +186,7 @@ test("Steward's MCP door starts like his service: mcp_app.py on 8000, from his f
   assert.equal(started.length, 2);
 });
 
-test("a conversation keeps Steward's thread and mode across a restart", async () => {
+test("a conversation keeps Steward's thread across a restart", async () => {
   const { threads } = require('./steward.cjs');
   const { AgentService } = require('./service.cjs');
   const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'threads-')), 'steward-threads.json');
@@ -194,36 +194,67 @@ test("a conversation keeps Steward's thread and mode across a restart", async ()
   const seen = [];
   const steward = {
     ensure: async () => 'http://steward',
-    turn: async ({ previous, responseFormat, switchTo }) => {
-      seen.push({ previous, planning: Boolean(responseFormat), switchTo });
-      return { answer: 'ok', previous: `r${seen.length}`, calls: seen.length === 2 ? [{ name: 'mode_set', arguments: { mode: 'plan' } }] : [] };
+    turn: async ({ previous }) => {
+      seen.push(previous);
+      return { answer: 'ok', previous: `r${seen.length}`, calls: [] };
     },
   };
   const model = () => ({ backend: 'steward' });
   const first = new AgentService({ getVault: () => vault, getModel: model, steward, threads: threads(file) });
-  // a new conversation starts in plan mode, as Steward does (Steward #22)
   const { sessionId } = await first.ask({ text: 'read the ADR note and report' });
-  // the plan card's Approve: Steward is told to switch, and the turn is not asked for a plan
-  await first.ask({ text: 'Approve and switch to execute mode', sessionId, mode: 'execute' });
-  // a new service is what SecondBrain has after a restart; his mode_set('plan') was kept
+  await first.ask({ text: 'and the next one', sessionId });
+  // a new service is what SecondBrain has after a restart
   const second = new AgentService({ getVault: () => vault, getModel: model, steward, threads: threads(file) });
   await second.ask({ text: "what's on my watchlist?", sessionId });
-  assert.deepEqual(seen, [
-    { previous: undefined, planning: true, switchTo: null },
-    { previous: 'r1', planning: false, switchTo: 'execute' },
-    { previous: 'r2', planning: true, switchTo: null },
-  ]);
+  assert.deepEqual(seen, [undefined, 'r1', 'r2']);
 });
 
-test("an Approve's mode reaches Steward's service as metadata.agent_mode", async () => {
+test("the tab sends Steward's workflow only the text, and his text streams", async () => {
   const { turn } = require('./steward.cjs');
   const bodies = [];
-  const stream = async (url, body) => {
+  const events = [];
+  const stream = async (url, body, signal, onFrame) => {
     bodies.push(body);
+    onFrame({ type: 'response.output_text.delta', delta: 'Plan: ' });
+    onFrame({ type: 'response.reasoning_summary_text.delta', delta: 'thinking' });
     return { id: 'r1', status: 'completed', output: [] };
   };
-  await turn({ base: 'http://steward', text: 'Approve and switch to execute mode', previous: 'r0', approve: async () => true, stream, switchTo: 'execute' });
-  await turn({ base: 'http://steward', text: 'hello', previous: 'r1', approve: async () => true, stream });
-  assert.deepEqual(bodies[0].metadata, { agent_mode: 'execute' });
-  assert.equal(bodies[1].metadata, undefined);
+  await turn({ base: 'http://steward', text: 'fix the test', previous: 'r0', approve: async () => true, stream, onEvent: (e) => events.push(e) });
+  assert.deepEqual(bodies[0], { input: 'fix the test', stream: true, previous_response_id: 'r0' }, 'no response_format, no metadata.agent_mode');
+  assert.deepEqual(events.slice(0, 2), [{ type: 'delta', text: 'Plan: ' }, { type: 'thinking', text: 'thinking' }]);
+});
+
+test('a message sent while a card waits answers it No, then goes to Steward next', async () => {
+  const { AgentService } = require('./service.cjs');
+  const vault = vaultWith([]);
+  const asked = [];
+  const answers = [];
+  const steward = {
+    ensure: async () => 'http://steward',
+    turn: async ({ text, approve }) => {
+      asked.push(text);
+      if (text === 'fix the test') answers.push(await approve('approve_plan', { plan: '1. fix' }, 'approve_plan'));
+      return { answer: 'ok', previous: `r${asked.length}`, calls: [] };
+    },
+  };
+  const cards = [];
+  const done = [];
+  const service = new AgentService({
+    getVault: () => vault,
+    getModel: () => ({ backend: 'steward' }),
+    steward,
+    emit: (channel, e) => {
+      if (channel === 'agent:approval') cards.push(e);
+      if (channel === 'agent:event' && e.type === 'done') done.push(e);
+    },
+  });
+  const first = service.ask({ text: 'fix the test' });
+  while (!cards.length) await new Promise((r) => setImmediate(r));
+  const r = await service.ask({ text: 'no, only read it', sessionId: cards[0].sessionId });
+  assert.equal(r.queued, true);
+  await first;
+  while (!done.length) await new Promise((r) => setImmediate(r));
+  assert.deepEqual(answers, [false], 'the waiting card is answered No');
+  assert.deepEqual(asked, ['fix the test', 'no, only read it'], 'the message goes to Steward next');
+  assert.equal(done.length, 1, 'the tab stays busy until the second turn ends');
 });
