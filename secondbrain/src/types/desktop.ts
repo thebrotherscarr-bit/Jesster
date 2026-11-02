@@ -258,6 +258,36 @@ export interface DesktopBridge {
     flow?: (name: string, args?: Record<string, unknown>) => Promise<{ text: string; isError: boolean }>;
   };
   pick?: (kind: 'file' | 'folder' | 'exe', title: string) => Promise<string | null>;
+  /** Steward's button (electron/agent/system.cjs): the pieces he runs on, and what he works with */
+  steward?: {
+    status: () => Promise<StewardStatus>;
+    uses: () => Promise<StewardUses>;
+  };
+}
+
+export interface StewardPiece {
+  id: string;
+  label: string;
+  port: number;
+  what: string;
+  up: boolean;
+}
+
+export interface StewardStatus {
+  /** his service and the door both answer */
+  ready: boolean;
+  pieces: StewardPiece[];
+  /** the models Ollama has loaded now */
+  models: string[];
+}
+
+export interface StewardUses {
+  /** SecondBrain's /mcp is on (Settings → Share) */
+  shareOn: boolean;
+  tools: string[];
+  skillNotes: string[];
+  fileSkills: string[];
+  workspace: string;
 }
 
 declare global {

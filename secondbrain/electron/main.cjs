@@ -550,6 +550,29 @@ ipcMain.handle('agent:tools', (event) => {
   return getAgent().registry.schemas().map((t) => ({ name: t.function.name, description: t.function.description }));
 });
 
+// Steward's button (agent/system.cjs): every piece he runs on, by its port, and what he works with
+const stewardSystem = require('./agent/system.cjs');
+const stewardPorts = () => ({
+  stewardPort: Number((getSettings().get('agent').steward || {}).port) || steward.PORT,
+  stewardMcpPort: steward.MCP_PORT,
+  appPort: APP_PORT,
+  doorPort: atlasGlass.DOOR_PORT,
+  glassPort: atlasGlass.GLASS_PORT,
+});
+ipcMain.handle('steward:status', (event) => {
+  guard(event);
+  return stewardSystem.status({ answering: atlasGlass.answering, ports: stewardPorts() });
+});
+ipcMain.handle('steward:uses', (event) => {
+  guard(event);
+  const share = getSettings().get('share');
+  // the lists his connection gets: the same handler /mcp answers him with, asked in-process
+  const ctx = { vault: getVault(), source: 'atlas', agent: getAgent() };
+  const mcp = (method) => atlas.handleMcp({ jsonrpc: '2.0', id: 1, method }, { registry: getAgent().registry, ctx, writes: Boolean(share.writes) });
+  const stewardDir = steward.findSteward((getSettings().get('agent').steward || {}).dir, vaultDir());
+  return stewardSystem.uses({ mcp, stewardDir, shareOn: share.enabled });
+});
+
 // ---- scheduled automations ------------------------------------------------
 let schedules = null;
 function getSchedules() {
