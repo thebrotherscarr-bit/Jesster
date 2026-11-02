@@ -23,6 +23,7 @@ import { OllamaSetupModal } from './components/OllamaSetupModal.tsx';
 import { QuickCaptureModal } from './components/QuickCaptureModal.tsx';
 import { SettingsModal } from './components/SettingsModal.tsx';
 import { IntegrationsModal } from './components/IntegrationsModal.tsx';
+import { StewardModal } from './components/StewardButton.tsx';
 import { FlowsView } from './components/FlowsView.tsx';
 import { AgentView } from './components/AgentView.tsx';
 import { HoldsDock } from './components/HoldsDock.tsx';
@@ -73,6 +74,7 @@ export default function App() {
   const [isQuickCaptureOpen, setIsQuickCaptureOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isIntegrationsOpen, setIsIntegrationsOpen] = useState(false);
+  const [isStewardOpen, setIsStewardOpen] = useState(false);
   const [integrationsVersion, setIntegrationsVersion] = useState(0);
   const [, startTransition] = useTransition();
 
@@ -389,6 +391,7 @@ export default function App() {
         }}
         onOpenQuickCapture={() => setIsQuickCaptureOpen(true)}
         onOpenIntegrations={window.secondbrainDesktop?.integrations ? () => setIsIntegrationsOpen(true) : undefined}
+        onOpenSteward={window.secondbrainDesktop?.steward ? () => setIsStewardOpen(true) : undefined}
         onOpenOllamaModal={() => setIsOllamaModalOpen(true)}
         onCreateNewNote={() => {
           handleCreateNewNote();
@@ -546,6 +549,9 @@ export default function App() {
       />
 
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+      {/* Steward's window, beside Integrations: outside the header, whose backdrop blur would hold it to its strip */}
+      <StewardModal isOpen={isStewardOpen} onClose={() => setIsStewardOpen(false)} />
+
       <IntegrationsModal
         isOpen={isIntegrationsOpen}
         onClose={() => setIsIntegrationsOpen(false)}
