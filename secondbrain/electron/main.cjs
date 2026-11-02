@@ -418,7 +418,7 @@ const stewardService = steward.service({
   waitFor: atlasGlass.waitFor,
   startOwned: atlasGlass.startOwned,
 });
-// Steward as an MCP tool (mcp_app.py on 127.0.0.1:8000, ADR-0001 item 10), so Manjuel's mcp_call reaches
+// Steward as an MCP tool (mcp_app.py on 127.0.0.1:43121, ADR-0001 item 10), so Manjuel's mcp_call reaches
 // him: started and stopped with SecondBrain the same way, from the same folder; its own log, steward-mcp.log
 const stewardMcp = steward.service({
   getConfig: () => ({ dir: (getSettings().get('agent').steward || {}).dir }),
@@ -812,10 +812,10 @@ ipcMain.handle('atlas:connect', async (event, opts) => {
   return { config: getMcp().rawConfig(), file: getMcp().file(), status: await connectMcp() };
 });
 
-// ---- Atlas comes from SecondBrain: the door at /mcp and on 8090, the glass its child ----------
+// ---- Atlas comes from SecondBrain: the door at /mcp and on 43111, the glass its child ----------
 // Atlas's tools, writes held; and the Agent tab's agent_send / agent_read, a send held for his Approve
 const theDoor = door.register({ atlas, ipcMain, guard, getSettings, vaultDir, getAgent, showAgent: (id) => mainWindow && mainWindow.webContents.send('agent:show', id) });
-atlasGlass.register({ app, ipcMain, guard, getSettings, vaultDir, shell, door: theDoor }); // 8090 and the glass at start; the button opens it
+atlasGlass.register({ app, ipcMain, guard, getSettings, vaultDir, shell, door: theDoor }); // 43111 and the glass at start; the button opens it
 
 // ---- the archive digger (Settings → Archive), run by the notes kernel ----------
 archive.register({ ipcMain, guard, getSettings, vaultDir, send: (ch, data) => mainWindow && mainWindow.webContents.send(ch, data) });

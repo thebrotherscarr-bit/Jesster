@@ -16,15 +16,15 @@ function ground() {
 }
 
 /** boot() with every outside act recorded instead of done. */
-function harness(g, { on8090 = null, sittingN = '' } = {}) {
+function harness(g, { onDoorPort = null, sittingN = '' } = {}) {
   const seen = { killed: [], listened: [], supervised: [] };
-  let held = Boolean(on8090);
+  let held = Boolean(onDoorPort);
   const opts = {
     settingsGround: g,
     vaultDir: '',
     door: { name: 'the door' },
-    probe: async (port) => port === 8090 && held,
-    owner: () => on8090,
+    probe: async (port) => port === 43111 && held,
+    owner: () => onDoorPort,
     kill: (pid) => {
       seen.killed.push(pid);
       held = false;
@@ -37,7 +37,7 @@ function harness(g, { on8090 = null, sittingN = '' } = {}) {
   return { seen, opts };
 }
 
-test('at start SecondBrain is the door on 8090 and runs the glass, both on the .env wire', async () => {
+test('at start SecondBrain is the door on 43111 and runs the glass, both on the .env wire', async () => {
   const g = ground();
   fs.writeFileSync(path.join(g, '.env'), 'OTHER=x\nATLAS_SERVICE="wire-value"\n');
   const { seen, opts } = harness(g);
@@ -57,20 +57,20 @@ test('with no wire in .env one is made fresh, and the door and the glass share i
   assert.strictEqual(seen.supervised[0].wire, r.wire);
 });
 
-test('an old atlas-mcp.exe on 8090 is stopped, by its pid, and SecondBrain takes the port', async () => {
+test('an old atlas-mcp.exe on 43111 is stopped, by its pid, and SecondBrain takes the port', async () => {
   const g = ground();
-  const { seen, opts } = harness(g, { on8090: { pid: 4242, name: 'atlas-mcp.exe' } });
+  const { seen, opts } = harness(g, { onDoorPort: { pid: 4242, name: 'atlas-mcp.exe' } });
   const r = await boot(opts);
   assert.ok(!r.error, r.error);
   assert.deepStrictEqual(seen.killed, [4242]);
   assert.strictEqual(seen.listened.length, 1);
 });
 
-test('anything else on 8090 is left alone and said, and nothing is started', async () => {
+test('anything else on 43111 is left alone and said, and nothing is started', async () => {
   const g = ground();
-  const { seen, opts } = harness(g, { on8090: { pid: 7, name: 'python.exe' } });
+  const { seen, opts } = harness(g, { onDoorPort: { pid: 7, name: 'python.exe' } });
   const r = await boot(opts);
-  assert.match(r.error, /Port 8090 is held by python\.exe/);
+  assert.match(r.error, /Port 43111 is held by python\.exe/);
   assert.deepStrictEqual(seen.killed, []);
   assert.deepStrictEqual(seen.listened, []);
   assert.deepStrictEqual(seen.supervised, []);
@@ -78,7 +78,7 @@ test('anything else on 8090 is left alone and said, and nothing is started', asy
 
 test('an old door is never stopped while a sitting is open (RULE 9)', async () => {
   const g = ground();
-  const { seen, opts } = harness(g, { on8090: { pid: 4242, name: 'atlas-mcp.exe' }, sittingN: '465' });
+  const { seen, opts } = harness(g, { onDoorPort: { pid: 4242, name: 'atlas-mcp.exe' }, sittingN: '465' });
   const r = await boot(opts);
   assert.match(r.error, /Sitting 465 is open/);
   assert.deepStrictEqual(seen.killed, []);
@@ -93,9 +93,9 @@ test('no ground, or a port the door cannot take, is said plainly', async () => {
   const g = ground();
   const { opts } = harness(g);
   opts.listenFn = async () => {
-    throw new Error('port 8090 is taken by another program');
+    throw new Error('port 43111 is taken by another program');
   };
-  assert.match((await boot(opts)).error, /port 8090 is taken/);
+  assert.match((await boot(opts)).error, /port 43111 is taken/);
 });
 
 function fakeChild() {

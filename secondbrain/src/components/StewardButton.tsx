@@ -14,7 +14,7 @@ const ESTATE: { name: string; is: string; does: string }[] = [
     name: 'Steward',
     is: 'The agent that runs the entire system. His harness is the system: the MAF "build your own agent" guide, running locally.',
     does:
-      "A MAF harness agent on Ollama inside a MAF workflow: plan, your Approve, execute, a model-free check, then his commit on your card. His service (hosted.py, 43120) is what the Agent tab talks to; his MCP (mcp_app.py, 8000) offers him as one tool to Manjuel and other clients.",
+      "A MAF harness agent on Ollama inside a MAF workflow: plan, your Approve, execute, a model-free check, then his commit on your card. His service (hosted.py, 43120) is what the Agent tab talks to; his MCP (mcp_app.py, 43121) offers him as one tool to Manjuel and other clients.",
   },
   {
     name: 'SecondBrain',
@@ -24,14 +24,14 @@ const ESTATE: { name: string; is: string; does: string }[] = [
   },
   {
     name: 'The door',
-    is: "The Atlas door's tools (git, pull requests, shell, flows, records, holds and the rest), served by SecondBrain at /mcp and on 8090.",
+    is: "The Atlas door's tools (git, pull requests, shell, flows, records, holds and the rest), served by SecondBrain at /mcp and on 43111.",
     does:
       'A writing call from anyone but your own window is parked as a card ("Waiting on you") and written to the holds log. Your Approve runs exactly that call, as you; Deny runs nothing. Cards land in the window the call came through.',
   },
   {
     name: 'Atlas',
     is: 'The glass: the PWA (Aurora, the webapp) on 8091.',
-    does: "SecondBrain runs it as its child. Atlas's own cards, from the door on 8090, land in the glass.",
+    does: "SecondBrain runs it as its child. Atlas's own cards, from the door on 43111, land in the glass.",
   },
   {
     name: 'Manjuel',
@@ -54,7 +54,7 @@ const ESTATE: { name: string; is: string; does: string }[] = [
     name: "The ground's MCP servers",
     is: 'What .mcp.json gives Claude Code and other clients.',
     does:
-      "notes: the Jesster notes kernel over worlds/notes, every save on a provenance chain. atlas: the door on 8090 over stdio (bin/atlas_bridge.py). secondbrain: SecondBrain's /mcp over stdio (bin/secondbrain_bridge.py), the same endpoint Steward uses. creative: ComfyUI and Modly on this PC. Writes through atlas and secondbrain wait as cards.",
+      "notes: the Jesster notes kernel over worlds/notes, every save on a provenance chain. atlas: the door on 43111 over stdio (bin/atlas_bridge.py). secondbrain: SecondBrain's /mcp over stdio (bin/secondbrain_bridge.py), the same endpoint Steward uses. creative: ComfyUI and Modly on this PC. Writes through atlas and secondbrain wait as cards.",
   },
 ];
 

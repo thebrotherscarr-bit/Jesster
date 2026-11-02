@@ -5,10 +5,10 @@ const os = require('os');
 const path = require('path');
 const system = require('./system.cjs');
 
-const ports = { stewardPort: 43120, stewardMcpPort: 8000, appPort: 43110, doorPort: 8090, glassPort: 8091, ollamaPort: 11434 };
+const ports = { stewardPort: 43120, stewardMcpPort: 43121, appPort: 43110, doorPort: 43111, glassPort: 8091, ollamaPort: 11434 };
 
 test("Steward's button reports each piece by its port, and is ready only with his service and the door", async () => {
-  const up = new Set([43110, 8090, 11434]);
+  const up = new Set([43110, 43111, 11434]);
   const s = await system.status({ answering: async (p) => up.has(p), ports, models: async () => ['steward:1'] });
   const by = Object.fromEntries(s.pieces.map((p) => [p.id, p.up]));
   assert.deepEqual(by, { steward: false, 'steward-mcp': false, 'secondbrain-mcp': true, door: true, glass: false, ollama: true });
@@ -16,7 +16,7 @@ test("Steward's button reports each piece by its port, and is ready only with hi
   assert.deepEqual(s.models, ['steward:1']);
   up.add(43120);
   assert.equal((await system.status({ answering: async (p) => up.has(p), ports, models: async () => [] })).ready, true);
-  up.delete(8090);
+  up.delete(43111);
   assert.equal((await system.status({ answering: async (p) => up.has(p), ports, models: async () => [] })).ready, false, 'the door is down');
 });
 

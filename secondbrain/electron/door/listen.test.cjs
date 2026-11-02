@@ -36,7 +36,7 @@ async function up(d) {
   return { server, base, rpc, call };
 }
 
-test('8090 answers as the Go door did: tools listed to anyone, a call refused to a stranger (401), auth_verify open', async () => {
+test('43111 answers as the Go door did: tools listed to anyone, a call refused to a stranger (401), auth_verify open', async () => {
   const g = ground();
   const { server, base, rpc, call } = await up(door.serve(() => g));
   try {

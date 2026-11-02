@@ -15,7 +15,7 @@
  * REMAINING tool is still listed and served: SecondBrain's own gate judges the
  * call, then hands it to the Atlas door it runs inside itself (forward.cjs).
  *
- * Since 2026-10-23 (plan-one-exe) the same door also answers on 8090, the port the glass and
+ * Since 2026-10-23 (plan-one-exe) the same door also answers on 43111, the port the glass and
  * every other client of the old Go door use (listen.cjs, started by atlasglass.cjs at boot).
  */
 const path = require('path');
@@ -260,7 +260,7 @@ function serve(getGround, opts = {}) {
       }
     },
     registry: () => current(),
-    /** the inner door, for the engine's streams on 8090 (listen.cjs) */
+    /** the inner door, for the engine's streams on 43111 (listen.cjs) */
     inner: () => (current() ? inner : null),
     /** the inner door goes down with SecondBrain */
     stop: () => {

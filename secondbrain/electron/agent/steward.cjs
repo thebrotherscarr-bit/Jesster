@@ -22,8 +22,8 @@ const path = require('path');
 const PORT = 43120;
 const SCRIPT = ['harness', 'steward', 'step04_production_ready', 'hosted.py'];
 // Steward as an MCP tool (step 4's mcp_app.py, ADR-0001 item 10), for Manjuel's mcp_call: started
-// the same way as his service, on the port MAF's MCP hosting samples use (mcp_app.py's PORT)
-const MCP_PORT = 8000;
+// the same way as his service, beside it (mcp_app.py's PORT; Kyle's word 2026-11-02, it was MAF's samples' 8000)
+const MCP_PORT = 43121;
 const MCP_SCRIPT = ['harness', 'steward', 'step04_production_ready', 'mcp_app.py'];
 const PYTHON = ['.venv', 'Scripts', 'python.exe'];
 const MAX_ROUNDS = 20; // approval round-trips in one turn
