@@ -18,7 +18,7 @@ import { Sidebar } from './components/Sidebar.tsx';
 import { NotesList } from './components/NotesList.tsx';
 import { NoteEditor } from './components/NoteEditor.tsx';
 import { AskBrainView } from './components/AskBrainView.tsx';
-import { GraphView } from './components/GraphView.tsx';
+import { defaultTab } from './utils/tabs.ts';
 import { OllamaSetupModal } from './components/OllamaSetupModal.tsx';
 import { QuickCaptureModal } from './components/QuickCaptureModal.tsx';
 import { SettingsModal } from './components/SettingsModal.tsx';
@@ -61,7 +61,7 @@ export default function App() {
     return notes.length > 0 ? notes[0].id : null;
   });
 
-  const [activeTab, setActiveTab] = useState<ActiveTab>('notes');
+  const [activeTab, setActiveTab] = useState<ActiveTab>(() => defaultTab(Boolean(window.secondbrainDesktop?.agent)));
   const [activeCategory, setActiveCategory] = useState<NoteCategory | 'all'>('all');
   const [activeTag, setActiveTag] = useState<string | 'all'>('all');
   const [pinnedOnly, setPinnedOnly] = useState(false);
@@ -525,15 +525,6 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'graph' && (
-          <GraphView
-            notes={notes}
-            onSelectNote={(id) => {
-              setSelectedNoteId(id);
-              setActiveTab('notes');
-            }}
-          />
-        )}
       </main>
 
       {/* SecondBrain's own cards, on every page (the Atlas glass shows Atlas's) */}

@@ -46,6 +46,11 @@ contextBridge.exposeInMainWorld('secondbrainDesktop', {
       return () => ipcRenderer.removeListener('agent:show', fn);
     },
   },
+  // Steward's button: the pieces he runs on, and what he works with
+  steward: {
+    status: () => ipcRenderer.invoke('steward:status'),
+    uses: () => ipcRenderer.invoke('steward:uses'),
+  },
   schedules: {
     list: () => ipcRenderer.invoke('schedules:list'),
     add: (spec) => ipcRenderer.invoke('schedules:add', spec),
