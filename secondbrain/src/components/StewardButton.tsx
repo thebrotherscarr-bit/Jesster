@@ -4,6 +4,60 @@ import { StewardStatus, StewardUses } from '../types/desktop.ts';
 
 const EVERY_MS = 10000;
 
+/**
+ * How the estate fits together, in the record's words (SPEC.md section 1, the bridge scripts in bin/, and Kyle's
+ * roles of 2026-11-02: "atlas is the glass, the PWA. Secondbrain is the console, the agent tab is the workspace.
+ * Manjuel is the REPL and semantic microkernel. Steward is the agent that runs the entire system.").
+ */
+const ESTATE: { name: string; is: string; does: string }[] = [
+  {
+    name: 'Steward',
+    is: 'The agent that runs the entire system. His harness is the system: the MAF "build your own agent" guide, running locally.',
+    does:
+      "A MAF harness agent on Ollama inside a MAF workflow: plan, your Approve, execute, a model-free check, then his commit on your card. His service (hosted.py, 43120) is what the Agent tab talks to; his MCP (mcp_app.py, 8000) offers him as one tool to Manjuel and other clients.",
+  },
+  {
+    name: 'SecondBrain',
+    is: 'The console. Its Agent tab is the workspace where you work with Steward.',
+    does:
+      "The notes app on this PC. It starts and stops Steward's service, shows his cards, and serves him through its MCP (/mcp on 43110): your notes, the web, skills, and the door's tools. It is also the door.",
+  },
+  {
+    name: 'The door',
+    is: "The Atlas door's tools (git, pull requests, shell, flows, records, holds and the rest), served by SecondBrain at /mcp and on 8090.",
+    does:
+      'A writing call from anyone but your own window is parked as a card ("Waiting on you") and written to the holds log. Your Approve runs exactly that call, as you; Deny runs nothing. Cards land in the window the call came through.',
+  },
+  {
+    name: 'Atlas',
+    is: 'The glass: the PWA (Aurora, the webapp) on 8091.',
+    does: "SecondBrain runs it as its child. Atlas's own cards, from the door on 8090, land in the glass.",
+  },
+  {
+    name: 'Manjuel',
+    is: 'The REPL and semantic microkernel: the core of the ground.',
+    does:
+      'The record, the sealed law and ledger, and the logic core that reads a request before any model (PPMI). Its seats (markdown files), skills, the rack of models, the suites and the maker live here.',
+  },
+  {
+    name: 'Ollama',
+    is: 'The local models, on 11434.',
+    does: 'Every model Steward and the seats run on. One model at a time on this PC.',
+  },
+  {
+    name: 'The offices',
+    is: 'The roles the founding papers name.',
+    does:
+      'Neiro, the overseer: holds the state of the whole process and runs the work as flows, never acts. Jesster, the coder: writes the code and refutes it. The Judge: rules last on the review panel. Aurora: the webapp.',
+  },
+  {
+    name: "The ground's MCP servers",
+    is: 'What .mcp.json gives Claude Code and other clients.',
+    does:
+      "notes: the Jesster notes kernel over worlds/notes, every save on a provenance chain. atlas: the door on 8090 over stdio (bin/atlas_bridge.py). secondbrain: SecondBrain's /mcp over stdio (bin/secondbrain_bridge.py), the same endpoint Steward uses. creative: ComfyUI and Modly on this PC. Writes through atlas and secondbrain wait as cards.",
+  },
+];
+
 /** His status, read now and every EVERY_MS while `live`. */
 function useStewardStatus(live: boolean) {
   const api = window.secondbrainDesktop?.steward;
@@ -55,7 +109,7 @@ export const StewardModal: React.FC<{ isOpen: boolean; onClose: () => void }> = 
   const api = window.secondbrainDesktop?.steward;
   const { status, read } = useStewardStatus(isOpen);
   const [uses, setUses] = useState<StewardUses | null>(null);
-  const [tab, setTab] = useState<'status' | 'uses'>('status');
+  const [tab, setTab] = useState<'status' | 'uses' | 'estate'>('status');
 
   useEffect(() => {
     if (isOpen && tab === 'uses' && api) api.uses().then(setUses).catch(() => setUses(null));
@@ -76,13 +130,13 @@ export const StewardModal: React.FC<{ isOpen: boolean; onClose: () => void }> = 
         </div>
 
         <div className="flex items-center gap-1 px-5 pt-3">
-          {(['status', 'uses'] as const).map((t) => (
+          {(['status', 'uses', 'estate'] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
               className={`px-2.5 py-1 rounded-md text-xs ${tab === t ? 'bg-neutral-800 text-white font-semibold' : 'text-neutral-400 hover:text-white hover:bg-neutral-900'}`}
             >
-              {t === 'status' ? 'Status' : 'What he uses'}
+              {t === 'status' ? 'Status' : t === 'uses' ? 'What he uses' : 'How it fits'}
             </button>
           ))}
           {tab === 'status' && (
@@ -94,6 +148,16 @@ export const StewardModal: React.FC<{ isOpen: boolean; onClose: () => void }> = 
 
         {!api ? (
           <p className="px-5 py-4 text-xs text-neutral-400">Steward runs in the SecondBrain desktop app.</p>
+        ) : tab === 'estate' ? (
+          <section className="px-5 py-4 space-y-3" aria-label="How it fits">
+            {ESTATE.map((e) => (
+              <div key={e.name} className="rounded-xl border border-neutral-800 p-3 space-y-1">
+                <div className="text-sm text-white font-medium">{e.name}</div>
+                <p className="text-xs text-neutral-300">{e.is}</p>
+                <p className="text-xs text-neutral-500">{e.does}</p>
+              </div>
+            ))}
+          </section>
         ) : tab === 'status' ? (
           <section className="px-5 py-4 space-y-3" aria-label="Status">
             <div className="rounded-xl border border-neutral-800 p-3 space-y-2">
