@@ -17,6 +17,8 @@ interface HeaderProps {
   onOpenOllamaModal: () => void;
   /** Claude, ChatGPT, Gemini and voice (desktop app) */
   onOpenIntegrations?: () => void;
+  /** Steward's window: his pieces and what he uses (desktop app) */
+  onOpenSteward?: () => void;
   onCreateNewNote: () => void;
   ollamaConfig: OllamaConfig;
   storage?: KernelSync;
@@ -110,6 +112,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenQuickCapture,
   onOpenOllamaModal,
   onOpenIntegrations,
+  onOpenSteward,
   onCreateNewNote,
   ollamaConfig,
   storage,
@@ -298,7 +301,7 @@ export const Header: React.FC<HeaderProps> = ({
         </button>
 
         {/* Steward: his service, the door and what he uses (the outside services stay in Integrations) */}
-        <StewardButton />
+        {onOpenSteward && <StewardButton onOpen={onOpenSteward} />}
 
         {onOpenIntegrations && (
           <button

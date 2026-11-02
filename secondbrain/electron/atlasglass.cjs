@@ -4,7 +4,7 @@
  *
  * When SecondBrain starts (boot):
  *
- *   - it becomes the door on 127.0.0.1:8090 (door/listen.cjs). An old atlas-mcp.exe found there
+ *   - it becomes the door on 127.0.0.1:43111 (door/listen.cjs). An old atlas-mcp.exe found there
  *     is stopped first -- that program only, found by name, and never while a sitting is open
  *     (RULE 9); anything else on the port is left alone and said;
  *   - it runs the glass, atlas\webapp\atlas-webapp.exe, as its own child, started again when it
@@ -26,7 +26,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { spawn, execFileSync } = require('child_process');
 
-const DOOR_PORT = 8090;
+const DOOR_PORT = 43111;
 const GLASS_PORT = 8091;
 const GLASS_URL = `http://127.0.0.1:${GLASS_PORT}/`;
 const NO_GROUND = 'The Atlas ground was not found. Set it in Settings → Atlas & Manjuel (the folder with manjuel.py).';
@@ -174,7 +174,7 @@ function stopOwned() {
 }
 
 /**
- * At SecondBrain's start: be the door on 8090 and run the glass. Resolves { ground, wire } or
+ * At SecondBrain's start: be the door on 43111 and run the glass. Resolves { ground, wire } or
  * { error } (said plainly, for the Atlas button to show).
  */
 async function boot({

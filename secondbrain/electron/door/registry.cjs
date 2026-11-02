@@ -78,7 +78,7 @@ function regOf(args) {
  * WHICH WINDOW SHOWS A CARD (Kyle, 2026-11-01: "make sure that secondbrains cards land in secondbrain and
  * atlas's cards land in atlas, that will remove a whole load of issues with authorization"). A hold
  * belongs to the system its call came in through, by the credential it carried: SecondBrain's MCP (its
- * share key) and SecondBrain's own flows are SecondBrain's; the Atlas door on 8090 (an atl_ key, the
+ * share key) and SecondBrain's own flows are SecondBrain's; the Atlas door on 43111 (an atl_ key, the
  * glass's own cards) is Atlas's. Each window lists and answers its own cards only.
  */
 const OPERATOR_NAME = 'operator (SecondBrain)';

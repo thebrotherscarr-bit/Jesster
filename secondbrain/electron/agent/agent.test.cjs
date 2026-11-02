@@ -160,7 +160,7 @@ test("Steward's turn is streamed: tool calls, results and text reach the tab as 
   assert.deepEqual(bodies[1].input, [{ type: 'mcp_approval_response', approval_request_id: 'p1', approve: true }]);
 });
 
-test("Steward's MCP door starts like his service: mcp_app.py on 8000, from his folder, with its own log", async () => {
+test("Steward's MCP door starts like his service: mcp_app.py on 43121, from his folder, with its own log", async () => {
   const steward = require('./steward.cjs');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'steward-'));
   for (const f of [['.venv', 'Scripts', 'python.exe'], ['harness', 'steward', 'step04_production_ready', 'hosted.py'], steward.MCP_SCRIPT]) {
@@ -177,12 +177,12 @@ test("Steward's MCP door starts like his service: mcp_app.py on 8000, from his f
     startOwned: (exe, args, cwd, env, logs) => started.push({ exe, args, cwd, logs }),
   };
   const door = steward.service({ ...opts, script: steward.MCP_SCRIPT, port: steward.MCP_PORT, log: 'steward-mcp.log' });
-  assert.equal(await door.ensure(), 'http://127.0.0.1:8000');
+  assert.equal(await door.ensure(), 'http://127.0.0.1:43121');
   assert.deepEqual(started, [{ exe: path.join(dir, '.venv', 'Scripts', 'python.exe'), args: [path.join(...steward.MCP_SCRIPT)], cwd: dir, logs: ['steward-mcp.log', 'steward-mcp.log'] }]);
   assert.equal(await steward.service(opts).ensure(), 'http://127.0.0.1:43999');
   assert.equal(started[1].args[0], path.join('harness', 'steward', 'step04_production_ready', 'hosted.py'), 'his service is unchanged');
   up = true; // one already answering (started by hand) is used as it is
-  assert.equal(await door.ensure(), 'http://127.0.0.1:8000');
+  assert.equal(await door.ensure(), 'http://127.0.0.1:43121');
   assert.equal(started.length, 2);
 });
 

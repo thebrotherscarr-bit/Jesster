@@ -1,5 +1,5 @@
 /**
- * SecondBrain IS the door on 8090 (the note plan-one-exe, piece 1; Kyle's word, 2026-10-23: "I
+ * SecondBrain IS the door on 43111 (the note plan-one-exe, piece 1; Kyle's word, 2026-10-23: "I
  * want ONE .exe as secondbrain, that SERVES all my other shit through MCP ... the door, the gate,
  * the glass, everything COMES FROM SECONDBRAIN"). The Go door's HTTP surface
  * (atlas/line/internal/httpserver), answered by this app on the port the glass, the Claude bridge
@@ -21,7 +21,7 @@ const http = require('http');
 const crypto = require('crypto');
 const auth = require('./auth.cjs');
 
-const DOOR_PORT = 8090;
+const DOOR_PORT = 43111;
 const STREAMS = ['/chat/stream', '/run/stream', '/run/state', '/run/listen'];
 
 function bearer(header) {
