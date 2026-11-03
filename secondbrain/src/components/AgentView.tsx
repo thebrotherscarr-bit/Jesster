@@ -163,6 +163,17 @@ export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice }) => 
     current.current = r.sessionId;
   };
 
+  // a reply typed on a card (Kyle, 2026-11-02: "add a line to the card so i can reply on it"): sent as a message
+  // while the card waits, so service.cjs answers it - a review takes it as guidance, any other card is answered
+  // No and the reply goes to Steward next
+  const [replies, setReplies] = useState<Record<string, string>>({});
+  const replyOn = (req: ApprovalRequest) => {
+    const text = (replies[req.id] || '').trim();
+    if (!text) return;
+    setReplies((r) => ({ ...r, [req.id]: '' }));
+    sendText(text);
+  };
+
   const answer = async (req: ApprovalRequest, allow: boolean, always = false) => {
     await agent.approve(req.id, allow, always);
     setApprovals((a) => a.filter((x) => x.id !== req.id));
@@ -280,11 +291,25 @@ export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice }) => 
                 <button onClick={() => answer(r, true)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 text-xs text-white hover:bg-emerald-500">
                   <Check className="w-3.5 h-3.5" /> Allow once
                 </button>
-                <button onClick={() => answer(r, true, true)} className="px-3 py-1.5 rounded-lg border border-neutral-700 text-xs text-neutral-200 hover:bg-neutral-800">
-                  Always allow this exact action
-                </button>
                 <button onClick={() => answer(r, false)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-neutral-700 text-xs text-neutral-300 hover:bg-neutral-800">
                   <X className="w-3.5 h-3.5" /> Deny
+                </button>
+              </div>
+              <div className="flex gap-2">
+                <input
+                  value={replies[r.id] || ''}
+                  onChange={(e) => setReplies((x) => ({ ...x, [r.id]: e.target.value }))}
+                  onKeyDown={(e) => e.key === 'Enter' && replyOn(r)}
+                  placeholder="Reply on this card…"
+                  aria-label="Reply on this card"
+                  className="flex-1 bg-neutral-900 border border-neutral-700 rounded-lg px-2 py-1 text-xs text-neutral-100"
+                />
+                <button
+                  onClick={() => replyOn(r)}
+                  disabled={!(replies[r.id] || '').trim()}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-neutral-700 text-xs text-neutral-200 hover:bg-neutral-800 disabled:opacity-40"
+                >
+                  <Send className="w-3.5 h-3.5" /> Reply
                 </button>
               </div>
             </div>
