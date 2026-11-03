@@ -282,6 +282,66 @@ test("the tab sends Steward's workflow only the text, and his text streams", asy
   assert.deepEqual(events.slice(0, 2), [{ type: 'delta', text: 'Plan: ' }, { type: 'thinking', text: 'thinking' }]);
 });
 
+test("an improve conversation names the loop on every request, and its review goes back as function_call_output", async () => {
+  const { turn } = require('./steward.cjs');
+  const bodies = [];
+  const events = [];
+  const answers = [
+    { id: 'r1', status: 'completed', output: [{ type: 'function_call', name: 'request_info', call_id: 'c1', arguments: JSON.stringify({ request_id: 'c1', request: { prompt: "Reply 'keep', 'drop', or guidance", attempt: 1, passed: true } }) }] },
+    { id: 'r2', status: 'completed', output: [{ type: 'message', content: [{ text: 'Decision: keep' }] }] },
+  ];
+  const stream = async (url, body) => {
+    bodies.push(body);
+    return answers[bodies.length - 1];
+  };
+  const asked = [];
+  const metadata = { steward_workflow: 'improve' };
+  const r = await turn({ base: 'http://steward', text: 'improve: the plan comes back as prose', approve: async () => true, review: async (q) => (asked.push(q), 'keep'), metadata, stream, onEvent: (e) => events.push(e) });
+  assert.deepEqual(bodies[0].metadata, metadata);
+  assert.deepEqual(bodies[1], { input: [{ type: 'function_call_output', call_id: 'c1', output: 'keep' }], stream: true, metadata, previous_response_id: 'r1' });
+  assert.equal(asked[0].passed, true, 'the review gets the request the loop sent');
+  assert.equal(r.answer, 'Decision: keep');
+  assert.ok(!events.some((e) => e.type === 'tool' && e.name === 'request_info'), 'the question is not shown as a tool call');
+});
+
+test('a conversation that starts with "improve:" sends the loop on every turn, and a message at the review is its guidance', async () => {
+  const { AgentService } = require('./service.cjs');
+  const vault = vaultWith([]);
+  const sent = [];
+  const replies = [];
+  const steward = {
+    ensure: async () => 'http://steward',
+    turn: async ({ text, metadata, review }) => {
+      sent.push({ text, metadata });
+      if (text.startsWith('improve:')) replies.push(await review({ prompt: 'keep or drop', attempt: 1, passed: true }));
+      return { answer: 'ok', previous: `r${sent.length}`, calls: [] };
+    },
+  };
+  const cards = [];
+  const done = [];
+  const service = new AgentService({
+    getVault: () => vault,
+    getModel: () => ({ backend: 'steward' }),
+    steward,
+    emit: (channel, e) => {
+      if (channel === 'agent:approval') cards.push(e);
+      if (channel === 'agent:event' && e.type === 'done') done.push(e);
+    },
+  });
+  const first = service.ask({ text: 'improve: the plan comes back as prose' });
+  while (!cards.length) await new Promise((r) => setImmediate(r));
+  assert.equal(cards[0].kind, 'review');
+  const typed = await service.ask({ text: 'also keep the steps short', sessionId: cards[0].sessionId });
+  assert.equal(typed.answeredReview, true);
+  await first;
+  assert.deepEqual(replies, ['also keep the steps short'], 'typed at the review: its guidance, not a drop');
+  await service.ask({ text: 'and now the commit message', sessionId: cards[0].sessionId });
+  assert.deepEqual(sent.map((s) => s.metadata), [{ steward_workflow: 'improve' }, { steward_workflow: 'improve' }]);
+  const plain = new AgentService({ getVault: () => vault, getModel: () => ({ backend: 'steward' }), steward, emit: () => {} });
+  await plain.ask({ text: 'fix the test' });
+  assert.equal(sent[sent.length - 1].metadata, undefined, 'other conversations are untouched');
+});
+
 test('a message sent while a card waits answers it No, then goes to Steward next', async () => {
   const { AgentService } = require('./service.cjs');
   const vault = vaultWith([]);

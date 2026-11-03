@@ -39,7 +39,7 @@ class AgentService {
         messages: note ? messagesFromNote(note) : [],
         busy: false,
         abort: null,
-        ...(thread ? { stewardPrevious: thread.previous } : {}),
+        ...(thread ? { stewardPrevious: thread.previous, improve: Boolean(thread.improve) } : {}),
       });
     }
     return this.sessions.get(id);
@@ -56,10 +56,33 @@ class AgentService {
     };
   }
 
-  answerApproval(id, allow, always) {
+  /**
+   * The improvement loop's review (step 6) on the window's own approval card (Kyle, 2026-11-02: "use what is
+   * there"): Allow keeps the change, Deny drops it, and a message typed while it waits goes back to the fixer as
+   * guidance. Resolves the reply text.
+   */
+  reviewInWindow(sessionId) {
+    return (request) => {
+      const id = crypto.randomBytes(6).toString('hex');
+      const r = request || {};
+      const changed = Array.isArray(r.changed) && r.changed.length ? r.changed.join(', ') : 'nothing';
+      const summary =
+        `Improvement round: attempt ${r.attempt ?? '?'}, checks ${r.passed ? 'passed' : 'failed'}. Changed: ${changed}.\n` +
+        `Allow once = keep the change. Deny = drop it. Or type guidance in the box to send it back for another attempt.\n\n` +
+        String(r.output || '').slice(-1500);
+      this.emit('agent:approval', { id, sessionId, name: 'review', kind: 'review', args: request || {}, summary });
+      return new Promise((resolve) => this.pending.set(id, { resolve, key: `review:${id}`, sessionId, kind: 'review' }));
+    };
+  }
+
+  answerApproval(id, allow, always, text) {
     const p = this.pending.get(id);
     if (!p) return false;
     this.pending.delete(id);
+    if (p.kind === 'review') {
+      p.resolve(typeof text === 'string' && text.trim() ? text.trim() : allow ? 'keep' : 'drop');
+      return true;
+    }
     if (allow && always) this.alwaysAllow.add(p.key);
     p.resolve(Boolean(allow));
     return true;
@@ -79,6 +102,12 @@ class AgentService {
       // workflow ends the run), and the message goes to him next, as a new request
       const waiting = [...this.pending].filter(([, p]) => p.sessionId === id);
       if (!waiting.length) throw new Error('this session is still working on the last message');
+      // a message typed at a waiting review is its guidance (a No would drop the fixer's work)
+      const review = waiting.find(([, p]) => p.kind === 'review');
+      if (review) {
+        this.answerApproval(review[0], true, false, text);
+        return { sessionId: id, answeredReview: true };
+      }
       s.next = { ...request, sessionId: id };
       for (const [key] of waiting) this.answerApproval(key, false);
       return { sessionId: id, queued: true };
@@ -143,9 +172,20 @@ class AgentService {
     const base = await this.steward.ensure();
     // his service runs his MAF workflow, which keeps the plan and execute modes itself: the plan
     // comes as an approval request (a card), and the tab sends only the text
-    const r = await this.steward.turn({ base, text, previous: s.stewardPrevious, approve: approve || this.approveInWindow(id), onEvent: send, signal: s.abort.signal });
+    // a conversation that starts with "improve:" is an improvement round (step 6): every turn of it names the loop
+    if (!s.stewardPrevious && /^\s*improve:/i.test(text)) s.improve = true;
+    const r = await this.steward.turn({
+      base,
+      text,
+      previous: s.stewardPrevious,
+      approve: approve || this.approveInWindow(id),
+      review: this.reviewInWindow(id),
+      metadata: s.improve ? { steward_workflow: 'improve' } : undefined,
+      onEvent: send,
+      signal: s.abort.signal,
+    });
     s.stewardPrevious = r.previous;
-    this.threads?.set(id, { previous: s.stewardPrevious });
+    this.threads?.set(id, { previous: s.stewardPrevious, ...(s.improve ? { improve: true } : {}) });
     // the session note shows his tool calls the way it shows the local loop's
     if (r.calls.length) s.messages.push({ role: 'assistant', content: '', tool_calls: r.calls.map((c) => ({ function: { name: c.name, arguments: c.arguments } })) });
     s.messages.push({ role: 'assistant', content: r.answer });

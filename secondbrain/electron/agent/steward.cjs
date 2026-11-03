@@ -151,12 +151,18 @@ function textOf(item) {
  * The turn is streamed: each tool call, tool result, piece of thinking and piece of text is sent to
  * `onEvent` as Steward produces it ('tool', 'result', 'thinking', 'delta'), instead of all at once
  * when the turn ends.
+ *
+ * `metadata` rides on every request of the turn, the answers' rounds too (an improve conversation sends
+ * {steward_workflow: 'improve'}, so a card's answer reaches the same workflow on his host). A workflow question
+ * that is not an approval comes, as MAF's host sends it, as a function call named `request_info`; `review(request)`
+ * resolves the reply text, which goes back as that call's function_call_output.
  */
-async function turn({ base, text, previous, approve, onEvent = () => {}, signal, stream = postStream }) {
+async function turn({ base, text, previous, approve, review, metadata, onEvent = () => {}, signal, stream = postStream }) {
   // Steward's service runs his MAF workflow (steward_workflow.py): it plans, sends the plan as an
   // approval request, and keeps its own modes, so the tab sends only the text (no response_format,
   // no agent_mode) and every piece of his text and thinking streams
-  let body = { input: text, stream: true, ...(previous ? { previous_response_id: previous } : {}) };
+  const meta = metadata ? { metadata } : {};
+  let body = { input: text, stream: true, ...meta, ...(previous ? { previous_response_id: previous } : {}) };
   const calls = [];
   const answers = [];
   for (let round = 1; round <= MAX_ROUNDS; round++) {
@@ -166,7 +172,9 @@ async function turn({ base, text, previous, approve, onEvent = () => {}, signal,
       const key = item.id || `${item.type}:${item.call_id || ''}:${JSON.stringify(item.content || item.output || item.arguments || '')}`;
       if (seen.has(key)) return;
       seen.add(key);
-      if (item.type === 'function_call') {
+      if (item.type === 'function_call' && item.name === 'request_info') {
+        asks.push({ ...item, review: true }); // the workflow's question (the improvement loop's review)
+      } else if (item.type === 'function_call') {
         const args = parseArgs(item.arguments);
         calls.push({ name: item.name, arguments: args, call_id: item.call_id });
         onEvent({ type: 'tool', name: item.name, args });
@@ -200,10 +208,16 @@ async function turn({ base, text, previous, approve, onEvent = () => {}, signal,
     const decisions = [];
     for (const a of asks) {
       const args = parseArgs(a.arguments);
+      if (a.review) {
+        if (!review) throw new Error('Steward asked a question this conversation cannot answer.');
+        const reply = await review(args.request && typeof args.request === 'object' ? args.request : args);
+        decisions.push({ type: 'function_call_output', call_id: a.call_id, output: String(reply) });
+        continue;
+      }
       const allow = await approve(a.name, args, `${a.name} ${JSON.stringify(args, null, 2)}`);
       decisions.push({ type: 'mcp_approval_response', approval_request_id: a.id, approve: Boolean(allow) });
     }
-    body = { input: decisions, stream: true, previous_response_id: r.id };
+    body = { input: decisions, stream: true, ...meta, previous_response_id: r.id };
   }
   throw new Error(`Steward was still asking for approvals after ${MAX_ROUNDS} rounds; the turn was stopped.`);
 }
