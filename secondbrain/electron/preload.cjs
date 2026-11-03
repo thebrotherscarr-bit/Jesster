@@ -50,6 +50,7 @@ contextBridge.exposeInMainWorld('secondbrainDesktop', {
   steward: {
     status: () => ipcRenderer.invoke('steward:status'),
     uses: () => ipcRenderer.invoke('steward:uses'),
+    control: (piece, action) => ipcRenderer.invoke('steward:control', piece, action),
   },
   schedules: {
     list: () => ipcRenderer.invoke('schedules:list'),

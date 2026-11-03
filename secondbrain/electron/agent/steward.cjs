@@ -214,12 +214,21 @@ async function turn({ base, text, previous, approve, onEvent = () => {}, signal,
  *
  * `script`, `port` and `log` name what is started: his service by default, or his MCP door
  * (MCP_SCRIPT on MCP_PORT, its own log), which SecondBrain starts and stops the same way.
+ *
+ * `start`, `stop` and `restart` are the Steward window's buttons (Kyle, 2026-11-02: "there should be a way to start
+ * and stop all the MCP servers in secondbrain that steward uses"). `stop` ends the Python listening on the port and
+ * its whole process tree (`killTree`), whoever started it: on Windows a venv's python.exe is a launcher with the real
+ * Python under it, so killing only the child SecondBrain spawned can leave the port held. A stopped service is
+ * `held` until Start or Restart, so `keepUp` does not bring it back behind the user's back.
  */
-function service({ getConfig, vaultDir, answering, waitFor, startOwned, wait = 90000, script = SCRIPT, port: fixedPort = 0, log = 'steward.log' }) {
+function service({ getConfig, vaultDir, answering, waitFor, startOwned, wait = 90000, script = SCRIPT, port: fixedPort = 0, log = 'steward.log', portOwner = () => null, killTree = () => {} }) {
   let starting = null;
+  let child = null;
+  let held = false;
+  const portOf = () => fixedPort || Number((getConfig() || {}).port) || PORT;
   async function ensure() {
     const cfg = getConfig() || {};
-    const port = fixedPort || Number(cfg.port) || PORT;
+    const port = portOf();
     const base = `http://127.0.0.1:${port}`;
     if (await answering(port)) return base;
     if (!starting) {
@@ -228,7 +237,7 @@ function service({ getConfig, vaultDir, answering, waitFor, startOwned, wait = 9
         if (!dir) throw new Error('Steward was not found: SecondBrain looks for worlds\\steward beside the notes folder, or the folder in Settings (agent.steward.dir).');
         const python = path.join(dir, ...PYTHON);
         if (!fs.existsSync(python)) throw new Error(`Steward's Python was not found at ${python}.`);
-        startOwned(python, [path.join(...script)], dir, { ...process.env, STEWARD_PORT: String(port) }, [log, log]);
+        child = startOwned(python, [path.join(...script)], dir, { ...process.env, STEWARD_PORT: String(port) }, [log, log]);
         if (!(await waitFor(port, wait))) throw new Error(`Steward's ${script[script.length - 1]} did not answer on port ${port}; its log is ${path.join(dir, log)}.`);
         return base;
       })().finally(() => {
@@ -237,7 +246,36 @@ function service({ getConfig, vaultDir, answering, waitFor, startOwned, wait = 9
     }
     return starting;
   }
-  return { ensure };
+  async function stop() {
+    held = true;
+    const port = portOf();
+    const owner = portOwner(port);
+    if (owner && /python/i.test(owner.name || '')) killTree(owner.pid); // never a program that is not his
+    if (child && child.pid && child.exitCode === null) killTree(child.pid);
+    child = null;
+    const gone = await waitFor(port, 15000, answering, true);
+    if (!gone) throw new Error(`Something still answers on port ${port} after the stop.`);
+  }
+  async function start() {
+    held = false;
+    return ensure();
+  }
+  async function restart() {
+    await stop();
+    return start();
+  }
+  return { ensure, start, stop, restart, held: () => held, port: portOf };
+}
+
+/**
+ * Brings a service back when it is found down and the user has not stopped it (the MCP door has no caller of its
+ * own in SecondBrain: Manjuel reaches 43121 directly, so it is checked with the Steward window's status). Resolves
+ * true when it started one.
+ */
+async function keepUp(svc, up) {
+  if (up || svc.held()) return false;
+  await svc.ensure();
+  return true;
 }
 
 /**
@@ -263,4 +301,4 @@ function threads(file) {
   };
 }
 
-module.exports = { turn, service, findSteward, postJson, postStream, threads, PORT, MCP_PORT, MCP_SCRIPT };
+module.exports = { turn, service, keepUp, findSteward, postJson, postStream, threads, PORT, MCP_PORT, MCP_SCRIPT };

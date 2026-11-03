@@ -1,8 +1,11 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Bot, X, Check, CircleAlert, RefreshCw } from 'lucide-react';
-import { StewardStatus, StewardUses } from '../types/desktop.ts';
+import { StewardControlPiece, StewardStatus, StewardUses } from '../types/desktop.ts';
 
 const EVERY_MS = 10000;
+
+/** The pieces SecondBrain runs for Steward, by their status id: these get Start, Stop and Restart. */
+const CONTROLLED: Record<string, StewardControlPiece> = { steward: 'service', 'steward-mcp': 'mcp' };
 
 /**
  * How the estate fits together, in the record's words (SPEC.md section 1, the bridge scripts in bin/, and Kyle's
@@ -110,6 +113,23 @@ export const StewardModal: React.FC<{ isOpen: boolean; onClose: () => void }> = 
   const { status, read } = useStewardStatus(isOpen);
   const [uses, setUses] = useState<StewardUses | null>(null);
   const [tab, setTab] = useState<'status' | 'uses' | 'estate'>('status');
+  const [busy, setBusy] = useState<string | null>(null);
+  const [controlError, setControlError] = useState<string>('');
+
+  const control = async (piece: StewardControlPiece, action: 'start' | 'stop' | 'restart') => {
+    if (!api) return;
+    setBusy(`${piece}:${action}`);
+    setControlError('');
+    try {
+      const r = await api.control(piece, action);
+      setControlError(r.errors.join(' '));
+    } catch (e) {
+      setControlError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(null);
+      read();
+    }
+  };
 
   useEffect(() => {
     if (isOpen && tab === 'uses' && api) api.uses().then(setUses).catch(() => setUses(null));
@@ -160,6 +180,17 @@ export const StewardModal: React.FC<{ isOpen: boolean; onClose: () => void }> = 
           </section>
         ) : tab === 'status' ? (
           <section className="px-5 py-4 space-y-3" aria-label="Status">
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => control('all', 'restart')}
+                disabled={busy !== null}
+                className="px-2.5 py-1 rounded-lg border border-neutral-700 text-xs text-neutral-200 hover:bg-neutral-800 disabled:opacity-50"
+              >
+                {busy === 'all:restart' ? 'Restarting…' : 'Restart Steward'}
+              </button>
+              <span className="text-[11px] text-neutral-500">his service and his MCP door, together</span>
+            </div>
+            {controlError && <p className="text-xs text-amber-400">{controlError}</p>}
             <div className="rounded-xl border border-neutral-800 p-3 space-y-2">
               {(status?.pieces || []).map((p) => (
                 <div key={p.id} className="flex items-start gap-2 text-xs">
@@ -171,6 +202,21 @@ export const StewardModal: React.FC<{ isOpen: boolean; onClose: () => void }> = 
                     </div>
                     <div className="text-neutral-500">{p.what}</div>
                   </div>
+                  {CONTROLLED[p.id] && (
+                    <div className="flex gap-1 shrink-0">
+                      {(['start', 'stop', 'restart'] as const).map((action) => (
+                        <button
+                          key={action}
+                          onClick={() => control(CONTROLLED[p.id], action)}
+                          disabled={busy !== null || (action === 'start' && p.up) || (action === 'stop' && !p.up)}
+                          aria-label={`${action} ${p.label}`}
+                          className="px-2 py-0.5 rounded-md border border-neutral-700 text-[11px] text-neutral-300 hover:bg-neutral-800 disabled:opacity-40"
+                        >
+                          {busy === `${CONTROLLED[p.id]}:${action}` ? '…' : action[0].toUpperCase() + action.slice(1)}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
               {!status && <p className="text-xs text-neutral-500">Checking…</p>}
