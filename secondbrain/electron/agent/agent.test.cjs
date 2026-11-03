@@ -186,6 +186,64 @@ test("Steward's MCP door starts like his service: mcp_app.py on 43121, from his 
   assert.equal(started.length, 2);
 });
 
+test("the Steward window's Stop ends the Python on his port and its tree, holds it, and Start or Restart brings it back", async () => {
+  const steward = require('./steward.cjs');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'steward-'));
+  for (const f of [['.venv', 'Scripts', 'python.exe'], steward.MCP_SCRIPT]) {
+    fs.mkdirSync(path.join(dir, ...f.slice(0, -1)), { recursive: true });
+    fs.writeFileSync(path.join(dir, ...f), '');
+  }
+  let up = true;
+  let owner = { pid: 4242, name: 'python.exe' };
+  const killed = [];
+  const started = [];
+  const door = steward.service({
+    getConfig: () => ({ dir }),
+    vaultDir: () => null,
+    answering: async () => up,
+    waitFor: async (port, ms, probe, gone) => (gone ? !up : up),
+    startOwned: (exe, args) => {
+      started.push(args[0]);
+      up = true;
+      return { pid: 99, exitCode: null };
+    },
+    portOwner: () => owner,
+    killTree: (pid) => {
+      killed.push(pid);
+      up = false;
+    },
+    script: steward.MCP_SCRIPT,
+    port: steward.MCP_PORT,
+  });
+  await door.stop();
+  assert.deepEqual(killed, [4242], 'the Python listening on 43121, and its tree');
+  assert.equal(door.held(), true);
+  assert.equal(await steward.keepUp(door, false), false, 'a stop by the user is not undone by the status check');
+  await door.start();
+  assert.equal(door.held(), false);
+  assert.deepEqual(started, [path.join(...steward.MCP_SCRIPT)]);
+  up = false;
+  assert.equal(await steward.keepUp(door, false), true, 'found down and not stopped: started again');
+  await door.restart();
+  assert.deepEqual(killed.slice(-2), [4242, 99], 'restart stops the listener and the child it started, then starts');
+  assert.equal(up, true);
+  // another program on the port (one SecondBrain did not start) is never killed, and the stop says so
+  const other = steward.service({
+    getConfig: () => ({ dir }),
+    vaultDir: () => null,
+    answering: async () => true,
+    waitFor: async (port, ms, probe, gone) => !gone,
+    startOwned: () => ({ pid: 1, exitCode: null }),
+    portOwner: () => ({ pid: 7, name: 'ComfyUI.exe' }),
+    killTree: (pid) => killed.push(pid),
+    script: steward.MCP_SCRIPT,
+    port: steward.MCP_PORT,
+  });
+  killed.length = 0;
+  await assert.rejects(other.stop(), /still answers/);
+  assert.deepEqual(killed, [], 'a program that is not his is never killed');
+});
+
 test("a conversation keeps Steward's thread across a restart", async () => {
   const { threads } = require('./steward.cjs');
   const { AgentService } = require('./service.cjs');

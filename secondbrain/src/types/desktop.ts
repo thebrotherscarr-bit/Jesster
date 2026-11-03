@@ -262,7 +262,16 @@ export interface DesktopBridge {
   steward?: {
     status: () => Promise<StewardStatus>;
     uses: () => Promise<StewardUses>;
+    /** Start, stop or restart his service, his MCP door, or both */
+    control: (piece: StewardControlPiece, action: 'start' | 'stop' | 'restart') => Promise<StewardControlResult>;
   };
+}
+
+export type StewardControlPiece = 'service' | 'mcp' | 'all';
+
+export interface StewardControlResult {
+  errors: string[];
+  status: StewardStatus;
 }
 
 export interface StewardPiece {

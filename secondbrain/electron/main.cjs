@@ -1,6 +1,7 @@
 const { app, BrowserWindow, dialog, ipcMain, shell, session } = require('electron');
 const path = require('path');
 const http = require('http');
+const { execFileSync } = require('child_process');
 const express = require('express');
 const updater = require('./updater.cjs');
 const fs = require('fs');
@@ -410,6 +411,16 @@ ipcMain.handle('inbox:disconnect', (event) => {
 });
 
 // ---- the agent -----------------------------------------------------------
+// Ends a process and everything under it (taskkill /T on Windows: a venv python.exe is a launcher with the real
+// Python as its child).
+function killTree(pid) {
+  try {
+    if (process.platform === 'win32') execFileSync('taskkill', ['/PID', String(pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
+    else process.kill(pid);
+  } catch {
+    /* already gone */
+  }
+}
 // Steward is the Agent tab's agent (agent/steward.cjs): his service is SecondBrain's child, as the glass is
 const stewardService = steward.service({
   getConfig: () => getSettings().get('agent').steward,
@@ -417,6 +428,8 @@ const stewardService = steward.service({
   answering: atlasGlass.answering,
   waitFor: atlasGlass.waitFor,
   startOwned: atlasGlass.startOwned,
+  portOwner: atlasGlass.portOwner,
+  killTree,
 });
 // Steward as an MCP tool (mcp_app.py on 127.0.0.1:43121, ADR-0001 item 10), so Manjuel's mcp_call reaches
 // him: started and stopped with SecondBrain the same way, from the same folder; its own log, steward-mcp.log
@@ -426,6 +439,8 @@ const stewardMcp = steward.service({
   answering: atlasGlass.answering,
   waitFor: atlasGlass.waitFor,
   startOwned: atlasGlass.startOwned,
+  portOwner: atlasGlass.portOwner,
+  killTree,
   script: steward.MCP_SCRIPT,
   port: steward.MCP_PORT,
   log: 'steward-mcp.log',
@@ -559,9 +574,32 @@ const stewardPorts = () => ({
   doorPort: atlasGlass.DOOR_PORT,
   glassPort: atlasGlass.GLASS_PORT,
 });
-ipcMain.handle('steward:status', (event) => {
+ipcMain.handle('steward:status', async (event) => {
   guard(event);
-  return stewardSystem.status({ answering: atlasGlass.answering, ports: stewardPorts() });
+  const s = await stewardSystem.status({ answering: atlasGlass.answering, ports: stewardPorts() });
+  // his MCP door, found down and not stopped by the user, is started again (Manjuel reaches it directly)
+  if (getSettings().get('agent').backend === 'steward') {
+    const door = s.pieces.find((p) => p.id === 'steward-mcp');
+    steward.keepUp(stewardMcp, Boolean(door && door.up)).catch((e) => console.error('[SecondBrain] steward mcp:', e.message));
+  }
+  return s;
+});
+// The Steward window's Start, Stop and Restart: his service, his MCP door, or both ('all')
+ipcMain.handle('steward:control', async (event, piece, action) => {
+  guard(event);
+  const services = { service: stewardService, mcp: stewardMcp };
+  if (!['start', 'stop', 'restart'].includes(action)) throw new Error(`Unknown action: ${action}`);
+  const targets = piece === 'all' ? [services.mcp, services.service] : [services[piece]];
+  if (!targets[0]) throw new Error(`Unknown piece: ${piece}`);
+  const errors = [];
+  for (const svc of targets) {
+    try {
+      await svc[action]();
+    } catch (e) {
+      errors.push(e.message);
+    }
+  }
+  return { errors, status: await stewardSystem.status({ answering: atlasGlass.answering, ports: stewardPorts() }) };
 });
 ipcMain.handle('steward:uses', (event) => {
   guard(event);
