@@ -12,6 +12,7 @@ const report = require('./report.cjs');
 const atlas = require('./atlas.cjs');
 const atlasGlass = require('./atlasglass.cjs');
 const services = require('./services.cjs');
+const approvals = require('./approvals.cjs');
 const door = require('./door/index.cjs');
 const archive = require('./archive.cjs');
 const integrations = require('./integrations.cjs');
@@ -896,6 +897,25 @@ ipcMain.handle('services:control', (event, id, action) => {
 ipcMain.handle('services:log', (event, id, lines) => {
   guard(event);
   return servers.log(String(id), lines);
+});
+
+// ---- the Approvals shelf (approvals.cjs): the open cards of both planes, Always allow, Steward's tool policy ----
+// a card is answered where it always was (agent:approve, door:call hold_answer); these only read, and reset Always
+ipcMain.handle('approvals:list', (event) => {
+  guard(event);
+  return approvals.queue({ cards: () => getAgent().cards(), holds: () => theDoor.call('hold_list', {}, door.OPERATOR) });
+});
+ipcMain.handle('approvals:always', (event) => {
+  guard(event);
+  return getAgent().always();
+});
+ipcMain.handle('approvals:reset', (event, key) => {
+  guard(event);
+  return getAgent().resetAlways(typeof key === 'string' ? key : null);
+});
+ipcMain.handle('approvals:policy', (event) => {
+  guard(event);
+  return approvals.readPolicy(steward.findSteward((getSettings().get('agent').steward || {}).dir, vaultDir()));
 });
 
 ipcMain.handle('desktop:version', (event) => (fromApp(event) ? updater.buildInfo() : null));

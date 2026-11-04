@@ -39,6 +39,12 @@ contextBridge.exposeInMainWorld('secondbrainDesktop', {
       ipcRenderer.on('agent:approval', fn);
       return () => ipcRenderer.removeListener('agent:approval', fn);
     },
+    // a card answered anywhere (here, the Approvals shelf, a message typed while it waited): it leaves every view
+    onAnswered: (cb) => {
+      const fn = (_e, done) => cb(done);
+      ipcRenderer.on('agent:approval-done', fn);
+      return () => ipcRenderer.removeListener('agent:approval-done', fn);
+    },
     // a conversation started from outside (agent_send over MCP): the window opens it
     onShow: (cb) => {
       const fn = (_e, id) => cb(id);
@@ -57,6 +63,14 @@ contextBridge.exposeInMainWorld('secondbrainDesktop', {
     list: () => ipcRenderer.invoke('services:list'),
     control: (id, action) => ipcRenderer.invoke('services:control', id, action),
     log: (id, lines) => ipcRenderer.invoke('services:log', id, lines),
+  },
+  // the Approvals shelf: every open card of both planes (answered with agent.approve and door.call, as ever),
+  // the standing Always allow entries and their Reset, and Steward's tool policy (read only)
+  approvals: {
+    list: () => ipcRenderer.invoke('approvals:list'),
+    always: () => ipcRenderer.invoke('approvals:always'),
+    reset: (key) => ipcRenderer.invoke('approvals:reset', typeof key === 'string' ? key : null),
+    policy: () => ipcRenderer.invoke('approvals:policy'),
   },
   schedules: {
     list: () => ipcRenderer.invoke('schedules:list'),
