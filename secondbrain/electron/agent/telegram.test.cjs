@@ -127,6 +127,7 @@ test("with Steward as the agent, a paired chat is a Steward conversation: his ca
     ensure: async () => 'http://steward',
     up: async () => true,
     turn: async ({ text, previous, approve, review, signal }) => {
+      text = text.startsWith('[') ? text.slice(text.indexOf(']') + 2) : text; // the source line withSource adds
       turns.push({ text, previous });
       let answer = `steward: ${text}`;
       if (text === 'fix the test' || text === 'hang') {
@@ -233,6 +234,7 @@ test("a Steward card answered in the window loses its buttons in the chat and sh
   const steward = {
     ensure: async () => 'http://steward',
     turn: async ({ text, approve }) => {
+      text = text.startsWith('[') ? text.slice(text.indexOf(']') + 2) : text; // the source line withSource adds
       const ok = await approve('service_control', { service: 'ollama', action: 'restart' }, `service_control ${text}`);
       decided.push(ok);
       return { answer: ok ? 'done' : 'not done', previous: 'r', calls: [] };
