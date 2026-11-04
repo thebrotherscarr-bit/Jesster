@@ -13,6 +13,7 @@ const DEFAULTS = {
   // check: Claude checks each Steward turn in the Agent tab (agent/checker.cjs), on the Integrations key
   agent: { host: 'http://localhost:11434', model: 'gpt-oss:20b', maxSteps: 12, backend: 'steward', steward: { dir: '', port: 43120 }, check: false },
   telegram: { token: '', allowedChats: [], enabled: false },
+  discord: { token: '', allowedUsers: [], enabled: false }, // his own bot (agent/discord.cjs); allowedUsers: paired user ids
   terminal: { enabled: false, shell: null, alwaysAllow: [] },
   voice: { speakReplies: false, whisperModel: '' }, // '' = whisper.cpp's model, found beside it
   browser: { enabled: false, askEachAction: true }, // the agent's own browser window
@@ -81,6 +82,7 @@ class Settings {
   public() {
     const d = JSON.parse(JSON.stringify(this.data));
     d.telegram.token = d.telegram.token ? '••••••' + d.telegram.token.slice(-4) : '';
+    d.discord.token = d.discord.token ? '••••••' + d.discord.token.slice(-4) : '';
     d.share.key = d.share.key ? '••••' + d.share.key.slice(-4) : '';
     for (const p of ['anthropic', 'openai', 'google']) d.integrations[p].key = d.integrations[p].key ? '••••' + d.integrations[p].key.slice(-4) : '';
     return d;

@@ -127,6 +127,10 @@ export interface TelegramBridge {
   onState: (cb: (s: TelegramState) => void) => () => void;
 }
 
+/** Discord (electron/agent/discord.cjs): the same shape; `allowed` holds paired user ids. */
+export type DiscordState = TelegramState;
+export type DiscordBridge = TelegramBridge;
+
 export interface VoiceBridge {
   onTranscribe: (cb: (job: { id: string; bytes: string; mime: string }) => void) => () => void;
   result: (id: string, text: string, error?: string | null) => Promise<boolean>;
@@ -210,7 +214,7 @@ export interface AtlasOptions {
   all?: boolean;
 }
 
-/** A phone channel; only Telegram is wired today. */
+/** A phone channel; Telegram and Discord are wired today. */
 export type PhoneChannel = 'telegram' | 'whatsapp' | 'discord';
 
 /** One line of a phone conversation (electron/agent/phone.cjs): what was said, a card, or its answer. */
@@ -262,6 +266,7 @@ export interface DesktopBridge {
   schedules?: SchedulesBridge;
   mcp?: McpBridge;
   telegram?: TelegramBridge;
+  discord?: DiscordBridge;
   voice?: VoiceBridge;
   share?: { get: (reveal?: boolean) => Promise<ShareState>; set: (patch: { enabled?: boolean; writes?: boolean; rotate?: boolean }) => Promise<ShareState> };
   atlas?: {
@@ -410,7 +415,7 @@ export interface AnsweredCard {
   tool: string;
   summary: string;
   answer: 'allow' | 'always' | 'deny' | 'timeout' | 'keep' | 'drop' | 'guidance';
-  where: 'window' | 'telegram';
+  where: 'window' | 'telegram' | 'discord';
   time: string;
 }
 

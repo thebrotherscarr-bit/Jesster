@@ -114,7 +114,7 @@ class AgentService {
   }
 
   /**
-   * Answer a waiting card. `where` is the place it was answered ('window' or 'telegram'); `timeout` marks a card
+   * Answer a waiting card. `where` is the place it was answered ('window' or a phone channel: 'telegram', 'discord'); `timeout` marks a card
    * nobody answered in time (answered No). The answer is kept in the history and told to onAnswered's listeners.
    */
   answerApproval(id, allow, always, text, { where = 'window', timeout = false } = {}) {
@@ -186,7 +186,7 @@ class AgentService {
       if (!waiting.length) throw new Error('this session is still working on the last message');
       // a message typed at a waiting review is its guidance (a No would drop the fixer's work)
       const review = waiting.find(([, p]) => p.kind === 'review');
-      const how = { where: source === 'telegram' ? 'telegram' : 'window' };
+      const how = { where: PHONE.includes(source) ? source : 'window' };
       if (review) {
         this.answerApproval(review[0], true, false, text, how);
         return { sessionId: id, answeredReview: true };
@@ -206,8 +206,8 @@ class AgentService {
     };
     send({ type: 'user', text, source });
     try {
-      // the Agent tab and Telegram talk to Steward; schedules and subagents keep the local loop for now
-      if (this.steward && backend === 'steward' && (source === 'app' || source === 'telegram')) {
+      // the Agent tab and the phone (Telegram, Discord, ...) talk to Steward; schedules and subagents keep the local loop for now
+      if (this.steward && backend === 'steward' && (source === 'app' || PHONE.includes(source))) {
         return { sessionId: id, answer: await this.askSteward(s, text, id, send, approve, onCard, source) };
       }
       const answer = await runTurn({
