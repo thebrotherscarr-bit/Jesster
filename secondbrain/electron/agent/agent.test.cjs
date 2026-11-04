@@ -294,6 +294,27 @@ test("SecondBrain quitting stops Steward's two services it started, each with it
   assert.deepEqual(killed, []);
 });
 
+test('keepUpEvery brings a service back when its port is down, never one the user stopped', async () => {
+  const { keepUpEvery } = require('./steward.cjs');
+  let held = false;
+  let ensured = 0;
+  let up = false;
+  const svc = { held: () => held, ensure: async () => { ensured++; up = true; } };
+  const timer = keepUpEvery(svc, 43121, async () => up, 5);
+  await new Promise((r) => setTimeout(r, 40));
+  assert.strictEqual(ensured, 1, 'started once, then found up');
+  up = false;
+  held = true;
+  await new Promise((r) => setTimeout(r, 30));
+  assert.strictEqual(ensured, 1, 'a service the user stopped stays stopped');
+  clearInterval(timer);
+});
+
+test("main.cjs keeps Steward's MCP door up from the main process", () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'main.cjs'), 'utf8');
+  assert.match(main, /steward\.keepUpEvery\(stewardMcp, steward\.MCP_PORT,/);
+});
+
 test("main.cjs hands Steward's two services to stopOnQuit", () => {
   const main = fs.readFileSync(path.join(__dirname, '..', 'main.cjs'), 'utf8');
   assert.match(main, /steward\.stopOnQuit\(app, \[stewardService, stewardMcp\]\)/);
