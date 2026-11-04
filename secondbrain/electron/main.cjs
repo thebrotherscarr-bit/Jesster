@@ -25,6 +25,7 @@ const sched = require('./agent/schedules.cjs');
 const { McpClient } = require('./agent/mcp.cjs');
 const { Telegram } = require('./agent/telegram.cjs');
 const { Discord } = require('./agent/discord.cjs');
+const { channelOn, gated } = require('./channels.cjs');
 const phone = require('./agent/phone.cjs');
 const subagents = require('./agent/subagents.cjs');
 const terminal = require('./agent/terminal.cjs');
@@ -314,7 +315,7 @@ ipcMain.handle('settings:set', (event, section, value) => {
   guard(event);
   if (!PAGE_SECTIONS.includes(section) || !value || typeof value !== 'object') throw new Error('not a setting');
   // a masked token coming back from the page means "unchanged"
-  if ((section === 'telegram' || section === 'discord') && typeof value.token === 'string' && value.token.startsWith('••••')) delete value.token;
+  if ((section === 'telegram' || section === 'discord') && typeof value.token === 'string' && value.token.includes('•')) delete value.token;
   getSettings().set(section, value);
   for (const fn of settingsListeners) fn(section);
   return getSettings().public();
@@ -726,7 +727,7 @@ let telegram = null;
 function getTelegram() {
   if (!telegram) {
     telegram = new Telegram({
-      getConfig: () => getSettings().get('telegram'),
+      getConfig: () => gated('telegram', getSettings().get('telegram')),
       agent: getAgent(),
       phone: getPhoneLog(),
       // each chat's conversation with Steward, kept across restarts
@@ -784,7 +785,8 @@ let discord = null;
 function getDiscord() {
   if (!discord) {
     discord = new Discord({
-      getConfig: () => getSettings().get('discord'),
+      // off while channels.json leaves Discord out: its bot never starts
+      getConfig: () => gated('discord', getSettings().get('discord')),
       agent: getAgent(),
       phone: getPhoneLog(),
       // each user's conversation with Steward, kept across restarts
@@ -799,7 +801,7 @@ async function restartDiscord() {
   getDiscord().stop();
   return getDiscord().start();
 }
-settingsListeners.push((section) => section === 'discord' && restartDiscord());
+settingsListeners.push((section) => section === 'discord' && channelOn('discord') && restartDiscord());
 ipcMain.handle('discord:state', (event) => {
   guard(event);
   return getDiscord().state();
@@ -1056,7 +1058,7 @@ if (!gotSingleInstanceLock) {
     // automations: check every 30s; missed runs catch up shortly after start
     schedulerTimer = setInterval(schedulerTick, 30000);
     setTimeout(() => getTelegram().start(), 2000);
-    setTimeout(() => getDiscord().start(), 2000);
+    if (channelOn('discord')) setTimeout(() => getDiscord().start(), 2000);
     setTimeout(schedulerTick, 15000);
     // Steward warms up with the app, so the Agent tab's first message does not wait for his start
     if (getSettings().get('agent').backend === 'steward') stewardService.ensure().catch((e) => console.error('[SecondBrain] steward:', e.message));
