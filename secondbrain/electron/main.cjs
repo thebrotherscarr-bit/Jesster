@@ -991,6 +991,8 @@ if (!gotSingleInstanceLock) {
     if (getSettings().get('agent').backend === 'steward') stewardService.ensure().catch((e) => console.error('[SecondBrain] steward:', e.message));
     // and his MCP door, for Manjuel
     if (getSettings().get('agent').backend === 'steward') stewardMcp.ensure().catch((e) => console.error('[SecondBrain] steward mcp:', e.message));
+    // and kept up: found down and not stopped by the user, it is started again (Manjuel and the door reach it)
+    steward.keepUpEvery(stewardMcp, steward.MCP_PORT, (p) => atlasGlass.answering(p), 10000, () => getSettings().get('agent').backend === 'steward');
     // and Ollama, when Settings (or SECONDBRAIN_RUNS_OLLAMA=1) has SecondBrain run it and nothing else already does
     // (else it is left alone); once started, services.cjs starts it again if it dies
     if (ollamaServer.settings().enabled) servers.control('ollama', 'start').then((r) => r.ok || console.error('[SecondBrain] ollama:', r.error));
