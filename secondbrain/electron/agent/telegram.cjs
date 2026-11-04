@@ -19,6 +19,9 @@ const { newSessionId } = require('./agent.cjs');
 
 const API = 'https://api.telegram.org';
 const MAX_TEXT = 4000;
+const CARD_TIMEOUT_MS = 600000; // a card nobody answers in 10 minutes is answered No
+// how an answered card reads in the chat, once its buttons are gone
+const ANSWERS = { allow: 'Allowed', always: 'Always allowed', deny: 'Denied', timeout: 'No answer in 10 minutes: denied', keep: 'Kept', drop: 'Dropped', guidance: 'Sent back with guidance' };
 
 class Telegram {
   /**
@@ -26,7 +29,7 @@ class Telegram {
    * requests for the UI; agent: AgentService; transcribe(buffer, mime): text
    * for voice notes (voice feature), optional.
    */
-  constructor({ getConfig, agent, onState = () => {}, apiBase = API, transcribe = null }) {
+  constructor({ getConfig, agent, onState = () => {}, apiBase = API, transcribe = null, cardTimeout = CARD_TIMEOUT_MS }) {
     this.getConfig = getConfig;
     this.agent = agent;
     this.onState = onState;
@@ -37,10 +40,14 @@ class Telegram {
     this.pending = new Map(); // chat id -> { id, name, at }
     this.sessions = new Map(); // chat id -> session id
     this.approvals = new Map(); // approval id -> resolve
-    this.cards = new Map(); // the service's card id (Steward's) -> the chat it was sent to
+    // the service's card id (Steward's) -> { chat, messageId, text, timer }: where it was sent, to drop its buttons
+    this.cards = new Map();
+    this.cardTimeout = cardTimeout;
     this.me = null;
     this.error = null;
     this.abort = null;
+    // a card answered anywhere (the window, a button here, the timeout) loses its buttons here and shows the answer
+    if (agent && typeof agent.onAnswered === 'function') agent.onAnswered((entry) => this.cardAnswered(entry));
   }
 
   url(method) {
@@ -63,7 +70,9 @@ class Telegram {
     const chunks = [];
     for (let s = String(text || '(empty)'); s.length; s = s.slice(MAX_TEXT)) chunks.push(s.slice(0, MAX_TEXT));
     // buttons ride on the last piece, so a long card is answered once
-    for (const [i, c] of chunks.entries()) await this.api('sendMessage', { chat_id: chatId, text: c, ...(i === chunks.length - 1 ? extra : {}) });
+    let last = null;
+    for (const [i, c] of chunks.entries()) last = await this.api('sendMessage', { chat_id: chatId, text: c, ...(i === chunks.length - 1 ? extra : {}) });
+    return { message: last, text: chunks[chunks.length - 1] }; // the last piece, which carries the buttons
   }
 
   state() {
@@ -140,7 +149,7 @@ class Telegram {
         // no answer in 10 minutes: no (and the timer never keeps the app alive)
         setTimeout(() => {
           if (this.approvals.delete(id)) resolve(false);
-        }, 600000).unref?.();
+        }, this.cardTimeout).unref?.();
       });
     };
   }
@@ -151,10 +160,47 @@ class Telegram {
    */
   cardSender(chatId) {
     return async (card) => {
-      this.cards.set(card.id, String(chatId));
+      // no answer in 10 minutes, here or in the window: answered No, as the local loop's cards are
+      const timer = setTimeout(() => this.agent.answerApproval(card.id, false, false, undefined, { where: 'telegram', timeout: true }), this.cardTimeout);
+      timer.unref?.();
+      const entry = { chat: String(chatId), messageId: null, text: '', timer };
+      this.cards.set(card.id, entry);
       const head = card.kind === 'review' ? '' : `Steward wants to use ${card.name}:\n\n`;
-      await this.send(chatId, `${head}${card.summary}`, { reply_markup: buttons(card.id) });
+      let sent;
+      try {
+        sent = await this.send(chatId, `${head}${card.summary}`, { reply_markup: buttons(card.id) });
+      } catch (e) {
+        // never shown here: it stays the window's card alone, with no timeout
+        clearTimeout(timer);
+        this.cards.delete(card.id);
+        throw e;
+      }
+      entry.messageId = sent.message?.message_id ?? null;
+      entry.text = sent.text;
+      // answered while it was being sent: its buttons go now
+      if (!this.cards.has(card.id) && entry.answer) await this.dropButtons(entry, entry.answer);
     };
+  }
+
+  /** A card of Steward's was answered (anywhere): its message here shows the answer, without buttons. */
+  async cardAnswered(answer) {
+    const entry = this.cards.get(answer.id);
+    if (!entry) return;
+    this.cards.delete(answer.id);
+    clearTimeout(entry.timer);
+    entry.answer = answer;
+    if (entry.messageId !== null) await this.dropButtons(entry, answer);
+  }
+
+  async dropButtons(entry, answer) {
+    const said = ANSWERS[answer.answer] || answer.answer;
+    const line = answer.where === 'telegram' ? said : `${said} in Jesster`;
+    try {
+      await this.api('editMessageText', { chat_id: entry.chat, message_id: entry.messageId, text: `${entry.text}\n\n— ${line}`.slice(0, 4096), reply_markup: { inline_keyboard: [] } });
+    } catch (e) {
+      this.error = e.message;
+      this.emit();
+    }
   }
 
   async handle(u) {
@@ -168,10 +214,10 @@ class Telegram {
         this.approvals.delete(m[1]);
         let answered = Boolean(resolve);
         if (resolve) resolve(yes);
-        else if (this.cards.get(m[1]) === chat) {
+        else if (this.cards.get(m[1])?.chat === chat) {
           // a card of Steward's: answered where the window's are, unless it was answered there first
+          answered = this.agent.answerApproval(m[1], yes, false, undefined, { where: 'telegram' });
           this.cards.delete(m[1]);
-          answered = this.agent.answerApproval(m[1], yes, false);
         }
         await this.api('answerCallbackQuery', { callback_query_id: q.id, text: answered ? (yes ? 'Allowed' : 'Denied') : 'Expired' });
       }
@@ -212,7 +258,7 @@ class Telegram {
       if (sid) {
         this.agent.stop(sid);
         // a card still waiting (Steward's) is answered No, so his stopped turn can end
-        for (const c of this.agent.cards?.() || []) if (c.sessionId === sid) this.agent.answerApproval(c.id, false);
+        for (const c of this.agent.cards?.() || []) if (c.sessionId === sid) this.agent.answerApproval(c.id, false, false, undefined, { where: 'telegram' });
       }
       await this.send(chatId, 'Stopped.');
       return;

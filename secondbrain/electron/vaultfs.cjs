@@ -179,6 +179,24 @@ class Vault {
     }
   }
 
+  /**
+   * One note by its id, or null when there is no such file. Unlike load(), a file that is there and cannot be read
+   * throws: a caller about to rewrite the note (the memory tool) must not take "unreadable" for "empty".
+   */
+  get(id) {
+    const p = this.file(id);
+    let st;
+    let raw;
+    try {
+      st = fs.statSync(p);
+      raw = fs.readFileSync(p, 'utf8');
+    } catch (e) {
+      if (e.code === 'ENOENT') return null;
+      throw new Error(`the note ${id} could not be read (${e.code || e.message}); nothing was changed`);
+    }
+    return parseFile(raw, id, st.mtimeMs);
+  }
+
   save(note) {
     const p = this.file(note.id);
     const tmp = `${p}.tmp`;

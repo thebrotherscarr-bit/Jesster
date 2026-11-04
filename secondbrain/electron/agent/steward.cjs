@@ -240,6 +240,7 @@ function service({ getConfig, vaultDir, answering, waitFor, startOwned, wait = 9
   let starting = null;
   let child = null;
   let held = false;
+  let startedAt = null; // when SecondBrain started the child it holds, for estate_status
   const portOf = () => fixedPort || Number((getConfig() || {}).port) || PORT;
   async function ensure() {
     const cfg = getConfig() || {};
@@ -253,6 +254,7 @@ function service({ getConfig, vaultDir, answering, waitFor, startOwned, wait = 9
         const python = path.join(dir, ...PYTHON);
         if (!fs.existsSync(python)) throw new Error(`Steward's Python was not found at ${python}.`);
         child = startOwned(python, [path.join(...script)], dir, { ...process.env, STEWARD_PORT: String(port) }, [log, log]);
+        startedAt = new Date().toISOString();
         if (!(await waitFor(port, wait))) throw new Error(`Steward's ${script[script.length - 1]} did not answer on port ${port}; its log is ${path.join(dir, log)}.`);
         return base;
       })().finally(() => {
@@ -261,13 +263,20 @@ function service({ getConfig, vaultDir, answering, waitFor, startOwned, wait = 9
     }
     return starting;
   }
-  async function stop() {
+  const alive = () => Boolean(child && child.pid && child.exitCode === null);
+  /**
+   * `ownOnly` (SecondBrain quitting): only when SecondBrain started the one running, so a Steward started by hand
+   * outlives it. The kills are synchronous, done before the first await, so a quit that does not wait still ends them.
+   */
+  async function stop({ ownOnly = false } = {}) {
+    if (ownOnly && !alive()) return;
     held = true;
     const port = portOf();
     const owner = portOwner(port);
     if (owner && /python/i.test(owner.name || '')) killTree(owner.pid); // never a program that is not his
-    if (child && child.pid && child.exitCode === null) killTree(child.pid);
+    if (alive()) killTree(child.pid);
     child = null;
+    startedAt = null;
     const gone = await waitFor(port, 15000, answering, true);
     if (!gone) throw new Error(`Something still answers on port ${port} after the stop.`);
   }
@@ -281,7 +290,28 @@ function service({ getConfig, vaultDir, answering, waitFor, startOwned, wait = 9
   }
   // whether something answers on the port now, without starting anything (Telegram's /status)
   const up = async () => Boolean(await answering(portOf()));
-  return { ensure, start, stop, restart, up, held: () => held, port: portOf };
+  return {
+    ensure,
+    start,
+    stop,
+    restart,
+    up,
+    held: () => held,
+    port: portOf,
+    // the child SecondBrain started and when, or null when it holds none (one started by hand)
+    pid: () => (alive() ? child.pid : null),
+    started: () => (alive() ? startedAt : null),
+  };
+}
+
+/**
+ * Steward's services go down with SecondBrain, each with its whole process tree (stop's kill-tree path): only the venv
+ * launcher was killed before (atlasglass stopOwned), so the real Python could keep 43120/43121. `app` is Electron's.
+ */
+function stopOnQuit(app, services) {
+  app.on('before-quit', () => {
+    for (const svc of services) svc.stop({ ownOnly: true }).catch(() => {});
+  });
 }
 
 /**
@@ -318,4 +348,4 @@ function threads(file) {
   };
 }
 
-module.exports = { turn, service, keepUp, findSteward, postJson, postStream, threads, PORT, MCP_PORT, MCP_SCRIPT };
+module.exports = { turn, service, keepUp, stopOnQuit, findSteward, postJson, postStream, threads, PORT, MCP_PORT, MCP_SCRIPT };

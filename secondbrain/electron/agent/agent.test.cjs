@@ -244,6 +244,61 @@ test("the Steward window's Stop ends the Python on his port and its tree, holds 
   assert.deepEqual(killed, [], 'a program that is not his is never killed');
 });
 
+test("SecondBrain quitting stops Steward's two services it started, each with its process tree; one started by hand is left", async () => {
+  const steward = require('./steward.cjs');
+  const { EventEmitter } = require('events');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'steward-'));
+  for (const f of [['.venv', 'Scripts', 'python.exe'], ['harness', 'steward', 'step04_production_ready', 'hosted.py'], steward.MCP_SCRIPT]) {
+    fs.mkdirSync(path.join(dir, ...f.slice(0, -1)), { recursive: true });
+    fs.writeFileSync(path.join(dir, ...f), '');
+  }
+  const killed = [];
+  const up = new Set();
+  const make = (port, script, launcher, python) =>
+    steward.service({
+      getConfig: () => ({ dir }),
+      vaultDir: () => null,
+      answering: async (p) => up.has(p),
+      waitFor: async (p, ms, probe, gone) => (gone ? !up.has(p) : up.has(p)),
+      startOwned: () => {
+        up.add(port);
+        return { pid: launcher, exitCode: null };
+      },
+      // the venv launcher's real Python is the one on the port
+      portOwner: (p) => (up.has(p) ? { pid: python, name: 'python.exe' } : null),
+      killTree: (pid) => {
+        killed.push(pid);
+        if (pid === python) up.delete(port);
+      },
+      script,
+      port,
+    });
+  const svc = make(43120, undefined, 10, 11);
+  const mcp = make(43121, steward.MCP_SCRIPT, 20, 21);
+  await svc.ensure();
+  await mcp.ensure();
+  assert.equal(svc.pid(), 10);
+  assert.match(svc.started(), /^\d{4}-\d\d-\d\dT/);
+  const app = new EventEmitter();
+  steward.stopOnQuit(app, [svc, mcp]);
+  app.emit('before-quit');
+  assert.deepEqual(killed, [11, 10, 21, 20], 'the Python on each port and the launcher, each by its tree, before quit goes on');
+  assert.equal(svc.pid(), null);
+  // a Steward started by hand (SecondBrain holds no child of it) outlives SecondBrain
+  killed.length = 0;
+  const byHand = make(43120, undefined, 30, 31);
+  up.add(43120);
+  await byHand.ensure();
+  steward.stopOnQuit(app, [byHand]);
+  app.emit('before-quit');
+  assert.deepEqual(killed, []);
+});
+
+test("main.cjs hands Steward's two services to stopOnQuit", () => {
+  const main = fs.readFileSync(path.join(__dirname, '..', 'main.cjs'), 'utf8');
+  assert.match(main, /steward\.stopOnQuit\(app, \[stewardService, stewardMcp\]\)/);
+});
+
 test("a conversation keeps Steward's thread across a restart", async () => {
   const { threads } = require('./steward.cjs');
   const { AgentService } = require('./service.cjs');

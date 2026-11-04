@@ -12,6 +12,7 @@
  *  .env. Read-only unless the user allows writes.
  */
 const path = require('path');
+const estate = require('./estate.cjs');
 
 // What the agent is offered from Atlas by default: the estate's records and
 // law, memory, chains, the steward and the engine, git as it stands, the
@@ -50,8 +51,12 @@ function withAtlas(configText, entry) {
 
 // Steward (the MAF agent in worlds/steward) is SecondBrain's agent: it gets the web tools, the
 // long-term memory notes (agent-memory, user-profile) and skill saving, beside the notes.
-const READ_TOOLS = ['search_notes', 'read_note', 'list_notes', 'search_sessions', 'skills_list', 'skill_view', 'web_search', 'web_fetch'];
-const WRITE_TOOLS = ['write_note', 'append_to_note', 'todo', 'memory', 'skill_save'];
+// The Estate's tools (estate.cjs): what SecondBrain runs, for Steward to see and work. app_update is listed with the
+// reads for its check; its apply is a write, refused while writes are off.
+const ESTATE_READ_TOOLS = ['estate_status', 'estate_logs', 'approvals_history', 'app_update'];
+const ESTATE_WRITE_TOOLS = ['service_control', 'ollama_unload'];
+const READ_TOOLS = ['search_notes', 'read_note', 'list_notes', 'search_sessions', 'skills_list', 'skill_view', 'web_search', 'web_fetch', ...ESTATE_READ_TOOLS];
+const WRITE_TOOLS = ['write_note', 'append_to_note', 'todo', 'memory', 'skill_save', ...ESTATE_WRITE_TOOLS];
 // SecondBrain's browser window and computer use, for Steward too (Kyle, 2026-10-28: "allow clicking and
 // typing too", "computer use"). Served only while switched on in Settings, which is when they exist.
 const SCREEN_TOOLS = ['browser_open', 'browser_read', 'browser_click', 'browser_type', 'browser_press', 'browser_scroll', 'browser_back', 'computer_task', 'screen_look'];
@@ -178,11 +183,18 @@ async function handleMcp(msg, { registry, ctx, writes = false, door = installedD
       .filter((t) => allowed.has(t.function.name))
       .map((t) => ({ name: t.function.name, description: t.function.description, inputSchema: t.function.parameters }));
     const agentTools = writes && ctx && ctx.agent ? AGENT_TOOLS : [];
-    const taken = new Set([...notes, ...agentTools].map((t) => t.name));
-    return ok({ tools: [...notes, ...agentTools, ...(door ? door.list().filter((t) => !taken.has(t.name)) : [])] });
+    // the Estate's, while the app hands them in (ctx.estate); a write only while writes are allowed
+    const estateTools = ctx && ctx.estate ? estate.ESTATE_TOOLS.filter((t) => allowed.has(t.name)).map(({ name, description, inputSchema, annotations }) => ({ name, description, inputSchema, annotations })) : [];
+    const taken = new Set([...notes, ...estateTools, ...agentTools].map((t) => t.name));
+    return ok({ tools: [...notes, ...estateTools, ...agentTools, ...(door ? door.list().filter((t) => !taken.has(t.name)) : [])] });
   }
   if (method === 'tools/call') {
     const name = params.name;
+    if (estate.NAMES.includes(name)) {
+      const out = !(ctx && ctx.estate) ? { error: 'the Estate is not served here' } : await estate.estateCall(name, params.arguments || {}, ctx.estate, { writes });
+      if (typeof out === 'string') return ok({ content: [{ type: 'text', text: out }], isError: false });
+      return ok({ content: [{ type: 'text', text: out.error }], isError: true });
+    }
     if (AGENT_TOOLS.some((t) => t.name === name)) {
       const why = !writes ? `${name} drives the Agent; the user allows reads only (SecondBrain → Settings → Share)` : !(ctx && ctx.agent) ? 'the Agent is not running here' : null;
       const out = why ? { error: why } : agentCall(name, params.arguments || {}, ctx);
@@ -214,4 +226,4 @@ function keyOk(header, key) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-module.exports = { atlasServer, withAtlas, handleMcp, useDoor, keyOk, agentCall, DEFAULT_TOOLS, READ_TOOLS, WRITE_TOOLS, AGENT_TOOLS, SCREEN_TOOLS };
+module.exports = { atlasServer, withAtlas, handleMcp, useDoor, keyOk, agentCall, DEFAULT_TOOLS, READ_TOOLS, WRITE_TOOLS, AGENT_TOOLS, SCREEN_TOOLS, ESTATE_READ_TOOLS, ESTATE_WRITE_TOOLS };

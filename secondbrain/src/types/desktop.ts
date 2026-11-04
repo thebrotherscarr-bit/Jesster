@@ -303,6 +303,18 @@ export interface ApprovalsBridge {
   reset: (key?: string) => Promise<AlwaysEntry[]>;
   /** Steward's storage/tool-policy.json, read only */
   policy: () => Promise<ToolPolicy>;
+  /** the answered cards, newest first (at most 200) */
+  history: (limit?: number) => Promise<AnsweredCard[]>;
+}
+
+/** One answered card, as approvals-history.jsonl keeps it. */
+export interface AnsweredCard {
+  id: string;
+  tool: string;
+  summary: string;
+  answer: 'allow' | 'always' | 'deny' | 'timeout' | 'keep' | 'drop' | 'guidance';
+  where: 'window' | 'telegram';
+  time: string;
 }
 
 export type ServiceKind = 'owned' | 'external';
@@ -323,6 +335,9 @@ export interface ServiceInfo {
   error?: string;
   settings?: Record<string, unknown>;
   logPath?: string | null;
+  /** the process SecondBrain runs it as, and since when (null when it runs none) */
+  pid?: number | null;
+  started?: string | null;
 }
 
 export interface ServicesBridge {

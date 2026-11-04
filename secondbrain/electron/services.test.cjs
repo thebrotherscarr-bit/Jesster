@@ -250,3 +250,24 @@ test("log gives the last N lines of an entry's own log (at most 500), and refuse
   assert.deepEqual(reg.log('door', 10), { ok: true, file: null, text: '' });
   assert.deepEqual(reg.log('..\\..\\settings', 10), { ok: false, error: 'Unknown server: ..\\..\\settings' });
 });
+
+test('each entry says the pid SecondBrain runs it as and since when; a log named .env* is never read', async () => {
+  const { server, seen } = fakeOllama({ enabled: true });
+  const reg = registry([server, { id: 'door', label: 'The door', port: 43111, pid: () => 5, started: () => '2026-11-04T00:00:00.000Z' }], { probe: async () => seen.up });
+  assert.deepEqual((await reg.list()).map((s) => [s.id, s.pid, s.started]), [['ollama', null, null], ['door', 5, '2026-11-04T00:00:00.000Z']]);
+  await reg.control('ollama', 'start');
+  const [row] = await reg.list();
+  assert.equal(row.pid, 77);
+  assert.equal(row.started, new Date(0).toISOString());
+  await reg.control('ollama', 'stop');
+  assert.equal((await reg.list())[0].pid, null, 'stopped: none');
+
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'services-'));
+  const keys = path.join(dir, '.env.local');
+  fs.writeFileSync(keys, 'SECRET=1\n');
+  const bad = registry([{ id: 'odd', label: 'Odd', port: 1, logPath: () => keys }]);
+  const r = bad.log('odd', 10);
+  assert.equal(r.ok, false);
+  assert.match(r.error, /keys file/);
+  assert.ok(!JSON.stringify(r).includes('SECRET'));
+});

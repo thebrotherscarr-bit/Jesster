@@ -6,6 +6,9 @@
  * loop's reviews) and the door's holds (hold_list, read as the operator, as HoldsDock and the GitHub shelf read
  * them). This only reads them: a card is answered where it always was (agent:approve, door:call hold_answer).
  *
+ * Every answered card of the Agent tab's plane is kept in history() (approvals-history.jsonl), for the console and
+ * Steward's approvals_history.
+ *
  * Steward's tool policy is his file, storage/tool-policy.json in his folder; SecondBrain reads it and nothing else
  * there, and never writes it.
  */
@@ -70,4 +73,51 @@ function readPolicy(dir) {
   return { state: 'ok', file, ts: doc.ts == null ? null : String(doc.ts), tools };
 }
 
-module.exports = { queue, readPolicy, POLICY_FILE, APPROVALS };
+const HISTORY_FILE = 'approvals-history.jsonl';
+const HISTORY_CAP = 2000; // lines kept, newest
+const HISTORY_READ_MAX = 200;
+const SUMMARY_MAX = 2000;
+
+/**
+ * The answered cards, one JSON line each in `file` (SecondBrain's userData folder): { id, tool, summary, answer,
+ * where: 'window' | 'telegram', time }. `append` keeps the newest `cap` lines; `read(limit)` gives the newest first,
+ * at most 200, and skips a line that is not JSON.
+ */
+function history(file, { cap = HISTORY_CAP } = {}) {
+  const lines = () => {
+    try {
+      return fs.readFileSync(file, 'utf8').split(/\r?\n/).filter(Boolean);
+    } catch {
+      return [];
+    }
+  };
+  return {
+    file,
+    append(entry) {
+      const row = { ...entry, summary: String(entry.summary ?? '').slice(0, SUMMARY_MAX) };
+      fs.mkdirSync(path.dirname(file), { recursive: true });
+      fs.appendFileSync(file, `${JSON.stringify(row)}\n`);
+      const all = lines();
+      if (all.length > cap) {
+        const tmp = `${file}.tmp`;
+        fs.writeFileSync(tmp, `${all.slice(-cap).join('\n')}\n`);
+        fs.renameSync(tmp, file);
+      }
+    },
+    read(limit = 50) {
+      const n = Math.min(HISTORY_READ_MAX, Math.max(1, Math.floor(Number(limit) || 50)));
+      const out = [];
+      for (const l of lines().reverse()) {
+        if (out.length >= n) break;
+        try {
+          out.push(JSON.parse(l));
+        } catch {
+          /* a torn line is skipped */
+        }
+      }
+      return out;
+    },
+  };
+}
+
+module.exports = { queue, readPolicy, history, POLICY_FILE, APPROVALS, HISTORY_FILE, HISTORY_CAP, HISTORY_READ_MAX };

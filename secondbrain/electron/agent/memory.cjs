@@ -18,8 +18,15 @@ const LIMIT = { memory: 4000, user: 2500 };
 const IDS = { memory: 'agent-memory', user: 'user-profile' };
 const TITLES = { memory: 'Agent memory', user: 'About you' };
 
+// for showing (extras): a note that cannot be read this moment is shown as missing
 function load(vault, id) {
   return vault.load().find((n) => n.id === id);
+}
+
+// for rewriting (the memory tool): a note that is there and cannot be read throws, so its entries are never
+// replaced by one new entry (Vault.load skips an unreadable file, which read as an empty memory)
+function loadToWrite(vault, id) {
+  return vault.get(id) || undefined;
 }
 
 function entries(note) {
@@ -103,7 +110,7 @@ const tools = [
     },
     run: ({ target, action, text, old_text }, ctx) => {
       if (!IDS[target]) throw new Error("target is 'memory' or 'user'");
-      const old = load(ctx.vault, IDS[target]);
+      const old = loadToWrite(ctx.vault, IDS[target]);
       const list = entries(old);
       const findOld = () => {
         const i = list.findIndex((e) => e.toLowerCase().includes(String(old_text || '').toLowerCase()));
