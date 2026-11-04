@@ -88,6 +88,33 @@ export function historyRow(x: unknown, i: number): HistoryRow {
   };
 }
 
+/**
+ * The Agent tab's two folding panels, each remembered under its own key: the console on the right and the chats bar on
+ * the left (the operator, 2026-11-04: "this entire left bar of old chats, that can be folded just like the console").
+ */
+export const CONSOLE_OPEN_KEY = 'secondbrain_console_open_v1';
+export const CHATS_OPEN_KEY = 'secondbrain_chats_open_v1';
+
+type PanelStore = Pick<Storage, 'getItem' | 'setItem'> | undefined;
+
+/** A panel opens unless it was last closed ('0'); open the first time and when nothing can be read. */
+export function panelOpen(store: PanelStore, key: string): boolean {
+  try {
+    return store?.getItem(key) !== '0';
+  } catch {
+    return true;
+  }
+}
+
+/** Keeps a panel's state; when it cannot be kept, the panel still opens and closes. */
+export function keepPanel(store: PanelStore, key: string, on: boolean): void {
+  try {
+    store?.setItem(key, on ? '1' : '0');
+  } catch {
+    /* the choice is not kept */
+  }
+}
+
 /** A time from a record, short. */
 export const shortTime = (t: string | number) => {
   const d = new Date(t);
