@@ -52,6 +52,12 @@ contextBridge.exposeInMainWorld('secondbrainDesktop', {
     uses: () => ipcRenderer.invoke('steward:uses'),
     control: (piece, action) => ipcRenderer.invoke('steward:control', piece, action),
   },
+  // the Servers shelf: every server Steward needs, its state, Start/Stop/Restart and its log
+  services: {
+    list: () => ipcRenderer.invoke('services:list'),
+    control: (id, action) => ipcRenderer.invoke('services:control', id, action),
+    log: (id, lines) => ipcRenderer.invoke('services:log', id, lines),
+  },
   schedules: {
     list: () => ipcRenderer.invoke('schedules:list'),
     add: (spec) => ipcRenderer.invoke('schedules:add', spec),
