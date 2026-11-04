@@ -1,0 +1,197 @@
+import React, { useCallback, useEffect, useState } from 'react';
+import { Server, X, RefreshCw, ScrollText } from 'lucide-react';
+import { ServiceInfo } from '../types/desktop.ts';
+import { LOG_LINES, kindWord, lastLines, statusTone, statusWord } from '../utils/services.ts';
+
+const EVERY_MS = 3000;
+
+const clean = (e: unknown) => (e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e));
+
+/** The Services button, beside Steward's, in the header's button style. */
+export const ServicesButton: React.FC<{ onOpen: () => void }> = ({ onOpen }) => (
+  <button
+    onClick={onOpen}
+    title="Services: the servers SecondBrain runs or watches, with start, stop, restart and their logs"
+    aria-label="Services"
+    className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg border border-neutral-800 bg-neutral-900 hover:bg-neutral-800 text-xs text-neutral-300 hover:text-white transition-colors shrink-0"
+  >
+    <Server className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
+    <span className="text-[11px] font-medium hidden sm:inline">Services</span>
+  </button>
+);
+
+/**
+ * The Services window, built as Steward's is (tabs under the title, one bordered box of rows): Servers, one row per
+ * server with its port, status, who runs it, Start, Stop, Restart and its log. MCP and Integrations come next.
+ */
+export const ServicesModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen, onClose }) => {
+  const api = window.secondbrainDesktop?.services;
+  const [tab, setTab] = useState<'servers' | 'mcp' | 'integrations'>('servers');
+  const [servers, setServers] = useState<ServiceInfo[] | null>(null);
+  const [listError, setListError] = useState('');
+  const [busy, setBusy] = useState<string | null>(null);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [logs, setLogs] = useState<Record<string, string>>({});
+  const [openLogs, setOpenLogs] = useState<string[]>([]);
+
+  const readLog = useCallback(
+    async (id: string) => {
+      if (!api) return;
+      try {
+        const r = await api.log(id, LOG_LINES);
+        const text = r.ok ? r.text || (r.file ? '' : 'This server keeps no log here.') : `Could not read the log: ${r.error}`;
+        setLogs((l) => ({ ...l, [id]: lastLines(text, LOG_LINES) }));
+      } catch (e) {
+        setLogs((l) => ({ ...l, [id]: `Could not read the log: ${clean(e)}` }));
+      }
+    },
+    [api]
+  );
+
+  const read = useCallback(async () => {
+    if (!api) return;
+    try {
+      setServers(await api.list());
+      setListError('');
+    } catch (e) {
+      setListError(clean(e));
+    }
+  }, [api]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    read();
+    const t = setInterval(read, EVERY_MS);
+    return () => clearInterval(t);
+  }, [read, isOpen]);
+
+  // an open log reads again with each check of the list
+  useEffect(() => {
+    if (!isOpen || !openLogs.length) return;
+    const t = setInterval(() => openLogs.forEach(readLog), EVERY_MS);
+    return () => clearInterval(t);
+  }, [isOpen, openLogs, readLog]);
+
+  const control = async (id: string, action: 'start' | 'stop' | 'restart') => {
+    if (!api) return;
+    setBusy(`${id}:${action}`);
+    setErrors((e) => ({ ...e, [id]: '' }));
+    try {
+      const r = await api.control(id, action);
+      if (!r.ok) setErrors((e) => ({ ...e, [id]: r.error || `Could not ${action} it.` }));
+    } catch (err) {
+      setErrors((e) => ({ ...e, [id]: clean(err) }));
+    } finally {
+      setBusy(null);
+      read();
+      if (openLogs.includes(id)) readLog(id);
+    }
+  };
+
+  const toggleLog = (id: string) => {
+    if (openLogs.includes(id)) {
+      setOpenLogs((o) => o.filter((x) => x !== id));
+    } else {
+      setOpenLogs((o) => [...o, id]);
+      readLog(id);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={onClose}>
+      <div role="dialog" aria-label="Services" className="w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-2xl border border-neutral-800 bg-neutral-950 shadow-2xl" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-800 sticky top-0 bg-neutral-950 z-10">
+          <h2 className="text-sm font-semibold text-white flex items-center gap-2">
+            <Server className="w-4 h-4 text-emerald-400" /> Services
+          </h2>
+          <button onClick={onClose} className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800" aria-label="Close Services">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="flex items-center gap-1 px-5 pt-3">
+          {(['servers', 'mcp', 'integrations'] as const).map((t) => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`px-2.5 py-1 rounded-md text-xs ${tab === t ? 'bg-neutral-800 text-white font-semibold' : 'text-neutral-400 hover:text-white hover:bg-neutral-900'}`}
+            >
+              {t === 'servers' ? 'Servers' : t === 'mcp' ? 'MCP' : 'Integrations'}
+            </button>
+          ))}
+          {tab === 'servers' && (
+            <button onClick={read} className="ml-auto flex items-center gap-1 px-2 py-1 rounded-lg border border-neutral-700 text-xs text-neutral-300 hover:bg-neutral-800" aria-label="Check again">
+              <RefreshCw className="w-3 h-3" /> Check again
+            </button>
+          )}
+        </div>
+
+        {!api ? (
+          <p className="px-5 py-4 text-xs text-neutral-400">Services run in the SecondBrain desktop app.</p>
+        ) : tab === 'mcp' ? (
+          <section className="px-5 py-4" aria-label="MCP">
+            <p className="text-xs text-neutral-500">MCP: coming next.</p>
+          </section>
+        ) : tab === 'integrations' ? (
+          <section className="px-5 py-4" aria-label="Integrations">
+            <p className="text-xs text-neutral-500">Integrations: coming next.</p>
+          </section>
+        ) : (
+          <section className="px-5 py-4 space-y-3" aria-label="Servers">
+            {listError && <p className="text-xs text-amber-400">{listError}</p>}
+            <div className="rounded-xl border border-neutral-800 p-3 space-y-3">
+              {(servers || []).map((s) => {
+                const tone = statusTone(s.status);
+                const logOpen = openLogs.includes(s.id);
+                return (
+                  <div key={s.id} className="space-y-1.5">
+                    <div className="flex items-start gap-2 text-xs">
+                      <span className={`w-2 h-2 mt-1 rounded-full shrink-0 ${tone.dot}`} />
+                      <div className="flex-1">
+                        <div className="text-neutral-100">
+                          {s.label} <code className="text-neutral-500">{s.port ? `127.0.0.1:${s.port}` : 'no port'}</code> <span className={tone.text}>{statusWord(s.status)}</span>
+                        </div>
+                        <div className="text-neutral-500">{kindWord(s.kind)}</div>
+                      </div>
+                      <div className="flex gap-1 shrink-0">
+                        {(['start', 'stop', 'restart'] as const).map((action) => (
+                          <button
+                            key={action}
+                            onClick={() => control(s.id, action)}
+                            disabled={!s.canControl || busy !== null}
+                            aria-label={`${action} ${s.label}`}
+                            className="px-2 py-0.5 rounded-md border border-neutral-700 text-[11px] text-neutral-300 hover:bg-neutral-800 disabled:opacity-40"
+                          >
+                            {busy === `${s.id}:${action}` ? '…' : action[0].toUpperCase() + action.slice(1)}
+                          </button>
+                        ))}
+                        <button
+                          onClick={() => toggleLog(s.id)}
+                          aria-label={`${logOpen ? 'Hide' : 'Show'} the log of ${s.label}`}
+                          aria-pressed={logOpen}
+                          className={`flex items-center gap-1 px-2 py-0.5 rounded-md border border-neutral-700 text-[11px] hover:bg-neutral-800 ${logOpen ? 'bg-neutral-800 text-white' : 'text-neutral-300'}`}
+                        >
+                          <ScrollText className="w-3 h-3" /> Log
+                        </button>
+                      </div>
+                    </div>
+                    {errors[s.id] && <p className="pl-4 text-xs text-amber-400">{errors[s.id]}</p>}
+                    {logOpen && (
+                      <pre className="ml-4 max-h-64 overflow-auto rounded-lg bg-neutral-900 border border-neutral-800 p-2 text-[11px] leading-snug font-mono text-neutral-300 whitespace-pre">
+                        {logs[s.id] === undefined ? 'Reading…' : logs[s.id] || 'The log is empty.'}
+                      </pre>
+                    )}
+                  </div>
+                );
+              })}
+              {!servers && !listError && <p className="text-xs text-neutral-500">Checking…</p>}
+              {servers && !servers.length && <p className="text-xs text-neutral-500">No servers listed.</p>}
+            </div>
+          </section>
+        )}
+      </div>
+    </div>
+  );
+};

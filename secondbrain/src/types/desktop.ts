@@ -265,6 +265,33 @@ export interface DesktopBridge {
     /** Start, stop or restart his service, his MCP door, or both */
     control: (piece: StewardControlPiece, action: 'start' | 'stop' | 'restart') => Promise<StewardControlResult>;
   };
+  /** The Services window's Servers shelf: every server SecondBrain runs or watches, with start, stop, restart and its log */
+  services?: ServicesBridge;
+}
+
+export type ServiceKind = 'owned' | 'external';
+
+export type ServiceStatus = 'up' | 'down' | 'starting' | 'held';
+
+export interface ServiceInfo {
+  id: string;
+  label: string;
+  port: number | null;
+  /** owned: SecondBrain runs it; external: something else does (Ollama's own app) */
+  kind: ServiceKind;
+  status: ServiceStatus;
+  canControl: boolean;
+  /** why a control would be refused, when it would */
+  why?: string;
+  settings?: Record<string, unknown>;
+  logPath?: string | null;
+}
+
+export interface ServicesBridge {
+  list: () => Promise<ServiceInfo[]>;
+  control: (id: string, action: 'start' | 'stop' | 'restart') => Promise<{ ok: boolean; error?: string }>;
+  /** the last `lines` lines of its log */
+  log: (id: string, lines: number) => Promise<{ ok: true; file: string | null; text: string } | { ok: false; error: string }>;
 }
 
 export type StewardControlPiece = 'service' | 'mcp' | 'all';
