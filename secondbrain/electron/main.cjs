@@ -107,7 +107,7 @@ async function createWindow() {
     } catch (err) {
       console.error('[SecondBrain] Could not start local server:', err);
       dialog.showErrorBox(
-        'SecondBrain could not start',
+        'Jesster could not start',
         `${err.message}\n\nNotes are stored per local origin, so the app cannot safely fall back to a different port.`
       );
       app.quit();
@@ -136,7 +136,7 @@ async function createWindow() {
     height: 900,
     minWidth: 800,
     minHeight: 600,
-    title: 'SecondBrain Local - Ollama GPT-OSS:20B',
+    title: 'Jesster Local - Ollama GPT-OSS:20B',
     backgroundColor: '#09090b',
     icon: path.join(__dirname, '..', 'public', 'pwa-512x512.png'),
     webPreferences: {
@@ -247,7 +247,7 @@ ipcMain.handle('vault:reveal', (event) => {
 ipcMain.handle('vault:choose', async (event) => {
   guard(event);
   const r = await dialog.showOpenDialog(mainWindow, {
-    title: 'Choose the folder SecondBrain keeps notes in',
+    title: 'Choose the folder Jesster keeps notes in',
     defaultPath: getVault().dir,
     properties: ['openDirectory', 'createDirectory'],
   });
@@ -742,7 +742,7 @@ ipcMain.handle('telegram:pair', (event, chatId, allow) => {
 });
 ipcMain.handle('telegram:test', async (event) => {
   guard(event);
-  await getTelegram().broadcast('SecondBrain is connected to this chat.');
+  await getTelegram().broadcast('Jesster is connected to this chat.');
   return true;
 });
 
@@ -750,7 +750,7 @@ ipcMain.handle('telegram:test', async (event) => {
 const voiceJobs = new Map();
 telegramTranscriber = (buf, mime) =>
   new Promise((resolve, reject) => {
-    if (!mainWindow) return reject(new Error('the SecondBrain window is closed'));
+    if (!mainWindow) return reject(new Error('the Jesster window is closed'));
     const id = require('crypto').randomBytes(6).toString('hex');
     const timer = setTimeout(() => {
       voiceJobs.delete(id);
@@ -789,7 +789,7 @@ ipcMain.handle('voice:where', (event) => {
 // POST /mcp on this app's loopback origin, with a bearer key.
 async function serveMcp(req, res) {
   const share = getSettings().get('share');
-  if (!share.enabled) return res.status(404).json({ error: 'sharing is off (SecondBrain → Settings → Share with Atlas)' });
+  if (!share.enabled) return res.status(404).json({ error: 'sharing is off (Jesster → Settings → Share with Aurora & Manjuel)' });
   const host = String(req.headers.host || '').split(':')[0];
   if (!['127.0.0.1', 'localhost', '[::1]'].includes(host)) return res.status(421).json({ error: 'loopback only' });
   if (!atlas.keyOk(req.headers.authorization, share.key)) return res.status(401).json({ error: 'a bearer key is required' });

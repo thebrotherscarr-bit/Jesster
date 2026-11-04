@@ -27,13 +27,13 @@ export const AtlasButton: React.FC = () => {
         }
       }}
       disabled={busy}
-      title={error ? `Atlas did not open: ${error}` : 'Open Atlas: your development environment (the Atlas web app)'}
+      title={error ? `Aurora did not open: ${error}` : 'Open Aurora: your development environment (the glass)'}
       className={`flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-md transition-colors whitespace-nowrap shrink-0 hover:bg-neutral-900 disabled:opacity-60 ${
         error ? 'text-amber-300' : 'hover:text-neutral-200'
       }`}
     >
       {busy ? <RefreshCw className="w-3.5 h-3.5 text-sky-400 animate-spin" /> : <Globe className="w-3.5 h-3.5 text-sky-400" />}
-      <span className="hidden md:inline">{busy ? 'Starting Atlas…' : 'Open Atlas'}</span>
+      <span className="hidden md:inline">{busy ? 'Starting Aurora…' : 'Open Aurora'}</span>
     </button>
   );
 };

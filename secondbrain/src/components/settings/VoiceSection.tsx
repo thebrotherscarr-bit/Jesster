@@ -11,7 +11,7 @@ export const VoiceSection: React.FC<{ voice: VoiceSettings; onChange: (v: Partia
 
   const check = async () => {
     if (!desk?.voice?.where) {
-      setWhere('Speech-to-text runs in the SecondBrain desktop app.');
+      setWhere('Speech-to-text runs in the Jesster desktop app.');
       return;
     }
     const w = await desk.voice.where();

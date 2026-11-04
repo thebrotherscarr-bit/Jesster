@@ -20,21 +20,21 @@ const ESTATE: { name: string; is: string; does: string }[] = [
       "A MAF harness agent on Ollama inside a MAF workflow: plan, your Approve, execute, a model-free check, then his commit on your card. His service (hosted.py, 43120) is what the Agent tab talks to; his MCP (mcp_app.py, 43121) offers him as one tool to Manjuel and other clients.",
   },
   {
-    name: 'SecondBrain',
+    name: 'Jesster (SecondBrain)',
     is: 'The console. Its Agent tab is the workspace where you work with Steward.',
     does:
       "The notes app on this PC. It starts and stops Steward's service, shows his cards, and serves him through its MCP (/mcp on 43110): your notes, the web, skills, and the door's tools. It is also the door.",
   },
   {
     name: 'The door',
-    is: "The Atlas door's tools (git, pull requests, shell, flows, records, holds and the rest), served by SecondBrain at /mcp and on 43111.",
+    is: "Aurora's door: its tools (git, pull requests, shell, flows, records, holds and the rest), served by Jesster at /mcp and on 43111.",
     does:
       'A writing call from anyone but your own window is parked as a card ("Waiting on you") and written to the holds log. Your Approve runs exactly that call, as you; Deny runs nothing. Cards land in the window the call came through.',
   },
   {
-    name: 'Atlas',
-    is: 'The glass: the PWA (Aurora, the webapp) on 8091.',
-    does: "SecondBrain runs it as its child. Atlas's own cards, from the door on 43111, land in the glass.",
+    name: 'Aurora',
+    is: 'The glass: the PWA (the webapp) on 8091, opened by Open Aurora.',
+    does: "Jesster runs it as its child. Aurora's own cards, from the door on 43111, land in the glass.",
   },
   {
     name: 'Manjuel',
@@ -57,7 +57,7 @@ const ESTATE: { name: string; is: string; does: string }[] = [
     name: "The ground's MCP servers",
     is: 'What .mcp.json gives Claude Code and other clients.',
     does:
-      "notes: the Jesster notes kernel over worlds/notes, every save on a provenance chain. atlas: the door on 43111 over stdio (bin/atlas_bridge.py). secondbrain: SecondBrain's /mcp over stdio (bin/secondbrain_bridge.py), the same endpoint Steward uses. creative: ComfyUI and Modly on this PC. Writes through atlas and secondbrain wait as cards.",
+      "notes: the Jesster notes kernel over worlds/notes, every save on a provenance chain. atlas: the door on 43111 over stdio (bin/atlas_bridge.py). secondbrain: Jesster's /mcp over stdio (bin/secondbrain_bridge.py), the same endpoint Steward uses. creative: ComfyUI and Modly on this PC. Writes through atlas and secondbrain wait as cards.",
   },
 ];
 
@@ -167,7 +167,7 @@ export const StewardModal: React.FC<{ isOpen: boolean; onClose: () => void }> = 
         </div>
 
         {!api ? (
-          <p className="px-5 py-4 text-xs text-neutral-400">Steward runs in the SecondBrain desktop app.</p>
+          <p className="px-5 py-4 text-xs text-neutral-400">Steward runs in the Jesster desktop app.</p>
         ) : tab === 'estate' ? (
           <section className="px-5 py-4 space-y-3" aria-label="How it fits">
             {ESTATE.map((e) => (
@@ -231,9 +231,9 @@ export const StewardModal: React.FC<{ isOpen: boolean; onClose: () => void }> = 
               <p className="text-neutral-500">Reading…</p>
             ) : (
               <>
-                {!uses.shareOn && <p className="text-amber-400">SecondBrain's MCP is off (Settings → Share), so Steward cannot reach these.</p>}
+                {!uses.shareOn && <p className="text-amber-400">Jesster's MCP is off (Settings → Share), so Steward cannot reach these.</p>}
                 <div className="rounded-xl border border-neutral-800 p-3 space-y-1">
-                  <div className="text-sm text-white font-medium">Tools SecondBrain's MCP serves him ({uses.tools.length})</div>
+                  <div className="text-sm text-white font-medium">Tools Jesster's MCP serves him ({uses.tools.length})</div>
                   <div className="flex flex-wrap gap-1">
                     {uses.tools.map((t) => (
                       <code key={t} className="px-1.5 py-0.5 rounded bg-neutral-900 border border-neutral-800 text-neutral-300">{t}</code>
@@ -245,7 +245,7 @@ export const StewardModal: React.FC<{ isOpen: boolean; onClose: () => void }> = 
                   <div className="text-neutral-400">{uses.fileSkills.join(', ') || 'none found'}</div>
                 </div>
                 <div className="rounded-xl border border-neutral-800 p-3 space-y-1">
-                  <div className="text-sm text-white font-medium">Skill notes from SecondBrain ({uses.skillNotes.length})</div>
+                  <div className="text-sm text-white font-medium">Skill notes from Jesster ({uses.skillNotes.length})</div>
                   <div className="text-neutral-400">{uses.skillNotes.join(', ') || 'none'}</div>
                 </div>
                 <div className="rounded-xl border border-neutral-800 p-3 space-y-1">

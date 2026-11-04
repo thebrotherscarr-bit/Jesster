@@ -18,8 +18,8 @@ export default defineConfig(() => {
         includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'icon.svg'],
         manifest: {
           id: '/',
-          name: 'SecondBrain Local - Ollama GPT-OSS',
-          short_name: 'SecondBrain',
+          name: 'Jesster Local - Ollama GPT-OSS',
+          short_name: 'Jesster',
           description: 'A minimal, privacy-first Second Brain note-taking and knowledge synthesis system powered by your local Ollama desktop and GPT-OSS:20B model.',
           theme_color: '#09090b',
           background_color: '#09090b',

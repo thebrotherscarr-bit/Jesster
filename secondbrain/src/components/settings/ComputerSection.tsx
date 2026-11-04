@@ -39,7 +39,7 @@ export const ComputerSection: React.FC = () => {
       </div>
       <p className="text-xs text-neutral-400">
         Lets the agent hand a task to a vision model that sees your main screen and uses the mouse and keyboard. Starting
-        a task always asks you. While it runs, SecondBrain steps aside and a small panel shows each action, with a red ring
+        a task always asks you. While it runs, Jesster steps aside and a small panel shows each action, with a red ring
         where a click will land: Allow, Deny or Stop. <b className="text-neutral-200">Ctrl+Alt+Q</b> stops it at once.
         Scheduled automations can never use it.
       </p>

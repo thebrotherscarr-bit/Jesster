@@ -125,6 +125,15 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenSettings,
   onToggleMobileMenu,
 }) => {
+  // the Agent tab names Steward when he is the agent (Settings: agent.backend), else it is the local loop
+  const [backend, setBackend] = useState('');
+  useEffect(() => {
+    window.secondbrainDesktop?.settings
+      ?.get()
+      .then((s) => setBackend(String(s.agent?.backend || '')))
+      .catch(() => {});
+  }, []);
+  const agentLabel = backend === 'steward' ? 'Agent: Steward' : 'Agent';
   return (
     <header className="h-14 border-b border-neutral-800 bg-neutral-950/80 backdrop-blur-md px-3 sm:px-6 flex items-center justify-between gap-2 shrink-0 z-20">
       {/* Zone 1: Brand Wordmark */}
@@ -142,7 +151,7 @@ export const Header: React.FC<HeaderProps> = ({
           <Brain className="w-4 h-4 text-emerald-400" />
         </div>
         <span className="font-bold text-xs sm:text-sm tracking-tight text-white whitespace-nowrap">
-          SecondBrain <span className="text-neutral-500 font-normal hidden lg:inline">Local</span>
+          Jesster <span className="text-neutral-500 font-normal hidden lg:inline">Local</span>
           {desktopUpdate?.current ? (
             <span className="ml-1.5 text-[10px] font-normal text-neutral-500" title={`Desktop app build ${desktopUpdate.current}${desktopUpdate.commit ? ` (commit ${desktopUpdate.commit})` : ''}. Updates log to %TEMP%\\secondbrain-update.log`}>
               build {desktopUpdate.current}
@@ -182,13 +191,13 @@ export const Header: React.FC<HeaderProps> = ({
         {window.secondbrainDesktop?.agent && (
           <button
             onClick={() => onSelectTab('agent')}
-            title="Agent: a model that uses tools on your notes and the web"
+            title={backend === 'steward' ? 'Agent: Steward, who uses tools on your notes and the web' : 'Agent: a model that uses tools on your notes and the web'}
             className={`flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-md transition-colors whitespace-nowrap shrink-0 ${
               activeTab === 'agent' ? 'bg-neutral-800 text-white font-semibold' : 'hover:text-neutral-200 hover:bg-neutral-900'
             }`}
           >
             <Bot className="w-3.5 h-3.5" />
-            <span className="hidden md:inline">Agent</span>
+            <span className="hidden md:inline">{agentLabel}</span>
           </button>
         )}
 
@@ -251,7 +260,7 @@ export const Header: React.FC<HeaderProps> = ({
         {onOpenSettings && (
           <button
             onClick={onOpenSettings}
-            title="Settings: inbox, agent, Atlas, archive, Telegram, terminal"
+            title="Settings: inbox, agent, Aurora, archive, Telegram, terminal"
             aria-label="Settings"
             className="p-1.5 rounded-lg border border-neutral-800 bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white transition-colors shrink-0"
           >

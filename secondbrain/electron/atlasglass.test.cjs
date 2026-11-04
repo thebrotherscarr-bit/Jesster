@@ -89,7 +89,7 @@ test('no ground, or a port the door cannot take, is said plainly', async () => {
   const none = harness(null).opts;
   none.settingsGround = '';
   none.vaultDir = os.tmpdir();
-  assert.match((await boot(none)).error, /Settings → Atlas & Manjuel/);
+  assert.match((await boot(none)).error, /Settings → Aurora & Manjuel/);
   const g = ground();
   const { opts } = harness(g);
   opts.listenFn = async () => {
