@@ -1,7 +1,7 @@
 /**
  * Browser control for the agent. Off until the user turns it on in Settings.
  *
- * The agent gets its own visible window ("SecondBrain browser") with its own
+ * The agent gets its own visible window ("Jesster browser") with its own
  * cookies and logins, apart from the app and from Chrome. The user can watch
  * it and take over at any time (log in by hand, then let the agent continue).
  *
@@ -112,7 +112,7 @@ class AgentBrowser {
     this.win = new BrowserWindow({
       width: 1200,
       height: 860,
-      title: 'SecondBrain browser',
+      title: 'Jesster browser',
       backgroundColor: '#ffffff',
       autoHideMenuBar: true,
       webPreferences: { partition: this.partition, sandbox: true, contextIsolation: true, nodeIntegration: false, spellcheck: false },
@@ -125,7 +125,7 @@ class AgentBrowser {
     });
     wc.on('page-title-updated', (e, t) => {
       e.preventDefault();
-      this.win.setTitle(`SecondBrain browser · ${t}`);
+      this.win.setTitle(`Jesster browser · ${t}`);
     });
     this.win.on('closed', () => {
       this.win = null;
@@ -266,19 +266,19 @@ function tools(getBrowser, getConfig) {
   return [
     {
       name: 'browser_open',
-      description: 'Open a web page in the SecondBrain browser window (the user can see it) and return its text plus a numbered list of links, buttons and fields. Use this, not web_fetch, when you need to click, type, log in or use a site interactively.',
+      description: 'Open a web page in the Jesster browser window (the user can see it) and return its text plus a numbered list of links, buttons and fields. Use this, not web_fetch, when you need to click, type, log in or use a site interactively.',
       parameters: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] },
       run: async ({ url }) => render(await on().open(String(url || ''))),
     },
     {
       name: 'browser_read',
-      description: 'Read the page now showing in the SecondBrain browser again: its text and fresh element numbers. Do this after anything changes the page.',
+      description: 'Read the page now showing in the Jesster browser again: its text and fresh element numbers. Do this after anything changes the page.',
       parameters: { type: 'object', properties: {} },
       run: async () => render(await on().read()),
     },
     {
       name: 'browser_click',
-      description: 'Click a link, button or other element in the SecondBrain browser by its number from browser_open/browser_read. Returns the page afterwards.',
+      description: 'Click a link, button or other element in the Jesster browser by its number from browser_open/browser_read. Returns the page afterwards.',
       parameters: { type: 'object', properties: { ref: { type: 'string', description: 'the element number, like "12"' } }, required: ['ref'] },
       risky: ask,
       describe: ({ ref }) => `Click [${ref}] ${at(getBrowser())}`,
@@ -290,7 +290,7 @@ function tools(getBrowser, getConfig) {
     },
     {
       name: 'browser_type',
-      description: 'Type text into a field in the SecondBrain browser by its number. Replaces what is there unless clear is false; submit presses Enter after. Returns the page afterwards.',
+      description: 'Type text into a field in the Jesster browser by its number. Replaces what is there unless clear is false; submit presses Enter after. Returns the page afterwards.',
       parameters: {
         type: 'object',
         properties: {
@@ -312,7 +312,7 @@ function tools(getBrowser, getConfig) {
     },
     {
       name: 'browser_press',
-      description: 'Press a key in the SecondBrain browser: Enter, Tab, Escape, Backspace, Up, Down, Left, Right, PageDown, PageUp, Home, End.',
+      description: 'Press a key in the Jesster browser: Enter, Tab, Escape, Backspace, Up, Down, Left, Right, PageDown, PageUp, Home, End.',
       parameters: { type: 'object', properties: { key: { type: 'string' } }, required: ['key'] },
       risky: ask,
       describe: ({ key }) => `Press ${key} ${at(getBrowser())}`,
@@ -324,7 +324,7 @@ function tools(getBrowser, getConfig) {
     },
     {
       name: 'browser_scroll',
-      description: 'Scroll the SecondBrain browser page: down, up, top or bottom. Returns the page afterwards.',
+      description: 'Scroll the Jesster browser page: down, up, top or bottom. Returns the page afterwards.',
       parameters: { type: 'object', properties: { direction: { type: 'string', enum: ['down', 'up', 'top', 'bottom'] } } },
       run: async ({ direction }) => {
         const b = on();
@@ -334,7 +334,7 @@ function tools(getBrowser, getConfig) {
     },
     {
       name: 'browser_back',
-      description: 'Go back one page in the SecondBrain browser.',
+      description: 'Go back one page in the Jesster browser.',
       parameters: { type: 'object', properties: {} },
       run: async () => {
         const b = on();

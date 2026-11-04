@@ -26,7 +26,7 @@ export function setEngine(e: Engine | null) {
 export async function getEngine(_model = DEFAULT_MODEL, _onProgress?: Progress): Promise<Engine> {
   if (engine) return engine;
   const local = typeof window !== 'undefined' ? window.secondbrainDesktop?.voice?.local : undefined;
-  if (!local) throw new Error('Speech-to-text runs in the SecondBrain desktop app, on its local whisper.cpp.');
+  if (!local) throw new Error('Speech-to-text runs in the Jesster desktop app, on its local whisper.cpp.');
   return (samples) => local(samples);
 }
 

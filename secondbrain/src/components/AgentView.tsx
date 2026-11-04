@@ -131,7 +131,7 @@ export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice }) => 
   }, [turns, approvals]);
 
   if (!agent) {
-    return <div className="p-8 text-sm text-neutral-400">The agent runs in the SecondBrain desktop app.</div>;
+    return <div className="p-8 text-sm text-neutral-400">The agent runs in the Jesster desktop app.</div>;
   }
 
   const open = async (id: string) => {
@@ -235,13 +235,13 @@ export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice }) => 
                 <>
                   <p className="text-sm text-neutral-200">Ask Steward to do something.</p>
                   <p className="text-xs">
-                    Steward is your agent: he works through SecondBrain's notes, memory, skills and the web, and asks
+                    Steward is your agent: he works through Jesster's notes, memory, skills and the web, and asks
                     here before anything that needs your yes. Every conversation is saved as a note.
                   </p>
                 </>
               ) : (
                 <>
-                  <p className="text-sm text-neutral-200">Ask SecondBrain to do something.</p>
+                  <p className="text-sm text-neutral-200">Ask Jesster to do something.</p>
                   <p className="text-xs">
                     It can search, read and write your notes, keep your todo list, and look things up on the web, using
                     your local model ({ollamaConfig.model}). Every conversation is saved as a note.

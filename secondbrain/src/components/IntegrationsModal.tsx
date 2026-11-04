@@ -124,11 +124,11 @@ export const IntegrationsModal: React.FC<{
         </div>
 
         {!api ? (
-          <p className="px-5 py-4 text-xs text-neutral-400">Integrations run in the SecondBrain desktop app.</p>
+          <p className="px-5 py-4 text-xs text-neutral-400">Integrations run in the Jesster desktop app.</p>
         ) : (
           <>
             <section className="px-5 py-4 border-b border-neutral-900 space-y-3" aria-label="Models">
-              <div className="flex items-center gap-2 text-white text-sm font-medium"><KeyRound className="w-4 h-4 text-amber-300" /> Claude, ChatGPT and Gemini in SecondBrain</div>
+              <div className="flex items-center gap-2 text-white text-sm font-medium"><KeyRound className="w-4 h-4 text-amber-300" /> Claude, ChatGPT and Gemini in Jesster</div>
               <p className="text-xs text-neutral-400">
                 Add an API key and pick the model in <b>Ask Brain</b>. It is briefed from your notes like the local model:
                 the passages that answer the question are sent to that company with it. Keys stay in this PC's app

@@ -29,7 +29,7 @@ const { spawn, execFileSync } = require('child_process');
 const DOOR_PORT = 43111;
 const GLASS_PORT = 8091;
 const GLASS_URL = `http://127.0.0.1:${GLASS_PORT}/`;
-const NO_GROUND = 'The Atlas ground was not found. Set it in Settings → Atlas & Manjuel (the folder with manjuel.py).';
+const NO_GROUND = 'The Manjuel ground was not found. Set it in Settings → Aurora & Manjuel (the folder with manjuel.py).';
 
 /** Does something listen on this loopback port? */
 function answering(port, timeout = 400) {
@@ -220,12 +220,12 @@ async function boot({
   if (await probe(DOOR_PORT)) {
     const o = owner(DOOR_PORT);
     if (!o || o.name.toLowerCase() !== 'atlas-mcp.exe') {
-      return { error: `Port ${DOOR_PORT} is held by ${o ? o.name : 'another program'}, so SecondBrain cannot be the Atlas door there.` };
+      return { error: `Port ${DOOR_PORT} is held by ${o ? o.name : 'another program'}, so Jesster cannot be Aurora's door there.` };
     }
     const n = sitting(ground);
-    if (n) return { error: `Sitting ${n} is open in the old Atlas door on ${DOOR_PORT}. Close it, then press Atlas.` };
+    if (n) return { error: `Sitting ${n} is open in the old Aurora door on ${DOOR_PORT}. Close it, then press Open Aurora.` };
     kill(o.pid);
-    if (!(await wait(DOOR_PORT, 10000, probe, true))) return { error: `The old Atlas door on ${DOOR_PORT} did not stop.` };
+    if (!(await wait(DOOR_PORT, 10000, probe, true))) return { error: `The old Aurora door on ${DOOR_PORT} did not stop.` };
   }
   try {
     await listenFn(door, { wire });

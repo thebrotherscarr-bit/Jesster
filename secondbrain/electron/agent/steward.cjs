@@ -248,7 +248,7 @@ function service({ getConfig, vaultDir, answering, waitFor, startOwned, wait = 9
     if (!starting) {
       starting = (async () => {
         const dir = findSteward(cfg.dir, vaultDir(), script);
-        if (!dir) throw new Error('Steward was not found: SecondBrain looks for worlds\\steward beside the notes folder, or the folder in Settings (agent.steward.dir).');
+        if (!dir) throw new Error('Steward was not found: Jesster looks for worlds\\steward beside the notes folder, or the folder in Settings (agent.steward.dir).');
         const python = path.join(dir, ...PYTHON);
         if (!fs.existsSync(python)) throw new Error(`Steward's Python was not found at ${python}.`);
         child = startOwned(python, [path.join(...script)], dir, { ...process.env, STEWARD_PORT: String(port) }, [log, log]);

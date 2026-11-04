@@ -40,9 +40,9 @@ export const GIT_ACTS: Record<string, { label: string; call: (text: string) => [
 };
 
 export const GIT_REPOS: { project: string; label: string }[] = [
-  { project: 'secondbrain', label: 'SecondBrain' },
+  { project: 'secondbrain', label: 'Jesster' },
   { project: 'research', label: 'Manjuel' },
-  { project: 'atlas', label: 'Atlas' },
+  { project: 'atlas', label: 'Aurora' },
 ];
 
 /** The tag a note gets once the Tag notes block has tagged it, so the next run moves on. */
@@ -129,7 +129,7 @@ export function makeRunners(d: RunnerDeps): Runners {
 
     // A git act on one repository, through the door. A write that waits for him, or a refusal, stops the flow and says why.
     git: async ({ node, fill }) => {
-      if (!d.git) throw new Error('git blocks run in the SecondBrain desktop app');
+      if (!d.git) throw new Error('git blocks run in the Jesster desktop app');
       const project = String(node.data.repo || 'secondbrain');
       const act = GIT_ACTS[String(node.data.action || 'status')];
       if (!act) throw new Error(`no git act "${String(node.data.action)}"`);
@@ -147,7 +147,7 @@ export function makeRunners(d: RunnerDeps): Runners {
 
     // Dig the archive: the digger reads its sources into notes, only what changed since the last dig.
     dig: async ({ node }) => {
-      if (!d.archive) throw new Error('the archive digger runs in the SecondBrain desktop app');
+      if (!d.archive) throw new Error('the archive digger runs in the Jesster desktop app');
       const path = String(node.data.path || '').trim();
       if (path) await d.archive.sources({ add: path });
       const out = (await d.archive.dig()) as { sources?: { path: string; created?: number; updated?: number; unchanged?: number; files?: number; failed?: string[] }[] };

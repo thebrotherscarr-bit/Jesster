@@ -14,9 +14,9 @@ function pieces({ stewardPort, stewardMcpPort, appPort, doorPort, glassPort, oll
   return [
     { id: 'steward', label: "Steward's service", port: stewardPort, what: "hosted.py: his MAF workflow on MAF's Responses host; the Agent tab talks to it" },
     { id: 'steward-mcp', label: "Steward's MCP", port: stewardMcpPort, what: 'mcp_app.py: Steward as one MCP tool, for Manjuel and other clients' },
-    { id: 'secondbrain-mcp', label: "SecondBrain's MCP", port: appPort, what: "notes, web, skills and the door's tools at /mcp; Steward's connection to SecondBrain" },
-    { id: 'door', label: 'The door', port: doorPort, what: "Atlas's door, served by SecondBrain; a client's writes wait as cards" },
-    { id: 'glass', label: 'The Atlas glass', port: glassPort, what: 'the PWA' },
+    { id: 'secondbrain-mcp', label: "Jesster's MCP", port: appPort, what: "notes, web, skills and the door's tools at /mcp; Steward's connection to Jesster" },
+    { id: 'door', label: 'The door', port: doorPort, what: "Aurora's door, served by Jesster; a client's writes wait as cards" },
+    { id: 'glass', label: 'The Aurora glass', port: glassPort, what: 'the PWA' },
     { id: 'ollama', label: 'Ollama', port: ollamaPort, what: 'the local models Steward runs on' },
   ];
 }

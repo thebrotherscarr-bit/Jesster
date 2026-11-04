@@ -252,7 +252,7 @@ function serve(getGround, opts = {}) {
     /** { text, isError } for MCP content; a refusal is an error, a held call is not. */
     async call(name, args, caller = CLIENT) {
       const r = current();
-      if (!r) return { text: 'The Atlas ground was not found. Set it in Settings → Atlas & Manjuel (the folder with manjuel.py).', isError: true };
+      if (!r) return { text: 'The Manjuel ground was not found. Set it in Settings → Aurora & Manjuel (the folder with manjuel.py).', isError: true };
       try {
         return { text: String(await r.call(name, args, caller)), isError: false };
       } catch (e) {

@@ -36,7 +36,7 @@ export const TelegramSection: React.FC = () => {
         <Send className="w-4 h-4 text-sky-400" /> Telegram
       </div>
       <p className="text-xs text-neutral-400">
-        Chat with SecondBrain from your phone while the app runs. In Telegram, message <b>@BotFather</b>, send{' '}
+        Chat with Jesster from your phone while the app runs. In Telegram, message <b>@BotFather</b>, send{' '}
         <code>/newbot</code>, and paste the token it gives you here. Then message your bot: your chat shows up below to
         approve. Only approved chats get answers.
       </p>

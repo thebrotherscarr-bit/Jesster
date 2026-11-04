@@ -13,9 +13,9 @@ import { InboxSyncButton } from './Header.tsx';
  */
 
 const REPOS = [
-  { project: 'secondbrain', label: 'SecondBrain', where: 'worlds\\jesster' },
+  { project: 'secondbrain', label: 'Jesster', where: 'worlds\\jesster' },
   { project: 'research', label: 'Manjuel', where: 'Research' },
-  { project: 'atlas', label: 'Atlas', where: 'Research\\atlas' },
+  { project: 'atlas', label: 'Aurora', where: 'Research\\atlas' },
 ];
 
 interface Held {
@@ -42,7 +42,7 @@ const empty = (): Card => ({ st: null, prs: [], busy: 'reading', said: '', faile
 
 async function door(name: string, args: Record<string, unknown> = {}) {
   const d = window.secondbrainDesktop?.door;
-  if (!d) return { text: 'The GitHub shelf runs in the SecondBrain desktop app.', isError: true };
+  if (!d) return { text: 'The GitHub shelf runs in the Jesster desktop app.', isError: true };
   try {
     return await d.call(name, args);
   } catch (e) {

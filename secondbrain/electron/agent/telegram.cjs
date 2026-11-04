@@ -160,13 +160,13 @@ class Telegram {
         this.pending.set(String(chatId), { id: String(chatId), name, at: Date.now() });
         this.emit();
       }
-      await this.send(chatId, `This chat isn't paired with SecondBrain yet. Chat id: ${chatId}.\nApprove it in the app: Settings → Telegram.`);
+      await this.send(chatId, `This chat isn't paired with Jesster yet. Chat id: ${chatId}.\nApprove it in the app: Settings → Telegram.`);
       return;
     }
     let text = msg.text || msg.caption || '';
     if (!text && (msg.voice || msg.audio)) {
       if (!this.transcribe) {
-        await this.send(chatId, 'Voice notes need voice to be set up in SecondBrain (Settings → Voice).');
+        await this.send(chatId, 'Voice notes need voice to be set up in Jesster (Settings → Voice).');
         return;
       }
       const f = await this.api('getFile', { file_id: (msg.voice || msg.audio).file_id });
@@ -187,7 +187,7 @@ class Telegram {
       return;
     }
     if (text === '/status') {
-      await this.send(chatId, `SecondBrain is running. Model: ${this.agent.getModel().model}. Tools: ${this.agent.registry.schemas().length}.`);
+      await this.send(chatId, `Jesster is running. Model: ${this.agent.getModel().model}. Tools: ${this.agent.registry.schemas().length}.`);
       return;
     }
     await this.api('sendChatAction', { chat_id: chatId, action: 'typing' }).catch(() => {});
