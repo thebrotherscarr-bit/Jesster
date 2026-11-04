@@ -3,7 +3,7 @@ import { OllamaConfig } from '../types/index.ts';
 import { KernelSync } from '../hooks/useKernelSync.ts';
 import { DesktopUpdate } from '../hooks/useDesktopUpdate.ts';
 import { AtlasButton } from './AtlasButton.tsx';
-import { Brain, Cpu, Menu, Link2, Download, Settings as SettingsIcon, Bot } from 'lucide-react';
+import { Brain, Cpu, Link2, Download, Settings as SettingsIcon, Bot } from 'lucide-react';
 
 export type ActiveTab = 'notes' | 'agent';
 
@@ -16,7 +16,6 @@ interface HeaderProps {
   storage?: KernelSync;
   desktopUpdate?: DesktopUpdate | null;
   onOpenSettings?: () => void;
-  onToggleMobileMenu?: () => void;
 }
 
 /** Where notes are kept: the Jesster vault (with its chain) or this browser. */
@@ -70,7 +69,6 @@ export const Header: React.FC<HeaderProps> = ({
   storage,
   desktopUpdate,
   onOpenSettings,
-  onToggleMobileMenu,
 }) => {
   // the Agent tab names Steward when he is the agent (Settings: agent.backend), else it is the local loop
   const [backend, setBackend] = useState('');
@@ -87,16 +85,6 @@ export const Header: React.FC<HeaderProps> = ({
     <header className="h-14 border-b border-neutral-800 bg-neutral-950/80 backdrop-blur-md px-3 sm:px-6 flex items-center justify-between gap-2 shrink-0 z-20">
       {/* the wordmark */}
       <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
-        {onToggleMobileMenu && activeTab === 'notes' && (
-          <button
-            data-topbar="Menu"
-            onClick={onToggleMobileMenu}
-            className="md:hidden p-1.5 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors shrink-0"
-            aria-label="Toggle navigation menu"
-          >
-            <Menu className="w-4 h-4" />
-          </button>
-        )}
         <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-neutral-900 border border-neutral-700 flex items-center justify-center text-white shrink-0">
           <Brain className="w-4 h-4 text-emerald-400" />
         </div>

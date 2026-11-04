@@ -1,13 +1,8 @@
-import React, { useState, useEffect, useMemo, useTransition } from 'react';
-import { Note, NoteCategory, OllamaConfig } from './types/index.ts';
+import { useState, useEffect, useMemo } from 'react';
+import { Note, OllamaConfig } from './types/index.ts';
 import { INITIAL_SEED_NOTES } from './data/seedNotes.ts';
-import {
-  filterNotes,
-  sortNotes,
-  calculateBrainStats,
-  exportNotesToJson,
-  parseNotesFromJson,
-} from './utils/notes.ts';
+import { exportNotesToJson } from './utils/notes.ts';
+import { ShelfFilter, askAboutNote, initialNotes, notesShown, removeNoteConfirmed, shelfCounts } from './utils/notesView.ts';
 import {
   checkOllamaConnection,
   DEFAULT_OLLAMA_HOST,
@@ -33,36 +28,30 @@ const STORAGE_KEY_NOTES = 'secondbrain_local_notes_v1';
 const STORAGE_KEY_CONFIG = 'secondbrain_ollama_config_v1';
 
 export default function App() {
-  // Initialize notes from local storage or seed
+  // what this window kept last time; with a vault present nothing else (the vault loads its own), and the
+  // starter notes only in a browser with no vault
   const [notes, setNotes] = useState<Note[]>(() => {
+    let saved: string | null = null;
     try {
-      const saved = localStorage.getItem(STORAGE_KEY_NOTES);
-      if (saved) {
-        const parsed = parseNotesFromJson(saved);
-        if (parsed && parsed.length > 0) return parsed;
-      }
+      saved = localStorage.getItem(STORAGE_KEY_NOTES);
     } catch (e) {
       console.warn('Failed to load notes from localStorage:', e);
     }
-    return INITIAL_SEED_NOTES;
+    return initialNotes(saved, Boolean(window.secondbrainDesktop?.vault), INITIAL_SEED_NOTES);
   });
 
-  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(() => {
-    return notes.length > 0 ? notes[0].id : null;
-  });
+  // no note is open until one is picked; where the window is narrow, an open note takes the place of the list
+  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
 
   const [activeTab, setActiveTab] = useState<ActiveTab>(() => defaultTab(Boolean(window.secondbrainDesktop?.agent)));
-  const [activeCategory, setActiveCategory] = useState<NoteCategory | 'all'>('all');
-  const [activeTag, setActiveTag] = useState<string | 'all'>('all');
-  const [pinnedOnly, setPinnedOnly] = useState(false);
+  const [shelf, setShelf] = useState<ShelfFilter>('all');
   const [searchQuery, setSearchQuery] = useState('');
-  const [sortBy, setSortBy] = useState<'updated' | 'created' | 'title' | 'words'>('updated');
-  const [mobileNotesView, setMobileNotesView] = useState<'sidebar' | 'list' | 'editor'>('list');
+  // "Ask Steward about this note" fills the Agent tab's message box (n makes a second ask of the same note land)
+  const [agentDraft, setAgentDraft] = useState<{ text: string; n: number } | undefined>();
 
   const [isOllamaModalOpen, setIsOllamaModalOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isIntegrationsOpen, setIsIntegrationsOpen] = useState(false);
-  const [, startTransition] = useTransition();
 
   // Ollama Configuration State
   const [ollamaConfig, setOllamaConfig] = useState<OllamaConfig>(() => {
@@ -99,7 +88,6 @@ export default function App() {
       if (cmd.action === 'open' && cmd.id) {
         setSelectedNoteId(cmd.id);
         setActiveTab('notes');
-        setMobileNotesView('editor');
       } else if (cmd.action === 'message' && cmd.text) {
         setLiveMessage(cmd.text);
       }
@@ -188,27 +176,15 @@ export default function App() {
     };
   }, [ollamaConfig.hostUrl]);
 
-  // Compute filtered & sorted notes
-  const displayedNotes = useMemo(() => {
-    const filtered = filterNotes(notes, searchQuery, activeCategory, activeTag, pinnedOnly);
-    return sortNotes(filtered, sortBy);
-  }, [notes, searchQuery, activeCategory, activeTag, pinnedOnly, sortBy]);
+  // the list: one shelf (or all), narrowed by the search, newest first
+  const displayedNotes = useMemo(() => notesShown(notes, searchQuery, shelf), [notes, searchQuery, shelf]);
+  const shelves = useMemo(() => shelfCounts(notes), [notes]);
 
   // Selected note object
   const activeNote = useMemo(() => {
     if (!selectedNoteId) return null;
     return notes.find((n) => n.id === selectedNoteId) || null;
   }, [notes, selectedNoteId]);
-
-  // Aggregate brain stats
-  const stats = useMemo(() => calculateBrainStats(notes), [notes]);
-
-  // Distinct tags list
-  const allTags = useMemo(() => {
-    const set = new Set<string>();
-    notes.forEach((n) => n.tags.forEach((t) => set.add(t)));
-    return Array.from(set).sort();
-  }, [notes]);
 
   // Actions (a new note is Steward's to write: the operator, 2026-11-04, "steward is the note taker")
   const handleUpdateNote = (updatedFields: Partial<Note>) => {
@@ -218,60 +194,18 @@ export default function App() {
     );
   };
 
-  const handleDeleteNote = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setNotes((prev) => {
-      const remaining = prev.filter((n) => n.id !== id);
-      if (selectedNoteId === id) {
-        setSelectedNoteId(remaining.length > 0 ? remaining[0].id : null);
-      }
-      return remaining;
-    });
+  // a delete asks first; in the desktop app the file goes to the vault's .trash folder
+  const handleDeleteNote = (id: string) => {
+    const remaining = removeNoteConfirmed(notes, id, (message) => window.confirm(message));
+    if (!remaining) return;
+    setNotes(remaining);
+    if (selectedNoteId === id) setSelectedNoteId(null);
   };
 
-  const handleTogglePin = (id: string, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setNotes((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, isPinned: !n.isPinned, updatedAt: Date.now() } : n))
-    );
-  };
-
-  const handleExportNotes = () => {
-    const jsonString = exportNotesToJson(notes);
-    const blob = new Blob([jsonString], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `secondbrain-backup-${new Date().toISOString().slice(0, 10)}.json`;
-    link.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const handleImportNotes = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const content = event.target?.result as string;
-      const parsed = parseNotesFromJson(content);
-      if (parsed && parsed.length > 0) {
-        startTransition(() => {
-          setNotes(parsed);
-          setSelectedNoteId(parsed[0].id);
-        });
-      }
-    };
-    reader.readAsText(file);
-    e.target.value = '';
-  };
-
-  const handleResetSeedNotes = () => {
-    if (window.confirm('Reset all notes to starter Second Brain setup? Current notes will be replaced.')) {
-      startTransition(() => {
-        setNotes(INITIAL_SEED_NOTES);
-        setSelectedNoteId(INITIAL_SEED_NOTES[0].id);
-      });
-    }
+  const agentPresent = Boolean(window.secondbrainDesktop?.agent);
+  const handleAskSteward = (note: Note) => {
+    setAgentDraft((prev) => ({ text: askAboutNote(note), n: (prev?.n || 0) + 1 }));
+    setActiveTab('agent');
   };
 
   return (
@@ -300,16 +234,12 @@ export default function App() {
       {/* the top bar: the app's own navigation; Steward's controls are on the Agent tab's console */}
       <Header
         activeTab={activeTab}
-        onSelectTab={(tab) => {
-          setActiveTab(tab);
-          if (tab === 'notes') setMobileNotesView('list');
-        }}
+        onSelectTab={setActiveTab}
         onOpenOllamaModal={window.secondbrainDesktop?.agent ? undefined : () => setIsOllamaModalOpen(true)}
         ollamaConfig={ollamaConfig}
         storage={storage}
         onOpenSettings={window.secondbrainDesktop?.settings ? () => setIsSettingsOpen(true) : undefined}
         desktopUpdate={desktopUpdate}
-        onToggleMobileMenu={() => setMobileNotesView((prev) => (prev === 'sidebar' ? 'list' : 'sidebar'))}
       />
 
       {liveMessage && (
@@ -332,50 +262,27 @@ export default function App() {
       <main className="flex-1 min-h-0 flex overflow-hidden">
         {activeTab === 'notes' && (
           <>
-            <Sidebar
-              activeCategory={activeCategory}
-              onSelectCategory={(cat) => {
-                setActiveCategory(cat);
-                setMobileNotesView('list');
-              }}
-              activeTag={activeTag}
-              onSelectTag={(tag) => {
-                setActiveTag(tag);
-                setMobileNotesView('list');
-              }}
-              pinnedOnly={pinnedOnly}
-              onTogglePinnedOnly={() => setPinnedOnly((p) => !p)}
-              allTags={allTags}
-              stats={stats}
-              onExportNotes={handleExportNotes}
-              onImportNotes={handleImportNotes}
-              onResetSeedNotes={handleResetSeedNotes}
-              className={mobileNotesView === 'sidebar' ? 'flex' : 'hidden md:flex'}
-            />
+            <Sidebar shelves={shelves} active={shelf} onSelect={setShelf} />
 
             <NotesList
               notes={displayedNotes}
               selectedNoteId={selectedNoteId}
-              onSelectNote={(id) => {
-                setSelectedNoteId(id);
-                setMobileNotesView('editor');
-              }}
-              onTogglePin={handleTogglePin}
-              onDeleteNote={handleDeleteNote}
+              onSelectNote={setSelectedNoteId}
               searchQuery={searchQuery}
               onSearchChange={setSearchQuery}
-              sortBy={sortBy}
-              onSortChange={setSortBy}
-              className={mobileNotesView === 'list' ? 'flex' : 'hidden md:flex'}
+              shelves={shelves}
+              shelf={shelf}
+              onSelectShelf={setShelf}
+              className={activeNote ? 'hidden md:flex' : 'flex'}
             />
 
             <NoteEditor
               note={activeNote}
               onUpdateNote={handleUpdateNote}
-              ollamaConfig={ollamaConfig}
-              onOpenOllamaSetup={() => setIsOllamaModalOpen(true)}
-              onBackToNotes={() => setMobileNotesView('list')}
-              className={mobileNotesView === 'editor' ? 'flex' : 'hidden md:flex'}
+              onDeleteNote={handleDeleteNote}
+              onAskSteward={agentPresent ? handleAskSteward : undefined}
+              onBack={() => setSelectedNoteId(null)}
+              className={activeNote ? 'flex' : 'hidden md:flex'}
             />
           </>
         )}
@@ -386,6 +293,7 @@ export default function App() {
             <AgentView
               ollamaConfig={ollamaConfig}
               voice={voice}
+              draft={agentDraft}
               onOpenNote={(id) => {
                 setSelectedNoteId(id);
                 setActiveTab('notes');

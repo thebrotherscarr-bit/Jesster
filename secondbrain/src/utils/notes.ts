@@ -39,36 +39,6 @@ export function filterNotes(
 }
 
 /**
- * Sort notes by selected criteria
- */
-export function sortNotes(
-  notes: Note[],
-  sortBy: 'updated' | 'created' | 'title' | 'words' = 'updated'
-): Note[] {
-  return [...notes].sort((a, b) => {
-    // Pinned notes always surface to top unless sorting alphabetically
-    if (a.isPinned !== b.isPinned && sortBy !== 'title') {
-      return a.isPinned ? -1 : 1;
-    }
-
-    switch (sortBy) {
-      case 'created':
-        return b.createdAt - a.createdAt;
-      case 'title':
-        return a.title.localeCompare(b.title);
-      case 'words': {
-        const countA = calculateNoteStats(a.content).words;
-        const countB = calculateNoteStats(b.content).words;
-        return countB - countA;
-      }
-      case 'updated':
-      default:
-        return b.updatedAt - a.updatedAt;
-    }
-  });
-}
-
-/**
  * Word count, character count, and estimated reading time
  */
 export function calculateNoteStats(content: string): {
@@ -84,17 +54,6 @@ export function calculateNoteStats(content: string): {
   const chars = content.length;
   const readingTimeMinutes = Math.max(1, Math.ceil(words / 200));
   return { words, chars, readingTimeMinutes };
-}
-
-/**
- * Automatically scan text for hashtags like #secondbrain, #idea, #ollama
- */
-export function extractTagsFromText(text: string): string[] {
-  const regex = /#([a-zA-Z0-9_\-]+)/g;
-  const matches = text.match(regex);
-  if (!matches) return [];
-  const uniqueTags = new Set(matches.map((m) => m.slice(1).toLowerCase()));
-  return Array.from(uniqueTags);
 }
 
 /**

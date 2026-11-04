@@ -28,6 +28,8 @@ interface AgentViewProps {
   ollamaConfig: OllamaConfig;
   voice?: VoiceSettings;
   onOpenNote: (id: string) => void;
+  /** a message to start from: the Notes tab's "Ask Steward" (n changes on every ask) */
+  draft?: { text: string; n: number };
   /** the console's Servers shelf opens these app windows */
   onOpenOllama?: () => void;
   onOpenIntegrations?: () => void;
@@ -39,13 +41,17 @@ interface AgentViewProps {
  * saved as a session note. Beside it, the console (AgentConsole.tsx): everything
  * that watches and steers Steward, opened and closed like Aurora's Inspector.
  */
-export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice, onOpenOllama, onOpenIntegrations }) => {
+export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice, draft, onOpenOllama, onOpenIntegrations }) => {
   const agent = window.secondbrainDesktop?.agent;
   const [sessions, setSessions] = useState<{ id: string; title: string; updatedAt: number; source?: string }[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [busy, setBusy] = useState(false);
   const [input, setInput] = useState('');
+  // the Notes tab's "Ask Steward" puts the note in the message box; he sends nothing until it is sent
+  useEffect(() => {
+    if (draft) setInput(draft.text);
+  }, [draft]);
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
   // the console on the right and the chats bar on the left fold the same way, each remembered
   const [consoleOpen, setConsoleOpen] = useState(() => panelOpen(store(), CONSOLE_OPEN_KEY));

@@ -1,163 +1,91 @@
 import React from 'react';
 import { Note } from '../types/index.ts';
-import { calculateNoteStats } from '../utils/notes.ts';
-import { Search, Pin, Trash2, X } from 'lucide-react';
+import { ShelfFilter, shortDate } from '../utils/notesView.ts';
+import { Search, X } from 'lucide-react';
 
 interface NotesListProps {
   notes: Note[];
   selectedNoteId: string | null;
   onSelectNote: (id: string) => void;
-  onTogglePin: (id: string, e: React.MouseEvent) => void;
-  onDeleteNote: (id: string, e: React.MouseEvent) => void;
   searchQuery: string;
   onSearchChange: (q: string) => void;
-  sortBy: 'updated' | 'created' | 'title' | 'words';
-  onSortChange: (sort: 'updated' | 'created' | 'title' | 'words') => void;
+  /** the shelves again, as a picker, where the window is too narrow for the shelf column */
+  shelves: { id: ShelfFilter; label: string; count: number }[];
+  shelf: ShelfFilter;
+  onSelectShelf: (shelf: ShelfFilter) => void;
   className?: string;
 }
 
+/** A search and a plain list: each note's title and a short date, newest first. */
 export const NotesList: React.FC<NotesListProps> = ({
   notes,
   selectedNoteId,
   onSelectNote,
-  onTogglePin,
-  onDeleteNote,
   searchQuery,
   onSearchChange,
-  sortBy,
-  onSortChange,
+  shelves,
+  shelf,
+  onSelectShelf,
   className = '',
-}) => {
-  const formatTime = (ts: number) => {
-    const diffMs = Date.now() - ts;
-    const diffMins = Math.floor(diffMs / 60000);
-    const diffHours = Math.floor(diffMins / 60);
-    const diffDays = Math.floor(diffHours / 24);
-
-    if (diffMins < 1) return 'just now';
-    if (diffMins < 60) return `${diffMins}m ago`;
-    if (diffHours < 24) return `${diffHours}h ago`;
-    if (diffDays === 1) return 'yesterday';
-    return `${diffDays}d ago`;
-  };
-
-  return (
-    <div className={`w-full md:w-80 border-r border-neutral-800 bg-neutral-950 flex flex-col h-[calc(100vh-3.5rem)] shrink-0 ${className}`}>
-      {/* Top search & sorting bar */}
-      <div className="p-3 border-b border-neutral-800 space-y-2">
-        <div className="relative">
-          <Search className="w-4 h-4 text-neutral-400 absolute left-2.5 top-2.5 pointer-events-none" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => onSearchChange(e.target.value)}
-            placeholder="Search notes & #tags..."
-            className="w-full pl-8 pr-7 py-1.5 bg-neutral-900 border border-neutral-800 rounded-lg text-xs text-white placeholder-neutral-400 focus:outline-none focus:border-neutral-600"
-          />
-          {searchQuery && (
-            <button
-              onClick={() => onSearchChange('')}
-              className="absolute right-2 top-2 text-neutral-500 hover:text-white"
-            >
-              <X className="w-3.5 h-3.5" />
-            </button>
-          )}
-        </div>
-
-        <div className="flex items-center justify-between text-[11px] text-neutral-400">
-          <span className="tabular-nums font-mono">{notes.length} {notes.length === 1 ? 'note' : 'notes'}</span>
-          <div className="flex items-center gap-1.5">
-            <span>Sort:</span>
-            <select
-              value={sortBy}
-              onChange={(e) => onSortChange(e.target.value as any)}
-              className="bg-transparent text-neutral-300 font-medium focus:outline-none cursor-pointer hover:text-white"
-            >
-              <option value="updated" className="bg-neutral-900">Recent</option>
-              <option value="created" className="bg-neutral-900">Created</option>
-              <option value="title" className="bg-neutral-900">Title</option>
-              <option value="words" className="bg-neutral-900">Words</option>
-            </select>
-          </div>
-        </div>
-      </div>
-
-      {/* Note Cards List */}
-      <div className="flex-1 overflow-y-auto divide-y divide-neutral-900">
-        {notes.length === 0 ? (
-          <div className="p-6 text-center space-y-3">
-            <p className="text-xs text-neutral-400">No matching notes found. Ask Steward to write one.</p>
-          </div>
-        ) : (
-          notes.map((note) => {
-            const isSelected = selectedNoteId === note.id;
-            const stats = calculateNoteStats(note.content);
-
-            // Clean snippet
-            const snippet = note.content
-              .replace(/^[#\s\-*>`_]+/gm, '')
-              .replace(/\[[ xX]\]/g, '')
-              .slice(0, 110)
-              .trim();
-
-            return (
-              <div
-                key={note.id}
-                onClick={() => onSelectNote(note.id)}
-                className={`group p-3.5 cursor-pointer transition-colors relative flex flex-col gap-1.5 ${
-                  isSelected
-                    ? 'bg-neutral-900/90'
-                    : 'hover:bg-neutral-900/40'
-                }`}
-              >
-                {/* Header row: Title & Actions */}
-                <div className="flex items-start justify-between gap-2">
-                  <h3
-                    className={`text-xs font-semibold leading-snug line-clamp-1 ${
-                      isSelected ? 'text-white' : 'text-neutral-200 group-hover:text-white'
-                    }`}
-                  >
-                    {note.title || 'Untitled Note'}
-                  </h3>
-
-                  <div className="flex items-center gap-1 shrink-0 opacity-80 group-hover:opacity-100">
-                    <button
-                      onClick={(e) => onTogglePin(note.id, e)}
-                      title={note.isPinned ? 'Unpin note' : 'Pin note'}
-                      className={`p-1 rounded hover:bg-neutral-800 transition-colors ${
-                        note.isPinned ? 'text-amber-400' : 'text-neutral-600 hover:text-neutral-300'
-                      }`}
-                    >
-                      <Pin className="w-3 h-3 fill-current" />
-                    </button>
-                    <button
-                      onClick={(e) => onDeleteNote(note.id, e)}
-                      title="Delete note"
-                      className="p-1 rounded text-neutral-600 hover:text-rose-400 hover:bg-neutral-800 transition-colors"
-                    >
-                      <Trash2 className="w-3 h-3" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Content snippet */}
-                <p className="text-[11px] text-neutral-400 line-clamp-2 leading-relaxed">
-                  {snippet || 'Empty note...'}
-                </p>
-
-                {/* Unboxed Metadata (Zero-pill discipline) */}
-                <div className="flex items-center gap-2 text-[10px] text-neutral-400 font-mono pt-1">
-                  <span className="capitalize">{note.category}</span>
-                  <span aria-hidden="true">·</span>
-                  <span className="tabular-nums">{stats.words}w</span>
-                  <span aria-hidden="true">·</span>
-                  <span>{formatTime(note.updatedAt)}</span>
-                </div>
-              </div>
-            );
-          })
+}) => (
+  <section aria-label="Notes" className={`w-full md:w-72 shrink-0 min-w-0 min-h-0 flex-col border-r border-neutral-800 ${className}`}>
+    <div className="flex items-center gap-2 px-3 py-2 border-b border-neutral-800 min-w-0">
+      <div className="relative flex-1 min-w-0">
+        <Search className="w-3.5 h-3.5 text-neutral-500 absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none" />
+        <input
+          type="search"
+          value={searchQuery}
+          onChange={(e) => onSearchChange(e.target.value)}
+          placeholder="Search notes"
+          aria-label="Search notes"
+          className="w-full pl-7 pr-7 py-1 bg-neutral-900 border border-neutral-800 rounded-md text-xs text-white placeholder-neutral-500 focus:outline-none focus:border-neutral-600"
+        />
+        {searchQuery && (
+          <button
+            onClick={() => onSearchChange('')}
+            aria-label="Clear the search"
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 text-neutral-500 hover:text-white"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
         )}
       </div>
+      <select
+        value={shelf}
+        onChange={(e) => onSelectShelf(e.target.value as ShelfFilter)}
+        aria-label="Shelf"
+        className="lg:hidden shrink-0 max-w-[45%] bg-neutral-900 border border-neutral-800 rounded-md px-1.5 py-1 text-xs text-neutral-200 focus:outline-none"
+      >
+        {shelves.map((s) => (
+          <option key={s.id} value={s.id}>
+            {s.label} ({s.count})
+          </option>
+        ))}
+      </select>
     </div>
-  );
-};
+
+    <ul className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-2 space-y-0.5">
+      {notes.length === 0 ? (
+        <li className="px-2 py-6 text-center text-xs text-neutral-500">
+          {searchQuery ? 'No notes match the search.' : 'No notes here yet. Steward writes them.'}
+        </li>
+      ) : (
+        notes.map((note) => (
+          <li key={note.id} className="min-w-0">
+            <button
+              onClick={() => onSelectNote(note.id)}
+              aria-current={note.id === selectedNoteId}
+              title={note.title || 'Untitled'}
+              className={`w-full min-w-0 flex items-baseline gap-2 px-2 py-1.5 rounded-md text-left text-xs ${
+                note.id === selectedNoteId ? 'bg-neutral-800 text-white' : 'text-neutral-300 hover:bg-neutral-900 hover:text-white'
+              }`}
+            >
+              <span className="flex-1 min-w-0 truncate">{note.title || 'Untitled'}</span>
+              <span className="shrink-0 tabular-nums text-[11px] text-neutral-500">{shortDate(note.updatedAt)}</span>
+            </button>
+          </li>
+        ))
+      )}
+    </ul>
+  </section>
+);

@@ -2,9 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   filterNotes,
-  sortNotes,
   calculateNoteStats,
-  extractTagsFromText,
   calculateBrainStats,
   buildNotesContextForRag,
   exportNotesToJson,
@@ -67,18 +65,6 @@ test('filterNotes filters correctly by query, category, and tags', () => {
   assert.equal(pinnedResult[0].id, 'note-1');
 });
 
-test('sortNotes orders correctly by updated, created, title, and word count', () => {
-  // Pinned note should come first for 'updated'
-  const sortedUpdated = sortNotes(mockNotes, 'updated');
-  assert.equal(sortedUpdated[0].id, 'note-1');
-
-  // Sort by title
-  const sortedTitle = sortNotes(mockNotes, 'title');
-  assert.equal(sortedTitle[0].title, 'Archive: 2025 Tech Stack');
-  assert.equal(sortedTitle[1].title, 'Daily Deep Work Routine');
-  assert.equal(sortedTitle[2].title, 'Local Ollama Setup Guide');
-});
-
 test('calculateNoteStats measures word count and reading time', () => {
   const statsEmpty = calculateNoteStats('');
   assert.equal(statsEmpty.words, 0);
@@ -86,11 +72,6 @@ test('calculateNoteStats measures word count and reading time', () => {
   const stats = calculateNoteStats('One two three four five six seven eight nine ten.');
   assert.equal(stats.words, 10);
   assert.equal(stats.readingTimeMinutes, 1);
-});
-
-test('extractTagsFromText identifies hashtags accurately', () => {
-  const tags = extractTagsFromText('Here are #productivity tips for #secondbrain and #ollama!');
-  assert.deepEqual(tags.sort(), ['ollama', 'productivity', 'secondbrain'].sort());
 });
 
 test('calculateBrainStats produces correct aggregate metrics', () => {
