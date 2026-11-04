@@ -54,6 +54,7 @@ function build(info) {
     '## Switched on',
     `- Terminal ${yes(st.terminal.enabled)} · Browser ${yes(st.browser.enabled)}${st.browser.enabled ? ` (ask each: ${yes(st.browser.askEachAction !== false)})` : ''} · Computer use ${yes(st.computer.enabled)}${st.computer.enabled ? ` (ask each: ${yes(st.computer.askEachAction !== false)})` : ''}`,
     `- Telegram ${yes(st.telegram.enabled)}${st.telegram.token ? '' : ' (no bot token)'} · paired chats: ${(st.telegram.allowedChats || []).length}`,
+    ...(st.discord ? [`- Discord ${yes(st.discord.enabled)}${st.discord.token ? '' : ' (no bot token)'} · paired users: ${(st.discord.allowedUsers || []).length}`] : []),
     `- Voice replies ${yes(st.voice.speakReplies)} · Whisper ${st.voice.whisperModel}`,
     `- Share with Atlas & Manjuel ${yes(st.share.enabled)}${st.share.enabled ? ` (writes ${yes(st.share.writes)})` : ''}`,
     '',

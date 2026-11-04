@@ -67,7 +67,7 @@ const ESTATE_TOOLS = [
   },
   {
     name: 'approvals_history',
-    description: 'The cards the operator has answered (Allow, Deny, Always, a timeout), newest first: id, tool, summary, answer, where (window or telegram), time.',
+    description: 'The cards the operator has answered (Allow, Deny, Always, a timeout), newest first: id, tool, summary, answer, where (window, telegram or discord), time.',
     inputSchema: { type: 'object', properties: { limit: { type: 'integer', minimum: 1, maximum: MAX_HISTORY, description: `at most ${MAX_HISTORY}; 50 when left out` } } },
     annotations: { title: 'Approvals history', ...read },
   },

@@ -24,6 +24,7 @@ const memory = require('./agent/memory.cjs');
 const sched = require('./agent/schedules.cjs');
 const { McpClient } = require('./agent/mcp.cjs');
 const { Telegram } = require('./agent/telegram.cjs');
+const { Discord } = require('./agent/discord.cjs');
 const phone = require('./agent/phone.cjs');
 const subagents = require('./agent/subagents.cjs');
 const terminal = require('./agent/terminal.cjs');
@@ -304,7 +305,7 @@ ipcMain.handle('vault:import', async (event, dropped) => {
 });
 
 // ---- settings for the page (secrets masked) ------------------------------
-const PAGE_SECTIONS = ['inbox', 'agent', 'telegram', 'terminal', 'voice', 'browser', 'computer', 'atlas', 'services'];
+const PAGE_SECTIONS = ['inbox', 'agent', 'telegram', 'discord', 'terminal', 'voice', 'browser', 'computer', 'atlas', 'services'];
 ipcMain.handle('settings:get', (event) => {
   guard(event);
   return getSettings().public();
@@ -313,7 +314,7 @@ ipcMain.handle('settings:set', (event, section, value) => {
   guard(event);
   if (!PAGE_SECTIONS.includes(section) || !value || typeof value !== 'object') throw new Error('not a setting');
   // a masked token coming back from the page means "unchanged"
-  if (section === 'telegram' && typeof value.token === 'string' && value.token.startsWith('••••')) delete value.token;
+  if ((section === 'telegram' || section === 'discord') && typeof value.token === 'string' && value.token.startsWith('••••')) delete value.token;
   getSettings().set(section, value);
   for (const fn of settingsListeners) fn(section);
   return getSettings().public();
@@ -396,7 +397,7 @@ async function sendReport(note) {
   const info = updater.buildInfo();
   const text = report.scrub(
     report.build({ build: info, settings: st, inbox: inboxStatus(), mcp: getMcp().status(), ollama, notes, note }),
-    [st.telegram.token, st.share.key]
+    [st.telegram.token, st.discord.token, st.share.key]
   );
   const r = await report.push(st.inbox.clone, text, { buildNo: info.build });
   getSettings().set('inbox', { reportedBuild: info.build });
@@ -772,6 +773,48 @@ ipcMain.handle('telegram:test', async (event) => {
   return true;
 });
 
+// ---- Discord: his own bot, over the Gateway (outbound only) -----------------------
+let discord = null;
+function getDiscord() {
+  if (!discord) {
+    discord = new Discord({
+      getConfig: () => getSettings().get('discord'),
+      agent: getAgent(),
+      phone: getPhoneLog(),
+      // each user's conversation with Steward, kept across restarts
+      sessions: phone.chatSessions(path.join(app.getPath('userData'), 'phone-sessions.json'), 'discord'),
+      onState: (st) => mainWindow && mainWindow.webContents.send('discord:state', st),
+      transcribe: (buf, mime) => (telegramTranscriber ? telegramTranscriber(buf, mime) : Promise.reject(new Error('voice is not set up'))),
+    });
+  }
+  return discord;
+}
+async function restartDiscord() {
+  getDiscord().stop();
+  return getDiscord().start();
+}
+settingsListeners.push((section) => section === 'discord' && restartDiscord());
+ipcMain.handle('discord:state', (event) => {
+  guard(event);
+  return getDiscord().state();
+});
+ipcMain.handle('discord:pair', (event, userId, allow) => {
+  guard(event);
+  const cfg = getSettings().get('discord');
+  const id = String(userId);
+  const users = new Set((cfg.allowedUsers || []).map(String));
+  if (allow) users.add(id);
+  else users.delete(id);
+  getSettings().set('discord', { allowedUsers: [...users] });
+  getDiscord().approvePairing(id);
+  return getDiscord().state();
+});
+ipcMain.handle('discord:test', async (event) => {
+  guard(event);
+  await getDiscord().broadcast('Jesster is connected to this chat.');
+  return true;
+});
+
 // ---- voice: Telegram voice notes are transcribed by the page (Whisper) ----------
 const voiceJobs = new Map();
 telegramTranscriber = (buf, mime) =>
@@ -1005,6 +1048,7 @@ if (!gotSingleInstanceLock) {
     // automations: check every 30s; missed runs catch up shortly after start
     schedulerTimer = setInterval(schedulerTick, 30000);
     setTimeout(() => getTelegram().start(), 2000);
+    setTimeout(() => getDiscord().start(), 2000);
     setTimeout(schedulerTick, 15000);
     // Steward warms up with the app, so the Agent tab's first message does not wait for his start
     if (getSettings().get('agent').backend === 'steward') stewardService.ensure().catch((e) => console.error('[SecondBrain] steward:', e.message));
@@ -1051,5 +1095,6 @@ app.on('before-quit', () => {
   ollamaServer.dispose(); // before will-quit ends it (atlasglass stopOwned): its exit is not a death to restart
   if (mcp) mcp.stopAll();
   if (telegram) telegram.stop();
+  if (discord) discord.stop();
   stopLocalServer();
 });
