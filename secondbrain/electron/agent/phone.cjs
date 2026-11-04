@@ -74,9 +74,11 @@ function log(file, { cap = CAP, onAppend = () => {} } = {}) {
       c.at = e.at;
       if (e.text) c.last = String(e.text).slice(0, 120);
       c.count += 1;
+      by.delete(key); // re-inserted, so the map's order is the order each conversation last moved
       by.set(key, c);
     }
-    return [...by.values()].map((c) => ({ ...c, label: `${LABELS[c.channel]} · ${c.title || c.chatId}` })).sort((a, b) => String(b.at).localeCompare(String(a.at)));
+    // Lines written in the same millisecond share a time: the stable sort then keeps file order, latest first.
+    return [...by.values()].reverse().map((c) => ({ ...c, label: `${LABELS[c.channel]} · ${c.title || c.chatId}` })).sort((a, b) => String(b.at).localeCompare(String(a.at)));
   }
   return { append, read, list, file };
 }
