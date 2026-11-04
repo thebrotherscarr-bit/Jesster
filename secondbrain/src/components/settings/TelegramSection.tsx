@@ -10,6 +10,7 @@ export const TelegramSection: React.FC = () => {
   const [state, setState] = useState<TelegramState | null>(null);
   const [token, setToken] = useState(''); // only what the user types; the saved token stays in the main process
   const [saved, setSaved] = useState(''); // the saved token's last four, from the masked settings
+  const [fromEnv, setFromEnv] = useState(''); // the ground's .env token's last four, when Settings holds none
   const [enabled, setEnabled] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
@@ -17,8 +18,9 @@ export const TelegramSection: React.FC = () => {
     if (!bridge || !desk?.settings) return;
     bridge.state().then(setState);
     desk.settings.get().then((s) => {
-      const t = s.telegram as { token: string; enabled: boolean };
+      const t = s.telegram as { token: string; enabled: boolean; fromEnv?: string };
       setSaved(t.token ? t.token.slice(-4) : '');
+      setFromEnv(t.fromEnv || '');
       setEnabled(Boolean(t.enabled));
     });
     return bridge.onState(setState);
@@ -47,12 +49,18 @@ export const TelegramSection: React.FC = () => {
           type="password"
           value={token}
           onChange={(e) => setToken(e.target.value)}
-          placeholder={saved ? `Saved, ends in ${saved}. Paste a new token to replace it` : 'Bot token from @BotFather'}
+          placeholder={
+            saved
+              ? `Saved, ends in ${saved}. Paste a new token to replace it`
+              : fromEnv
+                ? `From .env, ends in ${fromEnv}. Paste a token to use another`
+                : 'Bot token from @BotFather'
+          }
           aria-label="Telegram bot token"
           className="flex-1 rounded-lg bg-neutral-900 border border-neutral-800 px-2.5 py-1.5 text-xs text-white"
         />
         <button
-          disabled={!token.trim() && !saved}
+          disabled={!token.trim() && !saved && !fromEnv}
           onClick={() => {
             const patch = tokenPatch(token);
             save(patch).then(() => {

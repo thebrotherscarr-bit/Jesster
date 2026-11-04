@@ -12,7 +12,9 @@ const DEFAULTS = {
   // backend 'steward': the Agent tab talks to Steward (agent/steward.cjs); 'ollama': the local loop
   // check: Claude checks each Steward turn in the Agent tab (agent/checker.cjs), on the Integrations key
   agent: { host: 'http://localhost:11434', model: 'gpt-oss:20b', maxSteps: 12, backend: 'steward', steward: { dir: '', port: 43120 }, check: false },
-  telegram: { token: '', allowedChats: [], enabled: false },
+  // off: turned off explicitly (set() keeps it with enabled); with the token from the ground's .env
+  // (TELEGRAM_STEWARDBOT_KEY) Telegram runs unless off
+  telegram: { token: '', allowedChats: [], enabled: false, off: false },
   discord: { token: '', allowedUsers: [], enabled: false }, // his own bot (agent/discord.cjs); allowedUsers: paired user ids
   // his own account, linked as a device (agent/whatsapp.cjs); its keys live in userData\whatsapp-auth, not here.
   // selfChat: answer in his "Message yourself" chat; allowedChats: other numbers he approved
@@ -93,6 +95,8 @@ class Settings {
 
   set(section, value) {
     value = dropMasks(section, value);
+    // Telegram's on/off, when set, is remembered as his: off stays off even with the .env's token
+    if (section === 'telegram' && value && typeof value.enabled === 'boolean') value = { ...value, off: !value.enabled };
     this.data[section] = section in DEFAULTS && typeof DEFAULTS[section] === 'object' && DEFAULTS[section]
       ? merge(this.data[section] || DEFAULTS[section], value)
       : value;
@@ -101,9 +105,12 @@ class Settings {
     return this.data[section];
   }
 
-  /** What the page may see: everything but secrets, which show as set/unset. */
-  public() {
+  /** What the page may see: everything but secrets, which show as set/unset. telegramEnv: the .env's token, shown by its last four only. */
+  public({ telegramEnv = '' } = {}) {
     const d = JSON.parse(JSON.stringify(this.data));
+    const tg = telegramEffective(d.telegram, telegramEnv);
+    d.telegram.enabled = tg.enabled;
+    d.telegram.fromEnv = tg.from === 'env' ? telegramEnv.slice(-4) : '';
     d.telegram.token = d.telegram.token ? '••••••' + d.telegram.token.slice(-4) : '';
     d.discord.token = d.discord.token ? '••••••' + d.discord.token.slice(-4) : '';
     d.share.key = d.share.key ? '••••' + d.share.key.slice(-4) : '';
@@ -112,4 +119,15 @@ class Settings {
   }
 }
 
-module.exports = { Settings, DEFAULTS, merge };
+/**
+ * Telegram as it runs: the token Settings holds, else the ground's .env's (envToken); enabled as set, and on
+ * when the token comes from .env and it was never turned off. from: 'settings' | 'env' | ''.
+ */
+function telegramEffective(tg, envToken = '') {
+  const t = tg || {};
+  const from = t.token ? 'settings' : envToken ? 'env' : '';
+  const enabled = from === 'env' ? !t.off : t.enabled === true;
+  return { ...t, token: t.token || envToken || '', enabled, from };
+}
+
+module.exports = { Settings, DEFAULTS, merge, telegramEffective };

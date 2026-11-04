@@ -6,7 +6,7 @@ const express = require('express');
 const updater = require('./updater.cjs');
 const fs = require('fs');
 const { Vault, importFile, SUPPORTED } = require('./vaultfs.cjs');
-const { Settings } = require('./settings.cjs');
+const { Settings, telegramEffective } = require('./settings.cjs');
 const inbox = require('./inbox.cjs');
 const report = require('./report.cjs');
 const atlas = require('./atlas.cjs');
@@ -310,7 +310,7 @@ ipcMain.handle('vault:import', async (event, dropped) => {
 const PAGE_SECTIONS = ['inbox', 'agent', 'telegram', 'discord', 'whatsapp', 'terminal', 'voice', 'browser', 'computer', 'atlas', 'services'];
 ipcMain.handle('settings:get', (event) => {
   guard(event);
-  return getSettings().public();
+  return getSettings().public({ telegramEnv: telegramEnv() });
 });
 ipcMain.handle('settings:set', (event, section, value) => {
   guard(event);
@@ -319,7 +319,7 @@ ipcMain.handle('settings:set', (event, section, value) => {
   if ((section === 'telegram' || section === 'discord') && typeof value.token === 'string' && value.token.includes('•')) delete value.token;
   getSettings().set(section, value);
   for (const fn of settingsListeners) fn(section);
-  return getSettings().public();
+  return getSettings().public({ telegramEnv: telegramEnv() });
 });
 const settingsListeners = [];
 
@@ -399,7 +399,7 @@ async function sendReport(note) {
   const info = updater.buildInfo();
   const text = report.scrub(
     report.build({ build: info, settings: st, inbox: inboxStatus(), mcp: getMcp().status(), ollama, notes, note }),
-    [st.telegram.token, st.discord.token, st.share.key]
+    [st.telegram.token, telegramEnv(), st.discord.token, st.share.key]
   );
   const r = await report.push(st.inbox.clone, text, { buildNo: info.build });
   getSettings().set('inbox', { reportedBuild: info.build });
@@ -725,10 +725,18 @@ ipcMain.handle('phone:read', (event, channel, chatId) => {
 
 // ---- Telegram ----------------------------------------------------------------
 let telegram = null;
+// the bot token in the ground's .env (TELEGRAM_STEWARDBOT_KEY), read by the app itself; '' when none
+function telegramEnv() {
+  return atlasGlass.telegramEnvToken((getSettings().get('atlas') || {}).ground, vaultDir());
+}
+// Telegram as it runs: Settings' token, else the .env's; on with the .env's unless turned off
+function telegramConfig() {
+  return gated('telegram', telegramEffective(getSettings().get('telegram'), telegramEnv()));
+}
 function getTelegram() {
   if (!telegram) {
     telegram = new Telegram({
-      getConfig: () => gated('telegram', getSettings().get('telegram')),
+      getConfig: telegramConfig,
       agent: getAgent(),
       phone: getPhoneLog(),
       // each chat's conversation with Steward, kept across restarts

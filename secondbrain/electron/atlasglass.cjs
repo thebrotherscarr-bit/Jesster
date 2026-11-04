@@ -63,8 +63,8 @@ function findGround(settingsGround, vaultDir) {
   return null;
 }
 
-/** ATLAS_SERVICE from the ground's .env, or '' (only that one name is read). */
-function serviceWire(ground) {
+/** One name's value from the ground's .env, or '' (only that one name is read; the value is never logged). */
+function envValue(ground, name) {
   let text = '';
   try {
     text = fs.readFileSync(path.join(ground, '.env'), 'utf8');
@@ -73,9 +73,20 @@ function serviceWire(ground) {
   }
   for (const raw of text.split(/\r?\n/)) {
     const line = raw.trim();
-    if (line.startsWith('ATLAS_SERVICE=')) return line.slice('ATLAS_SERVICE='.length).trim().replace(/^["']|["']$/g, '');
+    if (line.startsWith(name + '=')) return line.slice(name.length + 1).trim().replace(/^["']|["']$/g, '');
   }
   return '';
+}
+
+/** ATLAS_SERVICE from the ground's .env, or ''. */
+function serviceWire(ground) {
+  return envValue(ground, 'ATLAS_SERVICE');
+}
+
+/** Telegram's bot token from the ground's .env (TELEGRAM_STEWARDBOT_KEY), the ground found as findGround finds it, or ''. */
+function telegramEnvToken(settingsGround, vaultDir) {
+  const ground = findGround(settingsGround, vaultDir);
+  return ground ? envValue(ground, 'TELEGRAM_STEWARDBOT_KEY') : '';
 }
 
 /** The sitting open in the ground's ledger (its number), or '' (an open sitting's `ended` is ""). */
@@ -302,4 +313,4 @@ function register({ app, ipcMain, guard, getSettings, vaultDir, shell, door }) {
   app.on('will-quit', stopOwned);
 }
 
-module.exports = { register, boot, superviseGlass, glassOwned, openWindow, stopOwned, startOwned, capLog, LOG_CAP_BYTES, answering, waitFor, findGround, serviceWire, openSitting, portOwner, GLASS_URL, DOOR_PORT, GLASS_PORT };
+module.exports = { register, boot, superviseGlass, glassOwned, openWindow, stopOwned, startOwned, capLog, LOG_CAP_BYTES, answering, waitFor, findGround, serviceWire, envValue, telegramEnvToken, openSitting, portOwner, GLASS_URL, DOOR_PORT, GLASS_PORT };

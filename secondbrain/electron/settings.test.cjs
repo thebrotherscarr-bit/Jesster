@@ -49,3 +49,73 @@ test('every masked secret is guarded: Discord, the share key, the integrations k
   assert.equal(s.get('integrations').openai.key, 'sk-oa-3456');
   assert.equal(s.get('integrations').google.key, 'g-7890');
 });
+
+// ---- Telegram's token from the ground's .env (TELEGRAM_STEWARDBOT_KEY) -----------------
+const { telegramEffective } = require('./settings.cjs');
+const { telegramEnvToken } = require('./atlasglass.cjs');
+const FAKE_ENV = '111111:FAKE-env-token-zz9q';
+function tempGround(envText) {
+  const g = fs.mkdtempSync(path.join(os.tmpdir(), 'tg-ground-'));
+  fs.writeFileSync(path.join(g, 'manjuel.py'), '');
+  if (envText !== undefined) fs.writeFileSync(path.join(g, '.env'), envText);
+  return g;
+}
+
+test('the .env token is read from the ground the way findGround finds it; none without a ground or the name', () => {
+  const g = tempGround(`OTHER=x\r\nTELEGRAM_STEWARDBOT_KEY=${FAKE_ENV}\r\n`);
+  assert.equal(telegramEnvToken(g, null), FAKE_ENV);
+  assert.equal(telegramEnvToken('', path.join(g, 'a', 'b')), FAKE_ENV, 'two up from the notes folder');
+  assert.equal(telegramEnvToken(tempGround('OTHER=x\n'), null), '');
+  assert.equal(telegramEnvToken(fs.mkdtempSync(path.join(os.tmpdir(), 'tg-noground-')), null), '');
+});
+
+test('a token in Settings wins over the .env one', () => {
+  const s = fresh();
+  s.set('telegram', { token: '222222:SETTINGS-tok-abcd', enabled: true });
+  const c = telegramEffective(s.get('telegram'), FAKE_ENV);
+  assert.equal(c.token, '222222:SETTINGS-tok-abcd');
+  assert.equal(c.from, 'settings');
+});
+
+test('with Settings empty the .env token is used, and Telegram is on without pressing anything', () => {
+  const s = fresh();
+  const c = telegramEffective(s.get('telegram'), FAKE_ENV);
+  assert.equal(c.token, FAKE_ENV);
+  assert.equal(c.from, 'env');
+  assert.equal(c.enabled, true);
+  // a settings file written before, with the default off and no token, is not an explicit off
+  fs.writeFileSync(s.file, JSON.stringify({ telegram: { token: '', allowedChats: [], enabled: false } }));
+  assert.equal(telegramEffective(new Settings(path.dirname(s.file)).get('telegram'), FAKE_ENV).enabled, true);
+  // no token anywhere: off
+  assert.equal(telegramEffective(fresh().get('telegram'), '').enabled, false);
+});
+
+test('an explicit off is kept, also across a restart', () => {
+  const s = fresh();
+  s.set('telegram', { enabled: false });
+  assert.equal(telegramEffective(s.get('telegram'), FAKE_ENV).enabled, false);
+  assert.equal(telegramEffective(new Settings(path.dirname(s.file)).get('telegram'), FAKE_ENV).enabled, false);
+  assert.equal(s.public({ telegramEnv: FAKE_ENV }).telegram.enabled, false);
+});
+
+test('public() shows the .env token by its last four only, and never stores it', () => {
+  const s = fresh();
+  const p = s.public({ telegramEnv: FAKE_ENV });
+  assert.equal(p.telegram.fromEnv, 'zz9q');
+  assert.equal(p.telegram.token, '');
+  assert.equal(p.telegram.enabled, true);
+  const all = JSON.stringify(p);
+  assert.ok(!all.includes(FAKE_ENV) && !all.includes('FAKE-env'), 'the value is not on the page');
+  assert.ok(!fs.existsSync(s.file) || !fs.readFileSync(s.file, 'utf8').includes(FAKE_ENV), 'nor in settings.json');
+  s.set('telegram', { token: '222222:SETTINGS-tok-abcd' });
+  assert.equal(s.public({ telegramEnv: FAKE_ENV }).telegram.fromEnv, '', 'a Settings token: no .env hint');
+});
+
+test('main.cjs runs Telegram, its masked view and the report scrub on the .env token too', () => {
+  const main = fs.readFileSync(path.join(__dirname, 'main.cjs'), 'utf8');
+  assert.match(main, /atlasGlass\.telegramEnvToken\(\(getSettings\(\)\.get\('atlas'\) \|\| \{\}\)\.ground, vaultDir\(\)\)/, 'the token is read from the ground findGround finds');
+  assert.match(main, /gated\('telegram', telegramEffective\(getSettings\(\)\.get\('telegram'\), telegramEnv\(\)\)\)/, 'Telegram runs on the effective config');
+  assert.match(main, /getConfig: telegramConfig,/, 'the bot reads it (start, the voice file fetch, the test message)');
+  assert.equal((main.match(/getSettings\(\)\.public\(\{ telegramEnv: telegramEnv\(\) \}\)/g) || []).length, 2, 'settings:get and settings:set show its last four');
+  assert.match(main, /\[st\.telegram\.token, telegramEnv\(\),/, 'and the report hides it');
+});
