@@ -16,7 +16,7 @@ export const CONSOLE_SHELVES: { id: ConsoleShelf; label: string }[] = [
 ];
 
 /** The top bar's buttons, each marked data-topbar in Header.tsx (and AtlasButton.tsx); nothing else stands there. */
-export const TOP_BAR = ['Menu', 'Notes', 'Agent', 'Open Aurora', 'Settings', 'Update', 'Update notes kernel', 'Ollama (web only)'];
+export const TOP_BAR = ['Notes', 'Agent', 'Open Aurora', 'Settings', 'Update', 'Update notes kernel', 'Ollama (web only)'];
 
 /**
  * The controls that left the top bar for the console, each marked data-console in AgentConsole.tsx (or the shelf
