@@ -187,6 +187,11 @@ function superviseGlass(ground, wire, { start = startOwned, probe = answering, d
   return sup;
 }
 
+/** Is the glass on its port SecondBrain's own child (else atlas-desktop.exe's, or none)? For the Servers shelf. */
+function glassOwned() {
+  return supervisors.some((s) => !s.stopping && s.child && s.child.exitCode === null);
+}
+
 /** Stop the glass and anything else SecondBrain started (never what it found running). */
 function stopOwned() {
   while (supervisors.length) supervisors.pop().stop();
@@ -297,4 +302,4 @@ function register({ app, ipcMain, guard, getSettings, vaultDir, shell, door }) {
   app.on('will-quit', stopOwned);
 }
 
-module.exports = { register, boot, superviseGlass, openWindow, stopOwned, startOwned, capLog, LOG_CAP_BYTES, answering, waitFor, findGround, serviceWire, openSitting, portOwner, GLASS_URL, DOOR_PORT, GLASS_PORT };
+module.exports = { register, boot, superviseGlass, glassOwned, openWindow, stopOwned, startOwned, capLog, LOG_CAP_BYTES, answering, waitFor, findGround, serviceWire, openSitting, portOwner, GLASS_URL, DOOR_PORT, GLASS_PORT };

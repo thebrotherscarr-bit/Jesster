@@ -6,6 +6,7 @@ import { DesktopUpdate } from '../hooks/useDesktopUpdate.ts';
 import { DesktopVault } from '../hooks/useDesktopVault.ts';
 import { AtlasButton } from './AtlasButton.tsx';
 import { StewardButton } from './StewardButton.tsx';
+import { ServicesButton } from './ServicesModal.tsx';
 import { Plus, Brain, MessageSquare, Zap, Cpu, Menu, Link2, Download, FilePlus2, RefreshCw, Plug, Workflow, Settings as SettingsIcon, Bot, GitBranch } from 'lucide-react';
 
 export type ActiveTab = 'notes' | 'ask' | 'agent' | 'flows' | 'github';
@@ -19,6 +20,8 @@ interface HeaderProps {
   onOpenIntegrations?: () => void;
   /** Steward's window: his pieces and what he uses (desktop app) */
   onOpenSteward?: () => void;
+  /** the Services window: the servers SecondBrain runs or watches (desktop app) */
+  onOpenServices?: () => void;
   onCreateNewNote: () => void;
   ollamaConfig: OllamaConfig;
   storage?: KernelSync;
@@ -113,6 +116,7 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenOllamaModal,
   onOpenIntegrations,
   onOpenSteward,
+  onOpenServices,
   onCreateNewNote,
   ollamaConfig,
   storage,
@@ -311,6 +315,9 @@ export const Header: React.FC<HeaderProps> = ({
 
         {/* Steward: his service, the door and what he uses (the outside services stay in Integrations) */}
         {onOpenSteward && <StewardButton onOpen={onOpenSteward} />}
+
+        {/* Services: every server SecondBrain runs or watches, beside Steward's */}
+        {onOpenServices && <ServicesButton onOpen={onOpenServices} />}
 
         {onOpenIntegrations && (
           <button

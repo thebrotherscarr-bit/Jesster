@@ -20,6 +20,14 @@ const DEFAULTS = {
   share: { enabled: false, writes: false, key: '' }, // the notes over MCP for Atlas/Manjuel
   atlas: { exe: '', ground: '', python: 'python', engine: true, trusted: false, all: false }, // Settings → Atlas & Manjuel, remembered
   archive: { python: 'python', cli: '', model: '' },
+  // the Servers shelf (services.cjs): SecondBrain runs `ollama serve` only when this is on, with this environment
+  // pinned over its own; OLLAMA_MODELS '' keeps the one SecondBrain was started with (his User variable)
+  services: {
+    ollama: {
+      enabled: false,
+      env: { OLLAMA_HOST: '127.0.0.1', OLLAMA_KV_CACHE_TYPE: 'q8_0', OLLAMA_FLASH_ATTENTION: '1', OLLAMA_CONTEXT_LENGTH: '65536', OLLAMA_NUM_PARALLEL: '1', OLLAMA_MAX_LOADED_MODELS: '2', OLLAMA_KEEP_ALIVE: '30m', OLLAMA_NO_CLOUD: '1', OLLAMA_MODELS: '' },
+    },
+  },
   // Claude, ChatGPT, Gemini: API keys (secrets, like the Telegram token), models, keep exchanges as notes
   integrations: { anthropic: { key: '', model: 'claude-opus-5-5' }, openai: { key: '', model: '' }, google: { key: '', model: '' }, capture: true }, // the archive digger: the notes kernel's cli.py ('' = beside the vault)
 };

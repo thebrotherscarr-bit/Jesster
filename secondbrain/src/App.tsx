@@ -24,6 +24,7 @@ import { QuickCaptureModal } from './components/QuickCaptureModal.tsx';
 import { SettingsModal } from './components/SettingsModal.tsx';
 import { IntegrationsModal } from './components/IntegrationsModal.tsx';
 import { StewardModal } from './components/StewardButton.tsx';
+import { ServicesModal } from './components/ServicesModal.tsx';
 import { FlowsView } from './components/FlowsView.tsx';
 import { AgentView } from './components/AgentView.tsx';
 import { HoldsDock } from './components/HoldsDock.tsx';
@@ -75,6 +76,7 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isIntegrationsOpen, setIsIntegrationsOpen] = useState(false);
   const [isStewardOpen, setIsStewardOpen] = useState(false);
+  const [isServicesOpen, setIsServicesOpen] = useState(false);
   const [integrationsVersion, setIntegrationsVersion] = useState(0);
   const [, startTransition] = useTransition();
 
@@ -392,6 +394,7 @@ export default function App() {
         onOpenQuickCapture={() => setIsQuickCaptureOpen(true)}
         onOpenIntegrations={window.secondbrainDesktop?.integrations ? () => setIsIntegrationsOpen(true) : undefined}
         onOpenSteward={window.secondbrainDesktop?.steward ? () => setIsStewardOpen(true) : undefined}
+        onOpenServices={window.secondbrainDesktop?.services ? () => setIsServicesOpen(true) : undefined}
         onOpenOllamaModal={() => setIsOllamaModalOpen(true)}
         onCreateNewNote={() => {
           handleCreateNewNote();
@@ -495,7 +498,7 @@ export default function App() {
 
         {/* kept mounted so a conversation survives switching tabs */}
         {window.secondbrainDesktop?.agent && (
-          <div className={activeTab === 'agent' ? 'flex flex-1 min-h-0' : 'hidden'}>
+          <div className={activeTab === 'agent' ? 'flex flex-1 min-w-0 min-h-0' : 'hidden'}>
             <AgentView
               ollamaConfig={ollamaConfig}
               voice={voice}
@@ -551,6 +554,7 @@ export default function App() {
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
       {/* Steward's window, beside Integrations: outside the header, whose backdrop blur would hold it to its strip */}
       <StewardModal isOpen={isStewardOpen} onClose={() => setIsStewardOpen(false)} />
+      <ServicesModal isOpen={isServicesOpen} onClose={() => setIsServicesOpen(false)} />
 
       <IntegrationsModal
         isOpen={isIntegrationsOpen}
