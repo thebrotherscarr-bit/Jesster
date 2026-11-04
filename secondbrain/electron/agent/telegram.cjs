@@ -108,7 +108,7 @@ class Telegram {
     }
     this.running = true;
     this.emit();
-    this.loop();
+    this.polling = this.loop(); // settles once stop() is called and the poll in flight has returned
     return this.state();
   }
 
@@ -181,6 +181,8 @@ class Telegram {
       timer.unref?.();
       const entry = { chat: String(chatId), messageId: null, text: '', timer };
       this.cards.set(card.id, entry);
+      // kept when it is asked, before the send: the window can answer it (and the turn reply) while it is on its way
+      this.record(chatId, { kind: 'card', cardId: card.id, name: card.name, text: card.summary });
       const head = card.kind === 'review' ? '' : `Steward wants to use ${card.name}:\n\n`;
       let sent;
       try {
@@ -193,7 +195,6 @@ class Telegram {
       }
       entry.messageId = sent.message?.message_id ?? null;
       entry.text = sent.text;
-      this.record(chatId, { kind: 'card', cardId: card.id, name: card.name, text: card.summary });
       // answered while it was being sent: its buttons go now
       if (!this.cards.has(card.id) && entry.answer) await this.dropButtons(entry, entry.answer);
     };

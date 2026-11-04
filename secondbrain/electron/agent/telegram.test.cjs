@@ -308,7 +308,7 @@ test("the phone's exchange is kept for the Phone view (text, reply, card and its
     assert.ok(sid, 'the chat map is on disk');
     // a restart: a new bot over the same file continues the same session
     bot.stop();
-    await new Promise((r) => setTimeout(r, 400)); // the old poll ends
+    await bot.polling; // the old poll ends, so the next update can only reach the new bot
     bot = new Telegram({ getConfig: () => config, agent: service, apiBase: tg.base, phone: log, sessions: phone.chatSessions(sessionsFile, 'telegram') });
     await bot.start();
     tg.push({ message: { chat: { id: 42, first_name: 'Kyle' }, text: 'and again' } });
