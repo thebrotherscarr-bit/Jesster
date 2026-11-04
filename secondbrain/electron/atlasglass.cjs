@@ -114,7 +114,32 @@ function portOwner(port) {
 const owned = [];
 const supervisors = [];
 
+// A child's log is kept to its newest 100 MB (Kyle, 2026-11-04: "size cap maybe 100MB"; Steward's steward.log had
+// reached 192 MB). It is cut when the child starts, before it is opened for appending: once the child holds it open,
+// it can't be rotated under it.
+const LOG_CAP_BYTES = 100 * 1024 * 1024;
+
+/** Cut a log down to its newest `cap` bytes, starting at a line. A missing or busy file is left as it is. */
+function capLog(file, cap = LOG_CAP_BYTES) {
+  try {
+    const size = fs.statSync(file).size;
+    if (size <= cap) return;
+    const tail = Buffer.alloc(cap);
+    const fd = fs.openSync(file, 'r');
+    try {
+      fs.readSync(fd, tail, 0, cap, size - cap);
+    } finally {
+      fs.closeSync(fd);
+    }
+    const line = tail.indexOf(0x0a);
+    fs.writeFileSync(file, line >= 0 ? tail.subarray(line + 1) : tail);
+  } catch {
+    // no log yet, or another process holds it: it stays as it is
+  }
+}
+
 function startOwned(exe, args, cwd, env, logs) {
+  if (logs) logs.forEach((log) => capLog(path.join(cwd, log)));
   const out = logs ? fs.openSync(path.join(cwd, logs[0]), 'a') : 'ignore';
   const err = logs ? fs.openSync(path.join(cwd, logs[1]), 'a') : 'ignore';
   const child = spawn(exe, args, { cwd, env, windowsHide: true, stdio: ['ignore', out, err] });
@@ -272,4 +297,4 @@ function register({ app, ipcMain, guard, getSettings, vaultDir, shell, door }) {
   app.on('will-quit', stopOwned);
 }
 
-module.exports = { register, boot, superviseGlass, openWindow, stopOwned, startOwned, answering, waitFor, findGround, serviceWire, openSitting, portOwner, GLASS_URL, DOOR_PORT, GLASS_PORT };
+module.exports = { register, boot, superviseGlass, openWindow, stopOwned, startOwned, capLog, LOG_CAP_BYTES, answering, waitFor, findGround, serviceWire, openSitting, portOwner, GLASS_URL, DOOR_PORT, GLASS_PORT };

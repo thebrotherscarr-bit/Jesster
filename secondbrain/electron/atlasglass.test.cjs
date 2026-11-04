@@ -4,7 +4,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { EventEmitter } = require('events');
-const { boot, superviseGlass, openWindow, findGround, serviceWire, openSitting, GLASS_URL } = require('./atlasglass.cjs');
+const { boot, superviseGlass, openWindow, findGround, serviceWire, openSitting, capLog, LOG_CAP_BYTES, GLASS_URL } = require('./atlasglass.cjs');
 
 function ground() {
   const g = fs.mkdtempSync(path.join(os.tmpdir(), 'atlasglass-'));
@@ -156,6 +156,23 @@ test('a glass already answering is used, not started over; five quick deaths sto
   assert.strictEqual(started, 5);
   assert.match(dying.error, /stopped five times in a row/);
   dying.stop();
+});
+
+test('a child\'s log is cut to its newest bytes, from a line, when the child starts; a small one is left alone', () => {
+  const g = ground();
+  const log = path.join(g, 'steward.log');
+  const lines = Array.from({ length: 40 }, (_, i) => `line ${String(i).padStart(2, '0')}`).join('\n') + '\n';
+  fs.writeFileSync(log, lines);
+  capLog(log, 1000);
+  assert.strictEqual(fs.readFileSync(log, 'utf8'), lines, 'under the cap: untouched');
+  capLog(log, 100);
+  const kept = fs.readFileSync(log, 'utf8');
+  assert.ok(kept.length <= 100 && kept.length > 0, `kept ${kept.length} bytes`);
+  assert.ok(lines.endsWith(kept) && kept.startsWith('line '), 'the newest whole lines are kept');
+  assert.ok(kept.endsWith('line 39\n'));
+  capLog(path.join(g, 'none.log'), 100);
+  assert.ok(!fs.existsSync(path.join(g, 'none.log')), 'no log yet: nothing made');
+  assert.strictEqual(LOG_CAP_BYTES, 100 * 1024 * 1024);
 });
 
 test('an open sitting is read off the ledger: its `ended` is ""', () => {
