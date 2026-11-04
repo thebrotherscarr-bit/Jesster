@@ -9,8 +9,13 @@ const { runTurn, newSessionId, saveSession, messagesFromNote } = require('./agen
 
 // where a turn to Steward comes from, told to him on its first line (the operator, 2026-11-04: "this is the pc" and
 // "this is the phone"); the phone's channels are kept off the Agent tab's chat list (they are the Phone view's)
-const SOURCES = { app: 'from the PC (Agent tab)', telegram: 'from the phone (Telegram)', whatsapp: 'from the phone (WhatsApp)', discord: 'from the phone (Discord)' };
+const SOURCES = { app: 'from the PC (Agent tab)', telegram: 'from the phone (Telegram)', whatsapp: 'from the phone (WhatsApp) — chat and research only, no changes', discord: 'from the phone (Discord)' };
 const PHONE = ['telegram', 'whatsapp', 'discord'];
+// a channel that is chat and research only (the operator, 2026-11-04: "WhatsApp doesn't have the approve/deny cards"):
+// its turns never raise a card; any approval asked during one is answered No at once, kept in the history with this answer
+const READ_ONLY = { whatsapp: 'no — WhatsApp is chat and research only' };
+// what such a channel's reply says when something was refused
+const NEEDS_APPROVAL = 'That needs approval — ask from the PC or Telegram.';
 // a card raised from outside (askCard): Steward under his MCP host, for Manjuel and Aurora; answered No after 10 minutes
 const OUTSIDE = 'Manjuel / MCP';
 const CARD_TIMEOUT_MS = 600000;
@@ -79,6 +84,21 @@ class AgentService {
       const answer = new Promise((resolve) => this.pending.set(id, { resolve, key, sessionId, name, args, summary, at: Date.now() }));
       this.tellCard(onCard, { id, sessionId, name, args, summary });
       return answer;
+    };
+  }
+
+  /**
+   * A chat-and-research-only channel's approver (READ_ONLY): no card is raised anywhere (not the window, not the
+   * chat); the request is answered No at once and kept in the history, and the session counts it for the reply.
+   * `review` answers an improvement review: dropped.
+   */
+  refuseCards(s, source, review = false) {
+    return (name, args, summary) => {
+      s.refused = (s.refused || 0) + 1;
+      const tool = review ? 'review' : name;
+      const text = review ? `Improvement round: attempt ${name?.attempt ?? '?'}` : summary;
+      this.answered({ id: crypto.randomBytes(6).toString('hex'), tool, summary: text, answer: READ_ONLY[source], where: source, time: new Date().toISOString() });
+      return Promise.resolve(review ? 'drop' : false);
     };
   }
 
@@ -221,6 +241,10 @@ class AgentService {
     }
     s.busy = true;
     s.abort = new AbortController();
+    // a chat-and-research-only channel (READ_ONLY): every approval of this turn is refused, and counted for its reply
+    const readOnly = Boolean(READ_ONLY[source]);
+    s.refused = 0;
+    const result = (answer, extra = {}) => ({ sessionId: id, answer, ...extra, ...(s.refused ? { refused: s.refused, needsApproval: NEEDS_APPROVAL } : {}) });
     s.messages.push({ role: 'user', content: text });
     const { host, model, maxSteps: defaultSteps, backend } = this.getModel();
     const vault = this.getVault();
@@ -232,26 +256,26 @@ class AgentService {
     try {
       // the Agent tab and the phone (Telegram, Discord, ...) talk to Steward; schedules and subagents keep the local loop for now
       if (this.steward && backend === 'steward' && (source === 'app' || PHONE.includes(source))) {
-        return { sessionId: id, answer: await this.askSteward(s, text, id, send, approve, onCard, source) };
+        return result(await this.askSteward(s, text, id, send, approve, onCard, source));
       }
       const answer = await runTurn({
         host,
         model,
         messages: s.messages,
         registry: this.registry,
-        ctx: { vault, service: this, sessionId: id, source, signal: s.abort.signal, approve: approve || this.approveInWindow(id) },
+        ctx: { vault, service: this, sessionId: id, source, signal: s.abort.signal, approve: readOnly ? this.refuseCards(s, source) : approve || this.approveInWindow(id) },
         onEvent: send,
         maxSteps: maxSteps || defaultSteps || 12,
         signal: s.abort.signal,
         system: await this.extras({ source }),
         only,
       });
-      return { sessionId: id, answer };
+      return result(answer);
     } catch (e) {
       const msg = e.name === 'AbortError' || e.message === 'stopped' ? 'Stopped.' : e.message;
       s.messages.push({ role: 'assistant', content: msg });
       send({ type: 'error', text: msg });
-      return { sessionId: id, answer: msg, error: true };
+      return result(msg, { error: true });
     } finally {
       s.busy = false;
       s.abort = null;
@@ -282,12 +306,14 @@ class AgentService {
     // comes as an approval request (a card), and the tab sends only the text
     // a conversation that starts with "improve:" is an improvement round (step 6): every turn of it names the loop
     if (!s.stewardPrevious && /^\s*improve:/i.test(text)) s.improve = true;
+    // a chat-and-research-only channel (READ_ONLY): his approvals and reviews are refused at once, no card raised
+    const readOnly = Boolean(READ_ONLY[source]);
     const r = await this.steward.turn({
       base,
       text: withSource(text, source),
       previous: s.stewardPrevious,
-      approve: onCard ? this.approveInWindow(id, onCard) : approve || this.approveInWindow(id),
-      review: this.reviewInWindow(id, onCard),
+      approve: readOnly ? this.refuseCards(s, source) : onCard ? this.approveInWindow(id, onCard) : approve || this.approveInWindow(id),
+      review: readOnly ? this.refuseCards(s, source, true) : this.reviewInWindow(id, onCard),
       metadata: s.improve ? { steward_workflow: 'improve' } : undefined,
       onEvent: send,
       signal: s.abort.signal,
@@ -334,4 +360,4 @@ class AgentService {
   }
 }
 
-module.exports = { AgentService, withSource, SOURCES, PHONE, OUTSIDE, CARD_TIMEOUT_MS };
+module.exports = { AgentService, withSource, SOURCES, PHONE, READ_ONLY, NEEDS_APPROVAL, OUTSIDE, CARD_TIMEOUT_MS };

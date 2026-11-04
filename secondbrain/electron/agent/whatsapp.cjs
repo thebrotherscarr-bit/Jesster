@@ -15,21 +15,18 @@
  * Anyone else is never answered, not even with instructions (they are his contacts); groups, status updates and
  * channels are never read; what he writes in his other chats is never read either.
  *
- * As Telegram (telegram.cjs), which this mirrors: with Steward as the agent each chat is its own conversation with him;
- * his cards are the window's cards, sent here as a numbered reply ("Reply 1 to allow, 2 to deny") and answered through
- * the service like a button; a card answered anywhere says so here. Commands: /new, /stop, /status.
+ * WhatsApp is chat and research only (the operator, 2026-11-04: "That will be just for chat and research. Whatsapp
+ * doesn't have the approve/deny cards."). With Steward as the agent each chat is its own conversation with him, as in
+ * Telegram (telegram.cjs), but a WhatsApp turn never raises a card: the service (service.cjs READ_ONLY) answers any
+ * approval asked during it No at once, keeps that in the approvals history, and the reply here says it needs the PC or
+ * Telegram. No card is ever sent to WhatsApp. Commands: /new, /stop, /status.
  */
-const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 const { newSessionId } = require('./agent.cjs');
 
 const MAX_TEXT = 4000;
-const CARD_TIMEOUT_MS = 600000; // a card nobody answers in 10 minutes is answered No
 const RECONNECT_MS = 5000;
-// how an answered card reads in the chat
-const ANSWERS = { allow: 'Allowed', always: 'Always allowed', deny: 'Denied', timeout: 'No answer in 10 minutes: denied', keep: 'Kept', drop: 'Dropped', guidance: 'Sent back with guidance' };
-const ASK = 'Reply 1 to allow, 2 to deny.';
 // Baileys' DisconnectReason codes this needs
 const LOGGED_OUT = 401;
 const RESTART_REQUIRED = 515; // asked once, right after the QR is scanned
@@ -99,14 +96,13 @@ class WhatsApp {
    * memory; transcribe(buffer, mime): text for voice notes, optional. `socket(authDir)` makes the connection (Baileys';
    * a test gives a fake).
    */
-  constructor({ getConfig, agent, authDir, onState = () => {}, socket = baileysSocket, transcribe = null, cardTimeout = CARD_TIMEOUT_MS, reconnectDelay = RECONNECT_MS, phone = null, sessions = null }) {
+  constructor({ getConfig, agent, authDir, onState = () => {}, socket = baileysSocket, transcribe = null, reconnectDelay = RECONNECT_MS, phone = null, sessions = null }) {
     this.getConfig = getConfig;
     this.agent = agent;
     this.authDir = authDir;
     this.onState = onState;
     this.socket = socket;
     this.transcribe = transcribe;
-    this.cardTimeout = cardTimeout;
     this.reconnectDelay = reconnectDelay;
     this.phone = phone;
     this.running = false;
@@ -119,12 +115,7 @@ class WhatsApp {
     this.pending = new Map(); // chat id -> { id, name, at }
     this.sessions = sessions || new Map(); // chat id -> session id
     this.titles = new Map(); // chat id -> a name for the Phone view
-    this.approvals = new Map(); // the local loop's card id -> { chat, resolve }
-    this.cards = new Map(); // Steward's card id -> { chat, timer, sent, answer }
-    this.waiting = new Map(); // chat id -> card ids waiting for a 1 or a 2, oldest first
     this.sent = new Set(); // ids of messages this device sent, never read back as his
-    // a card answered anywhere (the window, a reply here, the timeout) says so here
-    if (agent && typeof agent.onAnswered === 'function') agent.onAnswered((entry) => this.cardAnswered(entry));
   }
 
   /** Whether a link is kept (its keys are on disk). */
@@ -312,110 +303,6 @@ class WhatsApp {
     return jids.some((j) => j && list.includes(bare(j)));
   }
 
-  /** A card waits in a chat for a 1 or a 2. */
-  wait(chatId, id) {
-    const list = this.waiting.get(chatId) || [];
-    list.push(id);
-    this.waiting.set(chatId, list);
-  }
-
-  unwait(chatId, id) {
-    const list = (this.waiting.get(chatId) || []).filter((x) => x !== id);
-    if (list.length) this.waiting.set(chatId, list);
-    else this.waiting.delete(chatId);
-  }
-
-  /** Ask in the chat before a risky tool runs (the local loop). */
-  approver(chatId) {
-    return async (name, args, summary) => {
-      const id = crypto.randomBytes(5).toString('hex');
-      await this.send(chatId, `The agent wants to use ${name}:\n\n${String(summary).slice(0, 3500)}\n\n${ASK}`);
-      return new Promise((resolve) => {
-        this.approvals.set(id, { chat: chatId, resolve });
-        this.wait(chatId, id);
-        // no answer in 10 minutes: no (and the timer never keeps the app alive)
-        setTimeout(() => {
-          if (!this.approvals.delete(id)) return;
-          this.unwait(chatId, id);
-          resolve(false);
-        }, this.cardTimeout).unref?.();
-      });
-    };
-  }
-
-  /** Steward's cards in the chat: each is the window's card, sent as a numbered reply; a 1 or a 2 answers it. */
-  cardSender(chatId) {
-    return async (card) => {
-      const timer = setTimeout(() => this.agent.answerApproval(card.id, false, false, undefined, { where: 'whatsapp', timeout: true }), this.cardTimeout);
-      timer.unref?.();
-      const entry = { chat: chatId, timer, sent: false, answer: null };
-      this.cards.set(card.id, entry);
-      this.wait(chatId, card.id);
-      // kept when it is asked, before the send: the window can answer it (and the turn reply) while it is on its way
-      this.record(chatId, { kind: 'card', cardId: card.id, name: card.name, text: card.summary });
-      const head = card.kind === 'review' ? '' : `Steward wants to use ${card.name}:\n\n`;
-      const ask = card.kind === 'review' ? 'Reply 1 to keep, 2 to drop, or write guidance.' : ASK;
-      try {
-        await this.send(chatId, `${head}${card.summary}\n\n${ask}`);
-      } catch (e) {
-        // never shown here: it stays the window's card alone, with no timeout
-        clearTimeout(timer);
-        this.cards.delete(card.id);
-        this.unwait(chatId, card.id);
-        throw e;
-      }
-      entry.sent = true;
-      // answered while it was being sent: the answer follows it now
-      if (entry.answer) await this.tellAnswer(entry, entry.answer);
-    };
-  }
-
-  /** A card of Steward's was answered (anywhere): the chat is told how. */
-  async cardAnswered(answer) {
-    const entry = this.cards.get(answer.id);
-    if (!entry) return;
-    this.cards.delete(answer.id);
-    this.unwait(entry.chat, answer.id);
-    clearTimeout(entry.timer);
-    entry.answer = answer;
-    this.record(entry.chat, { kind: 'answer', cardId: answer.id, answer: answer.answer, where: answer.where, text: ANSWERS[answer.answer] || answer.answer });
-    if (entry.sent) await this.tellAnswer(entry, answer);
-  }
-
-  async tellAnswer(entry, answer) {
-    const said = ANSWERS[answer.answer] || answer.answer;
-    try {
-      await this.send(entry.chat, answer.where === 'whatsapp' ? `${said}.` : `${said} in Jesster.`);
-    } catch (e) {
-      this.error = e.message;
-      this.emit();
-    }
-  }
-
-  /** A 1 or a 2 typed while a card waits in this chat answers the oldest one. True when it did. */
-  answerByNumber(chatId, text) {
-    const choice = text.trim();
-    if (choice !== '1' && choice !== '2') return false;
-    const id = (this.waiting.get(chatId) || [])[0];
-    if (!id) return false;
-    const yes = choice === '1';
-    const local = this.approvals.get(id);
-    if (local) {
-      this.approvals.delete(id);
-      this.unwait(chatId, id);
-      local.resolve(yes);
-      this.send(chatId, yes ? 'Allowed.' : 'Denied.').catch(() => {});
-      return true;
-    }
-    // a card of Steward's: answered where the window's are (cardAnswered tells the chat), unless it was answered first
-    if (!this.agent.answerApproval(id, yes, false, undefined, { where: 'whatsapp' })) {
-      this.unwait(chatId, id);
-      this.cards.delete(id);
-      this.send(chatId, 'That card was already answered.').catch(() => {});
-    }
-    return true;
-  }
-
   async handle(msg) {
     const key = msg?.key;
     if (!key || !msg.message) return;
@@ -451,7 +338,6 @@ class WhatsApp {
     }
     if (!text) return;
     this.titles.set(chatId, self ? 'Message yourself' : msg.pushName || number(alt) || number(chatId) || '');
-    if (this.answerByNumber(chatId, text)) return;
     const command = text.toLowerCase();
     if (command === '/new' || command === '/start') {
       this.sessions.delete(chatId);
@@ -460,11 +346,7 @@ class WhatsApp {
     }
     if (command === '/stop') {
       const sid = this.sessions.get(chatId);
-      if (sid) {
-        this.agent.stop(sid);
-        // a card still waiting (Steward's) is answered No, so his stopped turn can end
-        for (const c of this.agent.cards?.() || []) if (c.sessionId === sid) this.agent.answerApproval(c.id, false, false, undefined, { where: 'whatsapp' });
-      }
+      if (sid) this.agent.stop(sid);
       await this.send(remote, 'Stopped.');
       return;
     }
@@ -481,34 +363,24 @@ class WhatsApp {
       return;
     }
     await Promise.resolve(this.sock?.sendPresenceUpdate?.('composing', remote)).catch(() => {});
-    // the chat's session is named before the turn, so a message typed while a card waits finds it
     const sessionId = this.sessions.get(chatId) || newSessionId();
     if (this.sessions.get(chatId) !== sessionId) this.sessions.set(chatId, sessionId);
     this.record(chatId, { kind: 'user', text });
-    const reply = (r) => {
-      this.record(chatId, { kind: 'reply', text: r.answer });
-      return this.send(remote, r.answer).catch((e) => {
-        this.error = e.message;
-        this.emit();
-      });
-    };
     let r;
     try {
-      r = await this.agent.ask({
-        text,
-        sessionId,
-        source: 'whatsapp',
-        approve: this.approver(remote), // the local loop's risky tools
-        onCard: this.cardSender(remote), // Steward's cards
-        onAnswer: reply, // the answer to a message that waited behind a card
-      });
+      // no approver and no card sender: the service answers any approval of a 'whatsapp' turn No at once
+      r = await this.agent.ask({ text, sessionId, source: 'whatsapp' });
     } catch (e) {
       await this.send(remote, e.message); // e.g. still working on the last message
       return;
     }
-    if (r.answeredReview) return this.send(remote, 'Sent back to the fixer as guidance.');
-    if (r.queued) return this.send(remote, 'The waiting card was answered No; this message goes to Steward next.');
-    await reply(r);
+    // something needed approval and was refused: he is told plainly where to ask
+    const answer = r.refused ? `${r.answer}\n\n${r.needsApproval}` : r.answer;
+    this.record(chatId, { kind: 'reply', text: answer });
+    await this.send(remote, answer).catch((e) => {
+      this.error = e.message;
+      this.emit();
+    });
   }
 
   /** To his own chat (when it is answered) and every approved one: the Phone view's test message. */

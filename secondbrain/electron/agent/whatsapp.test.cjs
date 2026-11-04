@@ -66,7 +66,7 @@ const until = async (fn, ms = 5000) => {
 };
 const tick = () => new Promise((r) => setTimeout(r, 50));
 
-test('WhatsApp: the QR, the link, his own chat, strangers never answered, pairing by /pair, numbered cards, /new, broadcast', async () => {
+test('WhatsApp: the QR, the link, his own chat, strangers never answered, pairing by /pair, no cards, /new, broadcast', async () => {
   const wa = fakeWhatsApp();
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wa-'));
   const config = { enabled: true, allowedChats: [], selfChat: true };
@@ -76,12 +76,10 @@ test('WhatsApp: the QR, the link, his own chat, strangers never answered, pairin
     getModel: () => ({ model: 'gpt-oss:20b' }),
     registry: { schemas: () => [1, 2] },
     stop: () => {},
-    ask: async ({ text, sessionId, source, approve }) => {
-      asks.push({ text, sessionId, source });
-      if (text === 'run something risky') {
-        const ok = await approve('terminal_run', {}, 'dir C:\\');
-        return { sessionId, answer: ok ? 'ran it' : 'not allowed' };
-      }
+    ask: async ({ text, sessionId, source, approve, onCard }) => {
+      asks.push({ text, sessionId, source, approve, onCard });
+      // the service refused an approval during the turn (service.cjs READ_ONLY)
+      if (text === 'run something risky') return { sessionId, answer: 'not allowed', refused: 1, needsApproval: 'That needs approval — ask from the PC or Telegram.' };
       return { sessionId, answer: `you said ${text}` };
     },
   };
@@ -122,18 +120,15 @@ test('WhatsApp: the QR, the link, his own chat, strangers never answered, pairin
     assert.equal(asks[2].sessionId, asks[0].sessionId);
     wa.message(ME, '/new', { fromMe: true });
     await until(() => texts(ME).includes('New conversation. What do you need?'));
-    // risky tools ask with a numbered reply; 2 denies, 1 allows
+    // chat and research only: no approver and no card sender are given; a refusal is said plainly in the reply
     wa.message(ME, 'run something risky', { fromMe: true });
-    await until(() => texts(ME).some((t) => /wants to use terminal_run/.test(t)));
+    await until(() => texts(ME).includes('not allowed\n\nThat needs approval — ask from the PC or Telegram.'));
     assert.notEqual(asks.at(-1).sessionId, asks[0].sessionId, 'after /new it is a fresh session');
-    assert.match(texts(ME).at(-1), /dir C:\\\n\nReply 1 to allow, 2 to deny\.$/);
+    assert.ok(asks.every((a) => a.approve === undefined && a.onCard === undefined), 'WhatsApp never asks in the chat');
+    assert.ok(!texts(ME).some((t) => /Reply 1|wants to use/.test(t)));
+    // a 1 or a 2 is just a message
     wa.message(ME, '1', { fromMe: true });
-    await until(() => texts(ME).includes('ran it'));
-    assert.ok(texts(ME).includes('Allowed.'));
-    assert.equal(asks.filter((a) => a.text === '1').length, 0, 'the 1 answered the card; it was not a message');
-    // with no card waiting, a 2 is just a message
-    wa.message(ME, '2', { fromMe: true });
-    await until(() => texts(ME).includes('you said 2'));
+    await until(() => texts(ME).includes('you said 1'));
     // someone who asks to pair shows up to approve, and is told so; until then he is not answered
     wa.message('555000@lid', '/pair', { name: 'Mum', alt: '15554445555@s.whatsapp.net' });
     await until(() => bot.state().pending.length === 1);
@@ -168,7 +163,7 @@ test('WhatsApp: the QR, the link, his own chat, strangers never answered, pairin
   assert.ok(states.length > 0);
 });
 
-test("WhatsApp with Steward as the agent: the source line, his cards as a numbered reply (and the window's), answered either place, /stop, /status, the Phone view's log", async () => {
+test("WhatsApp with Steward as the agent: the source line, chat and research only (any approval answered No at once, never a card, kept in the history), Telegram's cards unchanged, /stop, /status, the Phone view's log", async () => {
   const phone = require('./phone.cjs');
   const approvals = require('../approvals.cjs');
   const wa = fakeWhatsApp();
@@ -181,21 +176,23 @@ test("WhatsApp with Steward as the agent: the source line, his cards as a number
   const steward = {
     ensure: async () => 'http://steward',
     up: async () => true,
-    turn: async ({ text, previous, approve, signal }) => {
+    turn: async ({ text, previous, approve, review }) => {
       seen.push({ text, previous });
       const said = text.slice(text.indexOf(']') + 2);
       let answer = `steward: ${said}`;
-      if (said.startsWith('do ') || said === 'hang') {
+      if (said.startsWith('do ')) {
         const ok = await approve('write_note', {}, `write_note ${said}`);
         decided.push(ok);
-        if (signal.aborted) throw Object.assign(new Error('aborted'), { name: 'AbortError' });
         answer = ok ? 'written' : 'not written';
       }
+      if (said === 'improve it') answer = `review: ${await review({ attempt: 1, passed: true, changed: ['a.py'] })}`;
       return { answer, previous: `r${seen.length}`, calls: [] };
     },
   };
   const windowCards = [];
+  const told = [];
   const service = new AgentService({ getVault: () => vault, getModel: () => ({ backend: 'steward', model: 'm' }), steward, history, emit: (ch, e) => ch === 'agent:approval' && windowCards.push(e) });
+  service.onAnswered((e) => told.push(e));
   const bot = new WhatsApp({
     getConfig: () => ({ enabled: true, allowedChats: [], selfChat: true }),
     agent: service,
@@ -210,41 +207,46 @@ test("WhatsApp with Steward as the agent: the source line, his cards as a number
     wa.open();
     wa.message(ME, 'hi', { fromMe: true });
     await until(() => texts().includes('steward: hi'));
-    assert.match(seen[0].text, /^\[from the phone \(WhatsApp\)\]\nhi$/);
-    // his card: the window's card and the chat's numbered reply; a 1 answers it
+    assert.equal(seen[0].text, '[from the phone (WhatsApp) — chat and research only, no changes]\nhi');
+    // an approval he asks during a WhatsApp turn: answered No at once, no card in the window or the chat
     wa.message(ME, 'do one', { fromMe: true });
-    await until(() => texts().some((t) => /^Steward wants to use write_note:\n\nwrite_note do one\n\nReply 1 to allow, 2 to deny\.$/.test(t)));
-    assert.equal(windowCards.length, 1);
-    wa.message(ME, '1', { fromMe: true });
-    await until(() => texts().includes('written'));
-    assert.ok(texts().includes('Allowed.'));
-    assert.equal(seen[1].previous, 'r1', 'the chat keeps his conversation');
+    await until(() => texts().includes('not written\n\nThat needs approval — ask from the PC or Telegram.'));
+    assert.deepEqual(decided, [false]);
+    assert.equal(windowCards.length, 0, 'no card in the window');
     assert.equal(service.cards().length, 0);
-    // answered in the window: the chat is told where
-    wa.message(ME, 'do two', { fromMe: true });
-    await until(() => service.cards().length === 1 && bot.cards.get(service.cards()[0].id)?.sent);
-    service.answerApproval(service.cards()[0].id, false, false);
-    await until(() => texts().includes('Denied in Jesster.'));
-    await until(() => texts().includes('not written'));
-    assert.deepEqual(decided, [true, false]);
-    assert.deepEqual(history.read(10).map((h) => [h.answer, h.where]), [['deny', 'window'], ['allow', 'whatsapp']]);
-    // a 1 with nothing waiting goes to him as a message
-    assert.equal(bot.waiting.size, 0);
-    // /stop stops his run and answers a waiting card No
-    wa.message(ME, 'hang', { fromMe: true });
-    await until(() => windowCards.length === 3);
+    assert.ok(!texts().some((t) => /Reply 1|wants to use|Allowed|Denied/.test(t)), 'no card sent to the chat');
+    assert.equal(seen[1].previous, 'r1', 'the chat keeps his conversation');
+    assert.deepEqual(history.read(10).map((h) => [h.tool, h.answer, h.where]), [['write_note', 'no — WhatsApp is chat and research only', 'whatsapp']]);
+    assert.equal(told.length, 1);
+    // an improvement review during a WhatsApp turn: dropped at once, no card
+    wa.message(ME, 'improve it', { fromMe: true });
+    await until(() => texts().some((t) => t.startsWith('review: drop')));
+    assert.equal(windowCards.length, 0);
+    assert.equal(history.read(10)[0].answer, 'no — WhatsApp is chat and research only');
+    // nothing refused: the reply is his answer alone
+    wa.message(ME, 'plain', { fromMe: true });
+    await until(() => texts().at(-1) === 'steward: plain');
+    // Telegram's cards on the same service are unchanged: the window's card, told to its onCard, answered there
+    const tgCards = [];
+    const tg = service.ask({ text: 'do three', sessionId: 'tg-1', source: 'telegram', onCard: (c) => tgCards.push(c) });
+    await until(() => windowCards.length === 1 && tgCards.length === 1);
+    assert.equal(service.cards().length, 1);
+    service.answerApproval(service.cards()[0].id, true, false, undefined, { where: 'telegram' });
+    const tr = await tg;
+    assert.equal(tr.answer, 'written');
+    assert.equal(tr.refused, undefined);
+    assert.deepEqual(history.read(1).map((h) => [h.answer, h.where]), [['allow', 'telegram']]);
+    // /stop stops his run
     wa.message(ME, '/stop', { fromMe: true });
     await until(() => texts().includes('Stopped.'));
-    await until(() => decided.length === 3);
-    assert.equal(decided[2], false);
     // /status says whether his service is up
     wa.message(ME, '/status', { fromMe: true });
     await until(() => texts().some((t) => /Steward is the agent; his service is up/.test(t)));
-    // the Phone view's log: channel whatsapp, his own chat, the exchange as it happened
+    // the Phone view's log: channel whatsapp, his own chat, the exchange as it happened, no cards
     const lines = log.read('whatsapp', ME).reverse();
     assert.deepEqual(lines.slice(0, 2).map((e) => [e.kind, e.text]), [['user', 'hi'], ['reply', 'steward: hi']]);
-    assert.deepEqual(lines.slice(2, 6).map((e) => e.kind), ['user', 'card', 'answer', 'reply']);
-    assert.equal(lines[4].where, 'whatsapp');
+    assert.deepEqual(lines.slice(2, 4).map((e) => e.kind), ['user', 'reply']);
+    assert.ok(!lines.some((e) => e.kind === 'card'));
     assert.equal(log.list()[0].label, 'WhatsApp · Message yourself');
     assert.ok(phone.chatSessions(path.join(dir, 'phone-sessions.json'), 'whatsapp').get(ME), 'his conversation survives a restart');
   } finally {
