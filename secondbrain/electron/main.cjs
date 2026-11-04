@@ -738,6 +738,12 @@ function getTelegram() {
   }
   return telegram;
 }
+// a card from outside the window (approval_ask) on the first paired chat, while Telegram runs; otherwise the window's alone
+function phoneCard(card) {
+  const chats = (getSettings().get('telegram') || {}).allowedChats || [];
+  if (!telegram || !telegram.running || !chats.length) return;
+  return telegram.cardSender(chats[0])(card);
+}
 // the voice feature provides speech-to-text for voice notes
 let telegramTranscriber = null;
 deliverers.telegram = (text) => getTelegram().broadcast(text);
@@ -827,6 +833,8 @@ async function serveMcp(req, res) {
       // agent_send / agent_read: the Agent tab, typed into from outside
       agent: getAgent(),
       showAgent: (id) => mainWindow && mainWindow.webContents.send('agent:show', id),
+      // approval_ask's card (Steward under his MCP host) goes to the phone too, as his Telegram cards do
+      phoneCard,
       // the Estate's tools (estate.cjs): the Servers shelf, the updater, the approvals history
       estate: estateDeps(),
     };

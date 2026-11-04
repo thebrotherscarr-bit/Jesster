@@ -257,3 +257,77 @@ test('the bearer key is checked in constant time and never optional', () => {
   assert.equal(atlas.keyOk('', 'abc123'), false);
   assert.equal(atlas.keyOk('Bearer ', ''), false);
 });
+
+// Steward under his MCP host (Manjuel's maf face, Aurora's ask_steward) asks his cards here: approval_ask
+function cardService() {
+  const { AgentService } = require('./agent/service.cjs');
+  const { vault } = setup();
+  const shown = [];
+  const kept = [];
+  const service = new AgentService({ getVault: () => vault, getModel: () => ({}), emit: (channel, e) => channel === 'agent:approval' && shown.push(e), history: { append: (e) => kept.push(e) } });
+  return { service, shown, kept };
+}
+const askCard = (ctx, id, extra = {}) =>
+  atlas.handleMcp(
+    { jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'approval_ask', arguments: { tool: 'write_file', arguments: { path: 'a.txt' }, session_id: 'manjuel-1', ...extra } } },
+    { registry: setup().registry, ctx },
+  );
+const settled = async (shown, n = 1) => {
+  while (shown.length < n) await new Promise((r) => setImmediate(r));
+};
+
+test('approval_ask raises one card in SecondBrain, tagged Manjuel / MCP, and Allow comes back approved', async () => {
+  const { service, shown, kept } = cardService();
+  const phone = [];
+  const ctx = { ...setup().ctx, agent: service, phoneCard: (card) => phone.push(card) };
+  const off = await atlas.handleMcp({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, { registry: setup().registry, ctx });
+  assert.ok(off.result.tools.some((t) => t.name === 'approval_ask'), 'served while writes are off: it only asks');
+  const call = askCard(ctx, 2);
+  await settled(shown);
+  assert.equal(shown.length, 1, 'one card');
+  assert.equal(shown[0].source, 'Manjuel / MCP');
+  assert.match(shown[0].summary, /^\[Manjuel \/ MCP\]\nwrite_file /);
+  assert.deepEqual(service.cards().map((c) => [c.name, c.sessionId, c.source]), [['write_file', 'manjuel-1', 'Manjuel / MCP']], 'on the Approvals shelf');
+  assert.deepEqual(phone.map((c) => c.id), [shown[0].id], 'and on the phone');
+  assert.equal(service.answerApproval(shown[0].id, true, false), true);
+  const r = await call;
+  assert.equal(r.result.isError, false);
+  assert.deepEqual(JSON.parse(r.result.content[0].text), { id: shown[0].id, approved: true, answer: 'allow' });
+  assert.equal(kept.length, 1);
+  assert.equal(kept[0].source, 'Manjuel / MCP', 'kept in the approvals history with its source');
+  assert.equal(kept[0].answer, 'allow');
+});
+
+test('approval_ask: Deny comes back not approved', async () => {
+  const { service, shown, kept } = cardService();
+  const call = askCard({ ...setup().ctx, agent: service }, 3);
+  await settled(shown);
+  service.answerApproval(shown[0].id, false, false);
+  const r = await call;
+  assert.deepEqual(JSON.parse(r.result.content[0].text), { id: shown[0].id, approved: false, answer: 'deny' });
+  assert.equal(kept[0].answer, 'deny');
+  assert.equal(service.cards().length, 0);
+});
+
+test('approval_ask: no answer in 10 minutes is No', async (t) => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const { service, shown, kept } = cardService();
+  const call = askCard({ ...setup().ctx, agent: service }, 4);
+  await settled(shown);
+  t.mock.timers.tick(600000 - 1);
+  assert.equal(service.cards().length, 1, 'still waiting just before 10 minutes');
+  t.mock.timers.tick(1);
+  const r = await call;
+  assert.deepEqual(JSON.parse(r.result.content[0].text), { id: shown[0].id, approved: false, answer: 'timeout' });
+  assert.equal(kept[0].answer, 'timeout');
+  assert.equal(service.cards().length, 0);
+});
+
+test('approval_ask is refused with no Agent, and needs the tool', async () => {
+  const none = await askCard(setup().ctx, 5);
+  assert.equal(none.result.isError, true);
+  const { service } = cardService();
+  const bare = await atlas.handleMcp({ jsonrpc: '2.0', id: 6, method: 'tools/call', params: { name: 'approval_ask', arguments: {} } }, { registry: setup().registry, ctx: { agent: service } });
+  assert.equal(bare.result.isError, true);
+  assert.equal(service.cards().length, 0);
+});

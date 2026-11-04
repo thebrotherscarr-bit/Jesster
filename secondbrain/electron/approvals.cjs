@@ -26,7 +26,7 @@ const APPROVALS = ['always', 'never', 'rule'];
 async function queue({ cards, holds }) {
   const items = [];
   for (const c of cards() || []) {
-    items.push({ plane: 'agent', id: c.id, tool: c.name, sessionId: c.sessionId, summary: c.summary, args: c.args || {}, at: Number(c.at) || 0, ...(c.kind ? { kind: c.kind } : {}) });
+    items.push({ plane: 'agent', id: c.id, tool: c.name, sessionId: c.sessionId, summary: c.summary, args: c.args || {}, at: Number(c.at) || 0, ...(c.kind ? { kind: c.kind } : {}), ...(c.source ? { source: c.source } : {}) });
   }
   let doorError = '';
   try {
