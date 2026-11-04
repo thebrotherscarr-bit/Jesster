@@ -1,13 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { Send, Check, X } from 'lucide-react';
 import { TelegramState } from '../../types/desktop.ts';
+import { tokenPatch } from '../../utils/channels.ts';
 
 /** Telegram: chat with SecondBrain from your phone. */
 export const TelegramSection: React.FC = () => {
   const desk = window.secondbrainDesktop;
   const bridge = desk?.telegram;
   const [state, setState] = useState<TelegramState | null>(null);
-  const [token, setToken] = useState('');
+  const [token, setToken] = useState(''); // only what the user types; the saved token stays in the main process
+  const [saved, setSaved] = useState(''); // the saved token's last four, from the masked settings
   const [enabled, setEnabled] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
@@ -16,7 +18,7 @@ export const TelegramSection: React.FC = () => {
     bridge.state().then(setState);
     desk.settings.get().then((s) => {
       const t = s.telegram as { token: string; enabled: boolean };
-      setToken(t.token || '');
+      setSaved(t.token ? t.token.slice(-4) : '');
       setEnabled(Boolean(t.enabled));
     });
     return bridge.onState(setState);
@@ -45,11 +47,22 @@ export const TelegramSection: React.FC = () => {
           type="password"
           value={token}
           onChange={(e) => setToken(e.target.value)}
-          placeholder="Bot token from @BotFather"
+          placeholder={saved ? `Saved, ends in ${saved}. Paste a new token to replace it` : 'Bot token from @BotFather'}
           aria-label="Telegram bot token"
           className="flex-1 rounded-lg bg-neutral-900 border border-neutral-800 px-2.5 py-1.5 text-xs text-white"
         />
-        <button onClick={() => save({ token, enabled: true }).then(() => setEnabled(true))} className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-xs text-white">
+        <button
+          disabled={!token.trim() && !saved}
+          onClick={() => {
+            const patch = tokenPatch(token);
+            save(patch).then(() => {
+              setEnabled(true);
+              if (patch.token) setSaved(patch.token.slice(-4));
+              setToken('');
+            });
+          }}
+          className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 disabled:opacity-40 text-xs text-white"
+        >
           Save and start
         </button>
       </div>

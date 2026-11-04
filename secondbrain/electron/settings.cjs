@@ -36,6 +36,25 @@ const DEFAULTS = {
   integrations: { anthropic: { key: '', model: 'claude-opus-5-5' }, openai: { key: '', model: '' }, google: { key: '', model: '' }, capture: true }, // the archive digger: the notes kernel's cli.py ('' = beside the vault)
 };
 
+// the secrets public() masks, as [section, ...path]
+const SECRETS = [['telegram', 'token'], ['discord', 'token'], ['share', 'key'], ['integrations', 'anthropic', 'key'], ['integrations', 'openai', 'key'], ['integrations', 'google', 'key']];
+// a mask, or a mask with a token pasted onto it: never a real secret, so never stored
+const isMask = (v) => typeof v === 'string' && v.includes('•');
+
+/** A section's patch without any secret that carries public()'s mask: the stored value is kept. */
+function dropMasks(section, value) {
+  if (!value || typeof value !== 'object' || !SECRETS.some((p) => p[0] === section)) return value;
+  const out = JSON.parse(JSON.stringify(value));
+  for (const p of SECRETS) {
+    if (p[0] !== section) continue;
+    let o = out;
+    for (const k of p.slice(1, -1)) o = o && typeof o === 'object' ? o[k] : undefined;
+    const last = p[p.length - 1];
+    if (o && typeof o === 'object' && isMask(o[last])) delete o[last];
+  }
+  return out;
+}
+
 function merge(base, over) {
   const out = { ...base };
   for (const [k, v] of Object.entries(over || {})) {
@@ -70,6 +89,7 @@ class Settings {
   }
 
   set(section, value) {
+    value = dropMasks(section, value);
     this.data[section] = section in DEFAULTS && typeof DEFAULTS[section] === 'object' && DEFAULTS[section]
       ? merge(this.data[section] || DEFAULTS[section], value)
       : value;
