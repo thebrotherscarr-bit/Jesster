@@ -205,3 +205,14 @@ test("each window gets its own cards: SecondBrain's share key and flows in Secon
     d.stop();
   }
 });
+
+test("the door carries the Estate's five worlds, Neiro included", () => {
+  const g = path.join(os.tmpdir(), 'ground');
+  assert.deepEqual(door.worldsFor(g), [
+    ['research', g],
+    ['atlas', path.join(g, 'atlas')],
+    ['secondbrain', path.join(g, 'worlds', 'jesster')],
+    ['steward', path.join(g, 'worlds', 'steward')],
+    ['neiro', path.join(g, 'worlds', 'neiro')],
+  ]);
+});
