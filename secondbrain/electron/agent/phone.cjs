@@ -8,7 +8,7 @@
  *     carries on the same conversation (Telegram's map was in memory only).
  *
  * The shape is the channel's, not Telegram's: { channel: 'telegram' | 'whatsapp' | 'discord', chatId, title }, so the
- * others plug in the same way. Only Telegram writes here today.
+ * others plug in the same way. Telegram, WhatsApp and Discord write here.
  */
 const fs = require('fs');
 const path = require('path');

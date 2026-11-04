@@ -25,6 +25,7 @@ const sched = require('./agent/schedules.cjs');
 const { McpClient } = require('./agent/mcp.cjs');
 const { Telegram } = require('./agent/telegram.cjs');
 const { Discord } = require('./agent/discord.cjs');
+const { WhatsApp } = require('./agent/whatsapp.cjs');
 const { channelOn, gated } = require('./channels.cjs');
 const phone = require('./agent/phone.cjs');
 const subagents = require('./agent/subagents.cjs');
@@ -306,7 +307,7 @@ ipcMain.handle('vault:import', async (event, dropped) => {
 });
 
 // ---- settings for the page (secrets masked) ------------------------------
-const PAGE_SECTIONS = ['inbox', 'agent', 'telegram', 'discord', 'terminal', 'voice', 'browser', 'computer', 'atlas', 'services'];
+const PAGE_SECTIONS = ['inbox', 'agent', 'telegram', 'discord', 'whatsapp', 'terminal', 'voice', 'browser', 'computer', 'atlas', 'services'];
 ipcMain.handle('settings:get', (event) => {
   guard(event);
   return getSettings().public();
@@ -823,6 +824,56 @@ ipcMain.handle('discord:test', async (event) => {
   return true;
 });
 
+// ---- WhatsApp: his own account, linked as a device by QR (Baileys; outbound only) ---------
+let whatsapp = null;
+function getWhatsApp() {
+  if (!whatsapp) {
+    whatsapp = new WhatsApp({
+      // off while channels.json leaves WhatsApp out: it never connects
+      getConfig: () => gated('whatsapp', getSettings().get('whatsapp')),
+      agent: getAgent(),
+      // the link's keys: in SecondBrain's own folder, never the vault, never git
+      authDir: path.join(app.getPath('userData'), 'whatsapp-auth'),
+      phone: getPhoneLog(),
+      // each chat's conversation with Steward, kept across restarts
+      sessions: phone.chatSessions(path.join(app.getPath('userData'), 'phone-sessions.json'), 'whatsapp'),
+      onState: (st) => mainWindow && mainWindow.webContents.send('whatsapp:state', st),
+      transcribe: (buf, mime) => (telegramTranscriber ? telegramTranscriber(buf, mime) : Promise.reject(new Error('voice is not set up'))),
+    });
+  }
+  return whatsapp;
+}
+async function restartWhatsApp() {
+  getWhatsApp().stop();
+  return getWhatsApp().start();
+}
+settingsListeners.push((section) => section === 'whatsapp' && channelOn('whatsapp') && restartWhatsApp());
+ipcMain.handle('whatsapp:state', (event) => {
+  guard(event);
+  return getWhatsApp().state();
+});
+ipcMain.handle('whatsapp:pair', (event, chatId, allow) => {
+  guard(event);
+  const cfg = getSettings().get('whatsapp');
+  const id = String(chatId);
+  const chats = new Set((cfg.allowedChats || []).map(String));
+  if (allow) chats.add(id);
+  else chats.delete(id);
+  getSettings().set('whatsapp', { allowedChats: [...chats] });
+  getWhatsApp().approvePairing(id);
+  return getWhatsApp().state();
+});
+ipcMain.handle('whatsapp:test', async (event) => {
+  guard(event);
+  await getWhatsApp().broadcast('Jesster is connected to this chat.');
+  return true;
+});
+ipcMain.handle('whatsapp:unlink', async (event) => {
+  guard(event);
+  getSettings().set('whatsapp', { enabled: false });
+  return getWhatsApp().unlink();
+});
+
 // ---- voice: Telegram voice notes are transcribed by the page (Whisper) ----------
 const voiceJobs = new Map();
 telegramTranscriber = (buf, mime) =>
@@ -1059,6 +1110,7 @@ if (!gotSingleInstanceLock) {
     schedulerTimer = setInterval(schedulerTick, 30000);
     setTimeout(() => getTelegram().start(), 2000);
     if (channelOn('discord')) setTimeout(() => getDiscord().start(), 2000);
+    if (channelOn('whatsapp')) setTimeout(() => getWhatsApp().start(), 2000);
     setTimeout(schedulerTick, 15000);
     // Steward warms up with the app, so the Agent tab's first message does not wait for his start
     if (getSettings().get('agent').backend === 'steward') stewardService.ensure().catch((e) => console.error('[SecondBrain] steward:', e.message));
@@ -1106,5 +1158,6 @@ app.on('before-quit', () => {
   if (mcp) mcp.stopAll();
   if (telegram) telegram.stop();
   if (discord) discord.stop();
+  if (whatsapp) whatsapp.stop();
   stopLocalServer();
 });

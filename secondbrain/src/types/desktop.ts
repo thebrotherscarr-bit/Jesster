@@ -131,6 +131,31 @@ export interface TelegramBridge {
 export type DiscordState = TelegramState;
 export type DiscordBridge = TelegramBridge;
 
+/** WhatsApp (electron/agent/whatsapp.cjs): his own account linked as a device; `allowed` holds approved chat ids. */
+export interface WhatsAppState {
+  running: boolean;
+  connected: boolean;
+  /** a link's keys are kept (it reconnects without a QR) */
+  linked: boolean;
+  /** his number once linked */
+  bot: string | null;
+  /** the QR code to scan (a data: URL), while one is shown */
+  qr: string | null;
+  error: string | null;
+  /** answered in his own "Message yourself" chat */
+  selfChat: boolean;
+  pending: { id: string; name: string; number?: string | null; at: number }[];
+  allowed: string[];
+}
+
+export interface WhatsAppBridge {
+  state: () => Promise<WhatsAppState>;
+  pair: (chatId: string, allow: boolean) => Promise<WhatsAppState>;
+  test: () => Promise<boolean>;
+  unlink: () => Promise<WhatsAppState>;
+  onState: (cb: (s: WhatsAppState) => void) => () => void;
+}
+
 export interface VoiceBridge {
   onTranscribe: (cb: (job: { id: string; bytes: string; mime: string }) => void) => () => void;
   result: (id: string, text: string, error?: string | null) => Promise<boolean>;
@@ -214,7 +239,7 @@ export interface AtlasOptions {
   all?: boolean;
 }
 
-/** A phone channel; Telegram and Discord are wired today. */
+/** A phone channel; all three are wired. */
 export type PhoneChannel = 'telegram' | 'whatsapp' | 'discord';
 
 /** One line of a phone conversation (electron/agent/phone.cjs): what was said, a card, or its answer. */
@@ -267,6 +292,7 @@ export interface DesktopBridge {
   mcp?: McpBridge;
   telegram?: TelegramBridge;
   discord?: DiscordBridge;
+  whatsapp?: WhatsAppBridge;
   voice?: VoiceBridge;
   share?: { get: (reveal?: boolean) => Promise<ShareState>; set: (patch: { enabled?: boolean; writes?: boolean; rotate?: boolean }) => Promise<ShareState> };
   atlas?: {
@@ -415,7 +441,7 @@ export interface AnsweredCard {
   tool: string;
   summary: string;
   answer: 'allow' | 'always' | 'deny' | 'timeout' | 'keep' | 'drop' | 'guidance';
-  where: 'window' | 'telegram' | 'discord';
+  where: 'window' | 'telegram' | 'discord' | 'whatsapp';
   time: string;
 }
 

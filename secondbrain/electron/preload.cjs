@@ -94,7 +94,7 @@ contextBridge.exposeInMainWorld('secondbrainDesktop', {
     save: (text) => ipcRenderer.invoke('mcp:save', text),
     reconnect: () => ipcRenderer.invoke('mcp:reconnect'),
   },
-  // the Phone view: the phone's conversations with Steward (Telegram today), as they happened, and each new line live
+  // the Phone view: the phone's conversations with Steward (Telegram, WhatsApp, Discord), as they happened, and each new line live
   phone: {
     list: () => ipcRenderer.invoke('phone:list'),
     read: (channel, chatId) => ipcRenderer.invoke('phone:read', channel, chatId),
@@ -122,6 +122,17 @@ contextBridge.exposeInMainWorld('secondbrainDesktop', {
       const fn = (_e, s) => cb(s);
       ipcRenderer.on('discord:state', fn);
       return () => ipcRenderer.removeListener('discord:state', fn);
+    },
+  },
+  whatsapp: {
+    state: () => ipcRenderer.invoke('whatsapp:state'),
+    pair: (chatId, allow) => ipcRenderer.invoke('whatsapp:pair', chatId, allow),
+    test: () => ipcRenderer.invoke('whatsapp:test'),
+    unlink: () => ipcRenderer.invoke('whatsapp:unlink'),
+    onState: (cb) => {
+      const fn = (_e, s) => cb(s);
+      ipcRenderer.on('whatsapp:state', fn);
+      return () => ipcRenderer.removeListener('whatsapp:state', fn);
     },
   },
   voice: {
