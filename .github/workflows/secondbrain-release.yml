@@ -26,16 +26,16 @@ concurrency:
 
 jobs:
   windows-exe:
-    runs-on: windows-latest
+    runs-on: windows-2025-vs2026
     defaults:
       run:
         working-directory: secondbrain
         shell: pwsh
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: "22"
+          node-version-file: secondbrain/.nvmrc
       # vite@8 vs tsx's esbuild peer pin needs --legacy-peer-deps; scripts are
       # off, so Electron's runtime is fetched explicitly (see secondbrain/README.md)
       - run: npm ci --legacy-peer-deps --ignore-scripts
@@ -44,9 +44,15 @@ jobs:
       - run: npm test
       - name: Prove the update hand-over on Windows
         run: node electron/swap.test.cjs
-      - name: Stamp the build number into the app
+      # The version is package.json's MAJOR.MINOR with the build number as the
+      # patch (0.1.0 -> 0.1.<run number>); electron-packager stamps it into the
+      # exe. The tag and the updater's comparison stay on the build number.
+      - name: Stamp the build number and version into the app
         run: |
-          @{ build = ${{ github.run_number }}; commit = "${{ github.sha }}".Substring(0, 7); branch = "${{ github.ref_name }}" } |
+          $base = (Get-Content package.json -Raw | ConvertFrom-Json).version -split '\.'
+          $version = "$($base[0]).$($base[1]).${{ github.run_number }}"
+          npm pkg set "version=$version"
+          @{ build = ${{ github.run_number }}; version = $version; commit = "${{ github.sha }}".Substring(0, 7); branch = "${{ github.ref_name }}" } |
             ConvertTo-Json | Set-Content electron/build.json -Encoding utf8
           Get-Content electron/build.json
       - run: npm run package:win
