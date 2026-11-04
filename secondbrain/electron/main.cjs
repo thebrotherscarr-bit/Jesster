@@ -962,8 +962,9 @@ if (!gotSingleInstanceLock) {
     if (getSettings().get('agent').backend === 'steward') stewardService.ensure().catch((e) => console.error('[SecondBrain] steward:', e.message));
     // and his MCP door, for Manjuel
     if (getSettings().get('agent').backend === 'steward') stewardMcp.ensure().catch((e) => console.error('[SecondBrain] steward mcp:', e.message));
-    // and Ollama, when Settings has SecondBrain run it and nothing else already does (else it is left alone)
-    if (getSettings().get('services').ollama.enabled) servers.control('ollama', 'start').then((r) => r.ok || console.error('[SecondBrain] ollama:', r.error));
+    // and Ollama, when Settings (or SECONDBRAIN_RUNS_OLLAMA=1) has SecondBrain run it and nothing else already does
+    // (else it is left alone); once started, services.cjs starts it again if it dies
+    if (ollamaServer.settings().enabled) servers.control('ollama', 'start').then((r) => r.ok || console.error('[SecondBrain] ollama:', r.error));
     // downloads from past updates (the hand-over cannot delete its own exe)
     const asar = process.noAsar;
     process.noAsar = true; // an old build's app.asar is a file to delete
@@ -997,6 +998,7 @@ app.on('window-all-closed', () => {
 });
 
 app.on('before-quit', () => {
+  ollamaServer.dispose(); // before will-quit ends it (atlasglass stopOwned): its exit is not a death to restart
   if (mcp) mcp.stopAll();
   if (telegram) telegram.stop();
   stopLocalServer();

@@ -20,6 +20,15 @@ export const statusTone = (s: ServiceStatus): { dot: string; text: string } =>
 /** Who runs a server, in words. */
 export const kindWord = (k: ServiceKind): string => (k === 'owned' ? 'SecondBrain runs it' : 'runs outside SecondBrain');
 
+/** What the 'SecondBrain runs Ollama' toggle sends to settings.set: services.ollama.enabled, the pinned env kept. */
+export const ollamaSwitch = (on: boolean): ['services', { ollama: { enabled: boolean } }] => ['services', { ollama: { enabled: on } }];
+
+/** The toggle's state from the Ollama row's settings: on, and why it is locked ('' when it is not). */
+export const ollamaToggle = (s: { enabled?: unknown; override?: unknown } | undefined): { on: boolean; locked: string } => ({
+  on: Boolean(s && s.enabled),
+  locked: s && (s.override === 'on' || s.override === 'off') ? `set by SECONDBRAIN_RUNS_OLLAMA=${s.override === 'on' ? 1 : 0}` : '',
+});
+
 /** The last `n` lines of a log (a trailing newline does not count as a line). */
 export const lastLines = (text: string, n: number = LOG_LINES): string => {
   if (!text || n <= 0) return '';

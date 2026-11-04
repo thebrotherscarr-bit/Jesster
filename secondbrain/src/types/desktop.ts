@@ -319,6 +319,8 @@ export interface ServiceInfo {
   canControl: boolean;
   /** why a control would be refused, when it would */
   why?: string;
+  /** why a server SecondBrain keeps up is no longer started again (five quick deaths), until Start */
+  error?: string;
   settings?: Record<string, unknown>;
   logPath?: string | null;
 }

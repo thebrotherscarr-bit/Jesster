@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Server, X, RefreshCw, ScrollText } from 'lucide-react';
 import { ServiceInfo } from '../types/desktop.ts';
-import { LOG_LINES, kindWord, lastLines, statusTone, statusWord } from '../utils/services.ts';
+import { LOG_LINES, kindWord, lastLines, ollamaSwitch, ollamaToggle, statusTone, statusWord } from '../utils/services.ts';
 import { ApprovalsShelf } from './ApprovalsShelf.tsx';
 
 const EVERY_MS = 3000;
@@ -90,6 +90,26 @@ export const ServicesModal: React.FC<{ isOpen: boolean; onClose: () => void }> =
     }
   };
 
+  // 'SecondBrain runs Ollama': services.ollama.enabled through settings:set; turned on while the Ollama app still has
+  // 11434, the row's refusal (quit the app first) is said at once. Nothing is started or stopped by the switch itself.
+  const runsOllama = async (on: boolean) => {
+    const settings = window.secondbrainDesktop?.settings;
+    if (!api || !settings) return;
+    setBusy('ollama:switch');
+    setErrors((e) => ({ ...e, ollama: '' }));
+    try {
+      await settings.set(...ollamaSwitch(on));
+      const list = await api.list();
+      setServers(list);
+      const row = list.find((x) => x.id === 'ollama');
+      if (on && row && row.why) setErrors((e) => ({ ...e, ollama: row.why || '' }));
+    } catch (err) {
+      setErrors((e) => ({ ...e, ollama: clean(err) }));
+    } finally {
+      setBusy(null);
+    }
+  };
+
   const toggleLog = (id: string) => {
     if (openLogs.includes(id)) {
       setOpenLogs((o) => o.filter((x) => x !== id));
@@ -158,6 +178,21 @@ export const ServicesModal: React.FC<{ isOpen: boolean; onClose: () => void }> =
                           {s.label} <code className="text-neutral-500">{s.port ? `127.0.0.1:${s.port}` : 'no port'}</code> <span className={tone.text}>{statusWord(s.status)}</span>
                         </div>
                         <div className="text-neutral-500">{kindWord(s.kind)}</div>
+                        {s.id === 'ollama' && s.settings && (() => {
+                          const t = ollamaToggle(s.settings);
+                          return (
+                            <label className="flex items-center gap-2 mt-1 text-xs text-neutral-200">
+                              <input
+                                type="checkbox"
+                                checked={t.on}
+                                disabled={Boolean(t.locked) || busy !== null}
+                                aria-label="SecondBrain runs Ollama"
+                                onChange={(e) => runsOllama(e.target.checked)}
+                              />
+                              SecondBrain runs Ollama{t.locked && <span className="text-neutral-500">({t.locked})</span>}
+                            </label>
+                          );
+                        })()}
                       </div>
                       <div className="flex gap-1 shrink-0">
                         {(['start', 'stop', 'restart'] as const).map((action) => (
@@ -182,6 +217,7 @@ export const ServicesModal: React.FC<{ isOpen: boolean; onClose: () => void }> =
                       </div>
                     </div>
                     {errors[s.id] && <p className="pl-4 text-xs text-amber-400">{errors[s.id]}</p>}
+                    {s.error && <p className="pl-4 text-xs text-amber-400">{s.error}</p>}
                     {logOpen && (
                       <pre className="ml-4 max-h-64 overflow-auto rounded-lg bg-neutral-900 border border-neutral-800 p-2 text-[11px] leading-snug font-mono text-neutral-300 whitespace-pre">
                         {logs[s.id] === undefined ? 'Reading…' : logs[s.id] || 'The log is empty.'}
