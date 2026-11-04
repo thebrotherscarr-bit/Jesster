@@ -88,6 +88,41 @@ const AGENT_TOOLS = [
   },
 ];
 
+// Steward's cards when he runs under his MCP host (mcp_app.py: Manjuel's `maf` face, Aurora's ask_steward), where no
+// window of his own can show them: he asks here, the card is raised through the Agent's own card path (the Agent tab,
+// the Approvals shelf, Telegram, the approvals history) tagged "Manjuel / MCP", and the call returns its answer. No
+// answer in 10 minutes is No. Served while the Agent runs here, writes allowed or not: it only asks.
+const APPROVAL_TOOL = {
+  name: 'approval_ask',
+  description:
+    "Ask the user to approve one tool call on SecondBrain's Allow/Deny card (the Agent tab, the Approvals shelf and Telegram), tagged Manjuel / MCP. Waits for the answer, up to 10 minutes (then No), and returns { id, approved, answer }.",
+  inputSchema: {
+    type: 'object',
+    properties: {
+      tool: { type: 'string', description: 'the tool that needs approval' },
+      arguments: { type: 'object', description: "the call's arguments, shown on the card" },
+      summary: { type: 'string', description: 'what the card says; omit to show the tool and its arguments' },
+      session_id: { type: 'string', description: 'the conversation the call belongs to' },
+    },
+    required: ['tool'],
+  },
+};
+
+/** approval_ask on the app's AgentService (ctx.agent): the card's answer as text, or { error }. */
+async function approvalCall(args, { agent, phoneCard }) {
+  const name = String(args.tool || '').trim();
+  if (!name) return { error: 'approval_ask needs the tool that needs approval' };
+  const callArgs = args.arguments && typeof args.arguments === 'object' ? args.arguments : {};
+  const r = await agent.askCard({
+    name,
+    args: callArgs,
+    summary: typeof args.summary === 'string' && args.summary.trim() ? args.summary.trim() : undefined,
+    sessionId: args.session_id ? String(args.session_id) : '',
+    onCard: phoneCard,
+  });
+  return JSON.stringify({ id: r.id, approved: r.approved, answer: r.answer });
+}
+
 /** agent_send / agent_read on the app's AgentService (ctx.agent); the text of the result. */
 function agentCall(name, args, { agent, showAgent }) {
   if (name === 'agent_read') {
@@ -182,7 +217,7 @@ async function handleMcp(msg, { registry, ctx, writes = false, door = installedD
       .schemas()
       .filter((t) => allowed.has(t.function.name))
       .map((t) => ({ name: t.function.name, description: t.function.description, inputSchema: t.function.parameters }));
-    const agentTools = writes && ctx && ctx.agent ? AGENT_TOOLS : [];
+    const agentTools = [...(writes && ctx && ctx.agent ? AGENT_TOOLS : []), ...(ctx && ctx.agent ? [APPROVAL_TOOL] : [])];
     // the Estate's, while the app hands them in (ctx.estate); a write only while writes are allowed
     const estateTools = ctx && ctx.estate ? estate.ESTATE_TOOLS.filter((t) => allowed.has(t.name)).map(({ name, description, inputSchema, annotations }) => ({ name, description, inputSchema, annotations })) : [];
     const taken = new Set([...notes, ...estateTools, ...agentTools].map((t) => t.name));
@@ -192,6 +227,11 @@ async function handleMcp(msg, { registry, ctx, writes = false, door = installedD
     const name = params.name;
     if (estate.NAMES.includes(name)) {
       const out = !(ctx && ctx.estate) ? { error: 'the Estate is not served here' } : await estate.estateCall(name, params.arguments || {}, ctx.estate, { writes });
+      if (typeof out === 'string') return ok({ content: [{ type: 'text', text: out }], isError: false });
+      return ok({ content: [{ type: 'text', text: out.error }], isError: true });
+    }
+    if (name === APPROVAL_TOOL.name) {
+      const out = !(ctx && ctx.agent && ctx.agent.askCard) ? { error: 'the Agent is not running here' } : await approvalCall(params.arguments || {}, ctx);
       if (typeof out === 'string') return ok({ content: [{ type: 'text', text: out }], isError: false });
       return ok({ content: [{ type: 'text', text: out.error }], isError: true });
     }
@@ -226,4 +266,4 @@ function keyOk(header, key) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-module.exports = { atlasServer, withAtlas, handleMcp, useDoor, keyOk, agentCall, DEFAULT_TOOLS, READ_TOOLS, WRITE_TOOLS, AGENT_TOOLS, SCREEN_TOOLS, ESTATE_READ_TOOLS, ESTATE_WRITE_TOOLS };
+module.exports = { atlasServer, withAtlas, handleMcp, useDoor, keyOk, agentCall, approvalCall, APPROVAL_TOOL, DEFAULT_TOOLS, READ_TOOLS, WRITE_TOOLS, AGENT_TOOLS, SCREEN_TOOLS, ESTATE_READ_TOOLS, ESTATE_WRITE_TOOLS };

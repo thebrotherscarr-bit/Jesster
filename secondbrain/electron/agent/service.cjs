@@ -11,6 +11,9 @@ const { runTurn, newSessionId, saveSession, messagesFromNote } = require('./agen
 // "this is the phone"); the phone's channels are kept off the Agent tab's chat list (they are the Phone view's)
 const SOURCES = { app: 'from the PC (Agent tab)', telegram: 'from the phone (Telegram)', whatsapp: 'from the phone (WhatsApp)', discord: 'from the phone (Discord)' };
 const PHONE = ['telegram', 'whatsapp', 'discord'];
+// a card raised from outside (askCard): Steward under his MCP host, for Manjuel and Aurora; answered No after 10 minutes
+const OUTSIDE = 'Manjuel / MCP';
+const CARD_TIMEOUT_MS = 600000;
 
 /** The text Steward is sent: a short line naming where it came from, then the message (an improve: word stays first). */
 function withSource(text, source) {
@@ -88,6 +91,26 @@ class AgentService {
   }
 
   /**
+   * A card raised from outside the window: Steward under his MCP host (Manjuel's `maf` face, Aurora's ask_steward)
+   * asks through SecondBrain's approval_ask (atlas.cjs). It is the same card as his Agent-tab ones, in the window, the
+   * Approvals shelf and, with `onCard`, Telegram; its summary starts with its `source`, which the history keeps. No
+   * answer in `timeoutMs` (10 minutes, as Telegram's cards) answers it No. Resolves { id, approved, answer }.
+   */
+  askCard({ name, args = {}, summary, sessionId = '', source = OUTSIDE, timeoutMs = CARD_TIMEOUT_MS, onCard } = {}) {
+    const text = `[${source}]\n${summary || `${name} ${JSON.stringify(args, null, 2)}`}`;
+    const key = `${name}:${text}`;
+    if (this.alwaysAllow.has(key)) return Promise.resolve({ id: null, approved: true, answer: 'always' });
+    const id = crypto.randomBytes(6).toString('hex');
+    const card = { id, sessionId, name, args, summary: text, source };
+    this.emit('agent:approval', card);
+    const answer = new Promise((resolve) => this.pending.set(id, { resolve, key, sessionId, name, args, summary: text, source, full: true, at: Date.now() }));
+    const timer = setTimeout(() => this.answerApproval(id, false, false, undefined, { where: 'window', timeout: true }), timeoutMs);
+    timer.unref?.();
+    this.tellCard(onCard, card);
+    return answer.then((r) => (clearTimeout(timer), { id, ...r }));
+  }
+
+  /**
    * The improvement loop's review (step 6) on the window's own approval card (Kyle, 2026-11-02: "use what is
    * there"): Allow keeps the change, Deny drops it, and a message typed while it waits goes back to the fixer as
    * guidance. Resolves the reply text.
@@ -125,13 +148,14 @@ class AgentService {
     this.emit('agent:approval-done', { id, sessionId: p.sessionId });
     const guidance = typeof text === 'string' && text.trim() ? text.trim() : '';
     const answer = p.kind === 'review' ? (guidance ? 'guidance' : allow ? 'keep' : 'drop') : timeout ? 'timeout' : allow ? (always ? 'always' : 'allow') : 'deny';
-    this.answered({ id, tool: p.name, summary: p.summary, answer, where, time: new Date().toISOString() });
+    this.answered({ id, tool: p.name, summary: p.summary, answer, where, time: new Date().toISOString(), ...(p.source ? { source: p.source } : {}) });
     if (p.kind === 'review') {
       p.resolve(guidance || (allow ? 'keep' : 'drop'));
       return true;
     }
     if (allow && always) this.alwaysAllow.set(p.key, { name: p.name, summary: p.summary, at: Date.now() });
-    p.resolve(Boolean(allow));
+    // a card from outside (askCard) is told how it was answered, a timeout included
+    p.resolve(p.full ? { approved: Boolean(allow), answer } : Boolean(allow));
     return true;
   }
 
@@ -153,7 +177,7 @@ class AgentService {
 
   /** The cards waiting now, as the window was sent them, with when each was asked. */
   cards() {
-    return [...this.pending].map(([id, p]) => ({ id, sessionId: p.sessionId, name: p.name, args: p.args, summary: p.summary, at: p.at, ...(p.kind ? { kind: p.kind } : {}) }));
+    return [...this.pending].map(([id, p]) => ({ id, sessionId: p.sessionId, name: p.name, args: p.args, summary: p.summary, at: p.at, ...(p.kind ? { kind: p.kind } : {}), ...(p.source ? { source: p.source } : {}) }));
   }
 
   /** The standing Always allow entries: each is one tool with the exact text its card showed. */
@@ -310,4 +334,4 @@ class AgentService {
   }
 }
 
-module.exports = { AgentService, withSource, SOURCES, PHONE };
+module.exports = { AgentService, withSource, SOURCES, PHONE, OUTSIDE, CARD_TIMEOUT_MS };
