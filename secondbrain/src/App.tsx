@@ -17,15 +17,10 @@ import { Header, ActiveTab } from './components/Header.tsx';
 import { Sidebar } from './components/Sidebar.tsx';
 import { NotesList } from './components/NotesList.tsx';
 import { NoteEditor } from './components/NoteEditor.tsx';
-import { AskBrainView } from './components/AskBrainView.tsx';
 import { defaultTab } from './utils/tabs.ts';
 import { OllamaSetupModal } from './components/OllamaSetupModal.tsx';
-import { QuickCaptureModal } from './components/QuickCaptureModal.tsx';
 import { SettingsModal } from './components/SettingsModal.tsx';
 import { IntegrationsModal } from './components/IntegrationsModal.tsx';
-import { StewardModal } from './components/StewardButton.tsx';
-import { ServicesModal } from './components/ServicesModal.tsx';
-import { FlowsView } from './components/FlowsView.tsx';
 import { AgentView } from './components/AgentView.tsx';
 import { HoldsDock } from './components/HoldsDock.tsx';
 import { useVoiceSettings } from './voice/useVoice.ts';
@@ -36,13 +31,6 @@ import { rpc } from './utils/kernel.ts';
 
 const STORAGE_KEY_NOTES = 'secondbrain_local_notes_v1';
 const STORAGE_KEY_CONFIG = 'secondbrain_ollama_config_v1';
-
-function createNoteId(prefix = 'note'): string {
-  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
-    return `${prefix}-${crypto.randomUUID()}`;
-  }
-  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
 
 export default function App() {
   // Initialize notes from local storage or seed
@@ -72,12 +60,8 @@ export default function App() {
   const [mobileNotesView, setMobileNotesView] = useState<'sidebar' | 'list' | 'editor'>('list');
 
   const [isOllamaModalOpen, setIsOllamaModalOpen] = useState(false);
-  const [isQuickCaptureOpen, setIsQuickCaptureOpen] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isIntegrationsOpen, setIsIntegrationsOpen] = useState(false);
-  const [isStewardOpen, setIsStewardOpen] = useState(false);
-  const [isServicesOpen, setIsServicesOpen] = useState(false);
-  const [integrationsVersion, setIntegrationsVersion] = useState(0);
   const [, startTransition] = useTransition();
 
   // Ollama Configuration State
@@ -204,18 +188,6 @@ export default function App() {
     };
   }, [ollamaConfig.hostUrl]);
 
-  // Keyboard shortcut listener (Cmd+K / Ctrl+K for quick capture)
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
-        e.preventDefault();
-        setIsQuickCaptureOpen(true);
-      }
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
-
   // Compute filtered & sorted notes
   const displayedNotes = useMemo(() => {
     const filtered = filterNotes(notes, searchQuery, activeCategory, activeTag, pinnedOnly);
@@ -238,25 +210,7 @@ export default function App() {
     return Array.from(set).sort();
   }, [notes]);
 
-  // Actions
-  const handleCreateNewNote = () => {
-    const newNote: Note = {
-      id: createNoteId(),
-      title: 'Untitled Note',
-      content: '',
-      category: activeCategory !== 'all' ? activeCategory : 'inbox',
-      tags: activeTag !== 'all' ? [activeTag] : [],
-      isPinned: false,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-    startTransition(() => {
-      setNotes((prev) => [newNote, ...prev]);
-      setSelectedNoteId(newNote.id);
-      setActiveTab('notes');
-    });
-  };
-
+  // Actions (a new note is Steward's to write: the operator, 2026-11-04, "steward is the note taker")
   const handleUpdateNote = (updatedFields: Partial<Note>) => {
     if (!selectedNoteId) return;
     setNotes((prev) =>
@@ -280,47 +234,6 @@ export default function App() {
     setNotes((prev) =>
       prev.map((n) => (n.id === id ? { ...n, isPinned: !n.isPinned, updatedAt: Date.now() } : n))
     );
-  };
-
-  const handleQuickCaptureSave = (
-    title: string,
-    content: string,
-    category: NoteCategory,
-    tags: string[]
-  ) => {
-    const newNote: Note = {
-      id: createNoteId(),
-      title: title || 'Quick Note',
-      content,
-      category,
-      tags,
-      isPinned: false,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-    startTransition(() => {
-      setNotes((prev) => [newNote, ...prev]);
-      setSelectedNoteId(newNote.id);
-      setActiveTab('notes');
-    });
-  };
-
-  const handleCreateNoteFromSynthesis = (title: string, content: string) => {
-    const newNote: Note = {
-      id: createNoteId('note-synthesis'),
-      title,
-      content,
-      category: 'scratchpads',
-      tags: ['synthesis', 'gpt-oss'],
-      isPinned: false,
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    };
-    startTransition(() => {
-      setNotes((prev) => [newNote, ...prev]);
-      setSelectedNoteId(newNote.id);
-      setActiveTab('notes');
-    });
   };
 
   const handleExportNotes = () => {
@@ -384,25 +297,16 @@ export default function App() {
           Drop to import as notes
         </div>
       )}
-      {/* 3-Zone Top Bar */}
+      {/* the top bar: the app's own navigation; Steward's controls are on the Agent tab's console */}
       <Header
         activeTab={activeTab}
         onSelectTab={(tab) => {
           setActiveTab(tab);
           if (tab === 'notes') setMobileNotesView('list');
         }}
-        onOpenQuickCapture={() => setIsQuickCaptureOpen(true)}
-        onOpenIntegrations={window.secondbrainDesktop?.integrations ? () => setIsIntegrationsOpen(true) : undefined}
-        onOpenSteward={window.secondbrainDesktop?.steward ? () => setIsStewardOpen(true) : undefined}
-        onOpenServices={window.secondbrainDesktop?.services ? () => setIsServicesOpen(true) : undefined}
-        onOpenOllamaModal={() => setIsOllamaModalOpen(true)}
-        onCreateNewNote={() => {
-          handleCreateNewNote();
-          setMobileNotesView('editor');
-        }}
+        onOpenOllamaModal={window.secondbrainDesktop?.agent ? undefined : () => setIsOllamaModalOpen(true)}
         ollamaConfig={ollamaConfig}
         storage={storage}
-        desktopVault={desktopVault}
         onOpenSettings={window.secondbrainDesktop?.settings ? () => setIsSettingsOpen(true) : undefined}
         desktopUpdate={desktopUpdate}
         onToggleMobileMenu={() => setMobileNotesView((prev) => (prev === 'sidebar' ? 'list' : 'sidebar'))}
@@ -458,10 +362,6 @@ export default function App() {
               }}
               onTogglePin={handleTogglePin}
               onDeleteNote={handleDeleteNote}
-              onCreateNote={() => {
-                handleCreateNewNote();
-                setMobileNotesView('editor');
-              }}
               searchQuery={searchQuery}
               onSearchChange={setSearchQuery}
               sortBy={sortBy}
@@ -480,22 +380,6 @@ export default function App() {
           </>
         )}
 
-        {activeTab === 'ask' && (
-          <AskBrainView
-            notes={notes}
-            ollamaConfig={ollamaConfig}
-            useVault={storage.mode === 'kernel'}
-            onOpenNote={(id) => {
-              setSelectedNoteId(id);
-              setActiveTab('notes');
-            }}
-            onCreateNoteFromSynthesis={handleCreateNoteFromSynthesis}
-            onOpenOllamaSetup={() => setIsOllamaModalOpen(true)}
-            integrationsVersion={integrationsVersion}
-            onOpenIntegrations={() => setIsIntegrationsOpen(true)}
-          />
-        )}
-
         {/* kept mounted so a conversation survives switching tabs */}
         {window.secondbrainDesktop?.agent && (
           <div className={activeTab === 'agent' ? 'flex flex-1 min-w-0 min-h-0' : 'hidden'}>
@@ -506,31 +390,11 @@ export default function App() {
                 setSelectedNoteId(id);
                 setActiveTab('notes');
               }}
+              onOpenOllama={() => setIsOllamaModalOpen(true)}
+              onOpenIntegrations={window.secondbrainDesktop?.integrations ? () => setIsIntegrationsOpen(true) : undefined}
             />
           </div>
         )}
-
-        {activeTab === 'flows' && (
-          <FlowsView
-            notes={notes}
-            ollamaConfig={ollamaConfig}
-            integrationsVersion={integrationsVersion}
-            newNoteId={createNoteId}
-            onUpsertNote={(n) => setNotes((prev) => (prev.some((x) => x.id === n.id) ? prev.map((x) => (x.id === n.id ? n : x)) : [n, ...prev]))}
-          />
-        )}
-
-        {activeTab === 'github' && (
-          <FlowsView
-            kind="github"
-            notes={notes}
-            ollamaConfig={ollamaConfig}
-            integrationsVersion={integrationsVersion}
-            newNoteId={createNoteId}
-            onUpsertNote={(n) => setNotes((prev) => (prev.some((x) => x.id === n.id) ? prev.map((x) => (x.id === n.id ? n : x)) : [n, ...prev]))}
-          />
-        )}
-
       </main>
 
       {/* SecondBrain's own cards, on every page (the Atlas glass shows Atlas's) */}
@@ -544,24 +408,14 @@ export default function App() {
         onUpdateConfig={(updates) => setOllamaConfig((prev) => ({ ...prev, ...updates }))}
       />
 
-      <QuickCaptureModal
-        isOpen={isQuickCaptureOpen}
-        onClose={() => setIsQuickCaptureOpen(false)}
-        onSave={handleQuickCaptureSave}
-        whisperModel={voice.whisperModel}
-      />
-
       <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
-      {/* Steward's window, beside Integrations: outside the header, whose backdrop blur would hold it to its strip */}
-      <StewardModal isOpen={isStewardOpen} onClose={() => setIsStewardOpen(false)} />
-      <ServicesModal isOpen={isServicesOpen} onClose={() => setIsServicesOpen(false)} />
 
+      {/* opened from the console's Servers shelf */}
       <IntegrationsModal
         isOpen={isIntegrationsOpen}
         onClose={() => setIsIntegrationsOpen(false)}
         voice={window.secondbrainDesktop ? voice : undefined}
         onVoiceChange={setVoice}
-        onChanged={() => setIntegrationsVersion((v) => v + 1)}
       />
     </div>
   );

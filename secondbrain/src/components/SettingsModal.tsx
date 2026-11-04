@@ -1,15 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { X, Inbox, RefreshCw, FolderGit2, Unplug } from 'lucide-react';
 import { InboxStatus } from '../types/desktop.ts';
-import { AutomationsSection } from './settings/AutomationsSection.tsx';
-import { McpSection } from './settings/McpSection.tsx';
-import { TelegramSection } from './settings/TelegramSection.tsx';
-import { TerminalSection } from './settings/TerminalSection.tsx';
-import { AtlasSection } from './settings/AtlasSection.tsx';
 import { ArchiveSection } from './settings/ArchiveSection.tsx';
-import { BrowserSection } from './settings/BrowserSection.tsx';
-import { CheckSection } from './settings/CheckSection.tsx';
-import { ComputerSection } from './settings/ComputerSection.tsx';
 import { ReportBack } from './settings/ReportBack.tsx';
 
 interface SettingsModalProps {
@@ -19,7 +11,10 @@ interface SettingsModalProps {
   children?: React.ReactNode;
 }
 
-/** Desktop settings. Each feature is one section; the inbox comes first. */
+/**
+ * The app's own settings: where notes are kept, the inbox from Claude, and the archive digger. Steward's settings
+ * (Telegram, Aurora sharing, his tools, MCP servers, automations) are on the Agent tab's console.
+ */
 export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, children }) => {
   const bridge = window.secondbrainDesktop;
   const [inbox, setInbox] = useState<InboxStatus | null>(null);
@@ -62,19 +57,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
         </div>
 
         {vaultDir && (
-          <div className="px-5 py-3 border-b border-neutral-900 flex items-center gap-2 text-xs text-neutral-400">
-            <span className="flex-1 break-all">Notes folder: <span className="text-neutral-300">{vaultDir}</span></span>
-            <button onClick={() => bridge?.vault?.reveal()} className="px-2.5 py-1 rounded-lg border border-neutral-700 text-neutral-200 hover:bg-neutral-800 shrink-0">Open folder</button>
-          </div>
+          <section className="px-5 py-4 border-b border-neutral-900 space-y-2" aria-label="Notes folder">
+            <div className="text-white text-sm font-medium">Notes folder</div>
+            <div className="flex items-center gap-2 text-xs text-neutral-400">
+              <span className="flex-1 min-w-0 break-all text-neutral-300">{vaultDir}</span>
+              <button onClick={() => bridge?.vault?.reveal()} className="px-2.5 py-1 rounded-lg border border-neutral-700 text-neutral-200 hover:bg-neutral-800 shrink-0">Open folder</button>
+            </div>
+          </section>
         )}
 
-        <section className="px-5 py-4 border-b border-neutral-900 space-y-3">
+        <section className="px-5 py-4 border-b border-neutral-900 space-y-3" aria-label="Inbox from Claude">
           <div className="flex items-center gap-2 text-white text-sm font-medium">
             <Inbox className="w-4 h-4 text-emerald-400" /> Inbox from Claude
           </div>
           <p className="text-xs text-neutral-400">
-            Notes written into your private <code>secondbrain-bridge</code> repository's <code>inbox</code> folder are
-            filed into your vault, tagged <code>inbox</code>. The app pulls it with your own git login every few minutes.
+            Notes left in your <code>secondbrain-bridge</code> repository's <code>inbox</code> folder are filed here every few minutes.
           </p>
           {!bridge?.inbox ? (
             <p className="text-xs text-neutral-500">Available in the desktop app.</p>
@@ -121,15 +118,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
           )}
         </section>
 
-        <TelegramSection />
-        <AtlasSection />
         <ArchiveSection />
-        <AutomationsSection />
-        <McpSection />
-        <TerminalSection />
-        <CheckSection />
-        <BrowserSection />
-        <ComputerSection />
         {children}
       </div>
     </div>

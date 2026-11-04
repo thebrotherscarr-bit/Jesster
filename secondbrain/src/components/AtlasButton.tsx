@@ -14,6 +14,7 @@ export const AtlasButton: React.FC = () => {
   if (!open) return null;
   return (
     <button
+      data-topbar="Open Aurora"
       onClick={async () => {
         setBusy(true);
         setError(null);

@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { ShieldAlert, Hourglass, Check, CheckCheck, X, Send, RotateCcw } from 'lucide-react';
-import { AlwaysEntry, ApprovalItem, ToolPolicy } from '../types/desktop.ts';
-import { ALWAYS_SCOPE, approvalWord, canAlways, whereWord } from '../utils/approvals.ts';
+import { AlwaysEntry, ApprovalItem } from '../types/desktop.ts';
+import { ALWAYS_SCOPE, canAlways, whereWord } from '../utils/approvals.ts';
+import { HistoryRow, historyRow } from '../utils/agentConsole.ts';
 
 // the door's holds are read as often as HoldsDock reads them
 const EVERY_MS = 4000;
@@ -9,10 +10,10 @@ const EVERY_MS = 4000;
 const clean = (e: unknown) => (e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e));
 
 /**
- * The Services window's Approvals shelf: every open card of both planes in one queue, newest first, answered with
- * the same calls their own places use (the Agent tab's agent.approve and agent.send, HoldsDock's door.call
- * hold_answer); the standing Always allow entries with Reset; and which of Steward's tools ask, from his
- * storage/tool-policy.json (read only).
+ * The console's Approvals shelf (the Agent tab): every open card of both planes in one queue, newest first, answered
+ * with the same calls their own places use (the Agent tab's agent.approve and agent.send, HoldsDock's door.call
+ * hold_answer); the cards already answered (approvals.history, where the app has it); and the standing Always allow
+ * entries with Reset. Which of Steward's tools ask is on the console's Tools shelf.
  */
 export const ApprovalsShelf: React.FC = () => {
   const desk = window.secondbrainDesktop;
@@ -22,7 +23,8 @@ export const ApprovalsShelf: React.FC = () => {
   const [items, setItems] = useState<ApprovalItem[] | null>(null);
   const [doorError, setDoorError] = useState('');
   const [always, setAlways] = useState<AlwaysEntry[]>([]);
-  const [policy, setPolicy] = useState<ToolPolicy | null>(null);
+  const [history, setHistory] = useState<HistoryRow[] | null>(null);
+  const [historyOn, setHistoryOn] = useState(true);
   const [titles, setTitles] = useState<Record<string, string>>({});
   const [replies, setReplies] = useState<Record<string, string>>({});
   const [said, setSaid] = useState('');
@@ -37,6 +39,14 @@ export const ApprovalsShelf: React.FC = () => {
       setDoorError(q.doorError || '');
       setAlways(a);
       setError('');
+      // answered cards, newest first: called only where this build of the app has it
+      const h = (api as typeof api & { history?: () => Promise<unknown> }).history;
+      if (typeof h !== 'function') setHistoryOn(false);
+      else {
+        const got = await h();
+        const list = Array.isArray(got) ? got : got && typeof got === 'object' && Array.isArray((got as { items?: unknown[] }).items) ? (got as { items: unknown[] }).items : [];
+        setHistory(list.map(historyRow));
+      }
     } catch (e) {
       setError(clean(e));
     }
@@ -48,12 +58,8 @@ export const ApprovalsShelf: React.FC = () => {
     return () => clearInterval(t);
   }, [read]);
 
-  // the policy and the conversations' titles are read once, when the shelf opens
+  // the conversations' titles are read once, when the shelf opens
   useEffect(() => {
-    api
-      ?.policy()
-      .then(setPolicy)
-      .catch((e) => setError(clean(e)));
     agent
       ?.sessions()
       .then((s) => setTitles(Object.fromEntries(s.map((x) => [x.id, x.title]))))
@@ -105,10 +111,10 @@ export const ApprovalsShelf: React.FC = () => {
       setAlways(await api.reset(key));
     });
 
-  if (!api) return <p className="px-5 py-4 text-xs text-neutral-400">Approvals run in the SecondBrain desktop app.</p>;
+  if (!api) return <p className="text-xs text-neutral-400">Approvals run in the desktop app.</p>;
 
   return (
-    <section className="px-5 py-4 space-y-4" aria-label="Approvals">
+    <section className="space-y-4" aria-label="Approvals" data-console="Approvals">
       {error && <p className="text-xs text-amber-400">{error}</p>}
 
       <div className="space-y-2">
@@ -213,46 +219,21 @@ export const ApprovalsShelf: React.FC = () => {
       </div>
 
       <div className="space-y-2">
-        <div className="text-xs font-semibold text-neutral-200">Which tools ask</div>
-        <div className="rounded-xl border border-neutral-800 p-3 space-y-2">
-          {!policy && <p className="text-xs text-neutral-500">Reading…</p>}
-          {policy?.state === 'absent' && <p className="text-xs text-neutral-500">Steward has not written his tool policy yet.</p>}
-          {policy?.state === 'malformed' && (
-            <p className="text-xs text-amber-400">
-              Steward's tool policy could not be read ({policy.error}): <code className="text-neutral-500">{policy.file}</code>
-            </p>
-          )}
-          {policy?.state === 'ok' && (
-            <>
-              <div className="text-[11px] text-neutral-500">
-                From <code>{policy.file}</code>
-                {policy.ts ? `, written ${policy.ts}` : ''}
+        <div className="text-xs font-semibold text-neutral-200">Answered ({history ? history.length : historyOn ? '…' : '–'})</div>
+        <div className="rounded-xl border border-neutral-800 p-3 space-y-1.5">
+          {!historyOn && <p className="text-xs text-neutral-500">History not available in this build.</p>}
+          {historyOn && !history && <p className="text-xs text-neutral-500">Reading…</p>}
+          {history && !history.length && <p className="text-xs text-neutral-500">No card has been answered yet.</p>}
+          {(history || []).map((h) => (
+            <div key={h.key} className="text-xs border-b border-neutral-900 last:border-b-0 pb-1">
+              <div className="flex items-center gap-2 text-neutral-100">
+                <code className="truncate">{h.tool || 'card'}</code>
+                <span className={/deny|denied|no/i.test(h.decision) ? 'text-amber-400' : 'text-emerald-400'}>{h.decision}</span>
+                <span className="ml-auto text-neutral-500 shrink-0 tabular-nums">{h.at ? new Date(h.at).toLocaleString() : ''}</span>
               </div>
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="text-left text-neutral-500">
-                    <th className="font-normal pr-2">Tool</th>
-                    <th className="font-normal pr-2">Source</th>
-                    <th className="font-normal pr-2">Asks</th>
-                    <th className="font-normal">Notes</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {policy.tools.map((t) => (
-                    <tr key={`${t.source}:${t.name}`} className="align-top text-neutral-300">
-                      <td className="pr-2 py-0.5">
-                        <code className="text-neutral-100">{t.name}</code>
-                      </td>
-                      <td className="pr-2 py-0.5 text-neutral-500">{t.source}</td>
-                      <td className={`pr-2 py-0.5 ${t.approval === 'never' ? 'text-neutral-400' : 'text-amber-400'}`}>{approvalWord(t.approval)}</td>
-                      <td className="py-0.5 text-neutral-500">{t.notes || ''}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-              {!policy.tools.length && <p className="text-xs text-neutral-500">The policy lists no tools.</p>}
-            </>
-          )}
+              {h.detail && <p className="text-[11px] text-neutral-500 truncate" title={h.detail}>{h.detail}</p>}
+            </div>
+          ))}
         </div>
       </div>
     </section>
