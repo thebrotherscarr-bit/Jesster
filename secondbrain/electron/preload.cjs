@@ -71,6 +71,8 @@ contextBridge.exposeInMainWorld('secondbrainDesktop', {
     always: () => ipcRenderer.invoke('approvals:always'),
     reset: (key) => ipcRenderer.invoke('approvals:reset', typeof key === 'string' ? key : null),
     policy: () => ipcRenderer.invoke('approvals:policy'),
+    // the answered cards, newest first (at most 200)
+    history: (limit) => ipcRenderer.invoke('approvals:history', limit),
   },
   schedules: {
     list: () => ipcRenderer.invoke('schedules:list'),
