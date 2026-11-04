@@ -20,7 +20,7 @@
  */
 const path = require('path');
 const { Tenants } = require('./tenant.cjs');
-const { Registry, holdTools, callerOf, regOf, heldAnswer, windowOf, windowAsking, OPERATOR_NAME, SHARE_KEY_NAME, FLOW_NAME, ATLAS } = require('./registry.cjs');
+const { Registry, holdTools, holdStatusTool, callerOf, regOf, heldAnswer, windowOf, windowAsking, OPERATOR_NAME, SHARE_KEY_NAME, FLOW_NAME, ATLAS } = require('./registry.cjs');
 const { sittingOpen } = require('./records.cjs');
 const { marshal } = require('./util.cjs');
 const { recordTools } = require('./records.cjs');
@@ -311,10 +311,14 @@ async function flowCall(door, name, args) {
   return door.call(name, args, FLOW);
 }
 
-/** main.cjs's one line: the door into atlas.handleMcp, and the operator's hand over IPC; with getAgent, the Agent tab's two (agentTools). */
+/**
+ * main.cjs's one line: the door into atlas.handleMcp, and the operator's hand over IPC; hold_status (registry.cjs),
+ * so a seat learns how its held call ended; with getAgent, the Agent tab's two (agentTools).
+ */
 function register({ atlas, ipcMain, guard, getSettings, vaultDir, getAgent, showAgent }) {
   const { findGround } = require('../atlasglass.cjs');
-  const door = serve(() => findGround((getSettings().get('atlas') || {}).ground, vaultDir()), { extra: getAgent ? agentTools(getAgent, showAgent) : [] });
+  const extra = [holdStatusTool, ...(getAgent ? agentTools(getAgent, showAgent) : [])];
+  const door = serve(() => findGround((getSettings().get('atlas') || {}).ground, vaultDir()), { extra });
   atlas.useDoor(door);
   process.on('exit', () => door.stop());
   ipcMain.handle('door:holds', async (event, project) => {

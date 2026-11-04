@@ -144,7 +144,7 @@ test('the Agent tab at the door: a client\'s agent_send waits for his Approve, t
   try {
     const names = d.list().map((t) => t.name);
     assert.deepEqual(names.slice(0, door.ORDER.length), door.ORDER, 'the Go door\'s 97 first, as they were');
-    assert.deepEqual(names.slice(door.ORDER.length), ['agent_send', 'agent_read']);
+    assert.deepEqual(names.slice(door.ORDER.length), ['hold_status', 'agent_send', 'agent_read']);
     const held = (await d.call('agent_send', { text: 'hi', session_id: 'session-20261031-2100-ab12' })).text;
     assert.match(held, /^HELD: "agent_send" writes/);
     assert.equal(asked.length, 0, 'nothing reaches the Agent before his Approve');

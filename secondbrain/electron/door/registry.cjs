@@ -35,6 +35,8 @@ const HELD_EXEMPT = new Set(['hold_answer', 'hold_list']);
 /** What a secret reads as where a hold is SHOWN; the parked call keeps it whole. */
 const WITHHELD = '[withheld: a secret; the parked call keeps it]';
 const KEY_RE = /^atl_[0-9a-f]{32}$/;
+/** How much of an approved call's answer the holds log keeps for hold_status. */
+const RESULT_CAP = 4000;
 
 function actionOf(args) {
   return String(typeof args.action === 'string' ? args.action : '').trim().toLowerCase();
@@ -204,10 +206,11 @@ class Registry {
     return h;
   }
 
-  /** One line appended to the world's own holds log (append-only, ESTATE LAW 8). */
-  record(home, what, h, note) {
+  /** One line appended to the world's own holds log (append-only, ESTATE LAW 8); an approved call's answer rides in `result`. */
+  record(home, what, h, note, result) {
     const line = { ts: rfc3339(), what, id: h.id, tool: h.tool, caller: h.caller, project: h.project, rbac: h.rbac };
     if (note) line.note = note;
+    if (result) line.result = String(result).slice(0, RESULT_CAP);
     try {
       const p = path.join(home, 'state', 'holds.jsonl');
       fs.mkdirSync(path.dirname(p), { recursive: true });
@@ -287,9 +290,84 @@ async function toolHoldAnswer(t, args) {
     reg.record(pt.home, 'approved_errored', h, e.message);
     return `Approved ${h.id} and ${q(h.tool)} errored: ${e.message}\n\n`;
   }
-  reg.record(pt.home, 'approved_ran', h, '');
+  reg.record(pt.home, 'approved_ran', h, '', out);
   return `Approved ${h.id}. ${q(h.tool)} ran:\n\n${out}`;
 }
+
+/**
+ * HOW A HOLD ENDED (audit item "door hold_status"). A seat whose write was parked learns, by the id it was
+ * given, whether the card is still waiting, was approved (and what the call answered), was denied, or expired
+ * (the door restarted, or the call could not be run). Read from the queue and the worlds' own holds logs,
+ * nothing else. A client sees only the holds it asked for itself; the operator's glass sees any.
+ */
+function holdLines(reg, id) {
+  const lines = [];
+  for (const name of reg.tenants.names()) {
+    let text = '';
+    try {
+      text = fs.readFileSync(path.join(reg.tenants.resolve(name).home, 'state', 'holds.jsonl'), 'utf8');
+    } catch {
+      continue;
+    }
+    for (const l of text.split(/\r?\n/)) {
+      if (!l.includes(id)) continue;
+      try {
+        const o = JSON.parse(l);
+        if (o && o.id === id) lines.push(o);
+      } catch {
+        /* a torn line is skipped */
+      }
+    }
+  }
+  return lines;
+}
+
+const ENDED = { denied: 'denied', approved_ran: 'approved', approved_errored: 'approved', refused: 'expired', vanished: 'expired' };
+
+async function toolHoldStatus(t, args) {
+  const reg = regOf(args);
+  if (!reg) return 'Refused: the hold queue is not reachable from here.';
+  const id = typeof args.id === 'string' ? args.id.trim() : '';
+  if (!id) return 'Refused: name the hold, e.g. id=hold_1757..., as the HELD answer gave it.';
+  const caller = callerOf(args);
+  const lines = holdLines(reg, id);
+  const waiting = reg.held.get(id);
+  const first = waiting || lines[0];
+  const unknown = `Refused: no hold called ${id} is known to this door.`;
+  if (!first) return unknown;
+  if (!caller.service && first.caller !== callerLabel(caller)) return unknown;
+  const out = { id, tool: first.tool, project: first.project, caller: first.caller, state: 'waiting' };
+  const held = lines.find((l) => l.what === 'held');
+  if (held) out.held = held.ts;
+  if (waiting) {
+    out.held = out.held || rfc3339(waiting.when);
+    return marshal(out, ' ');
+  }
+  const end = [...lines].reverse().find((l) => ENDED[l.what]);
+  if (!end) {
+    out.state = 'expired';
+    out.note = 'the door restarted before the card was answered, and a dropped hold never ran';
+    return marshal(out, ' ');
+  }
+  out.state = ENDED[end.what];
+  out.answered = end.ts;
+  if (end.what === 'approved_errored') out.error = end.note || '';
+  else if (end.note) out.note = end.note;
+  if (end.what === 'approved_ran') {
+    if (end.result) out.result = end.result;
+    else out.note = 'it ran, but its answer was not kept (approved before hold_status kept answers)';
+  }
+  return marshal(out, ' ');
+}
+
+const holdStatusTool = {
+  name: 'hold_status',
+  writes: false,
+  description:
+    'how one held call ended, by the id its HELD answer gave: waiting, approved (with what the call answered, e.g. the push output or the pull request), denied, or expired. A read; never asks a card',
+  args: ['id', 'project?'],
+  fn: toolHoldStatus,
+};
 
 const holdTools = [
   {
@@ -309,6 +387,6 @@ const holdTools = [
 ];
 
 module.exports = {
-  Registry, holdTools, writesFor, forbiddenWord, callerOf, regOf, shown, heldAnswer, windowOf, windowAsking,
-  CALLER_KEY, REGISTRY_KEY, FORBIDDEN_VERBS, HELD_EXEMPT, WITHHELD, OPERATOR_NAME, SHARE_KEY_NAME, FLOW_NAME, SECONDBRAIN, ATLAS,
+  Registry, holdTools, holdStatusTool, writesFor, forbiddenWord, callerOf, regOf, shown, heldAnswer, windowOf, windowAsking,
+  CALLER_KEY, REGISTRY_KEY, FORBIDDEN_VERBS, HELD_EXEMPT, WITHHELD, RESULT_CAP, OPERATOR_NAME, SHARE_KEY_NAME, FLOW_NAME, SECONDBRAIN, ATLAS,
 };
