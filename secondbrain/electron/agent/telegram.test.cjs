@@ -274,6 +274,53 @@ test("a Steward card answered in the window loses its buttons in the chat and sh
   }
 });
 
+test("the phone's exchange is kept for the Phone view (text, reply, card and its answer), and a chat keeps its Steward conversation across a restart", async () => {
+  const phone = require('./phone.cjs');
+  const tg = await fakeTelegram();
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'tg-phone-'));
+  const vault = new Vault(dir);
+  const log = phone.log(path.join(dir, 'phone-log.jsonl'));
+  const sessionsFile = path.join(dir, 'phone-sessions.json');
+  const seen = [];
+  const steward = {
+    ensure: async () => 'http://steward',
+    turn: async ({ text, approve, previous }) => {
+      seen.push({ text, previous });
+      const ok = await approve('write_note', {}, 'write_note x');
+      return { answer: ok ? 'written' : 'not written', previous: 'r1', calls: [] };
+    },
+  };
+  const config = { token: 'TOKEN', enabled: true, allowedChats: ['42'] };
+  const service = new AgentService({ getVault: () => vault, getModel: () => ({ backend: 'steward' }), steward });
+  let bot = new Telegram({ getConfig: () => config, agent: service, apiBase: tg.base, phone: log, sessions: phone.chatSessions(sessionsFile, 'telegram') });
+  await bot.start();
+  try {
+    tg.push({ message: { chat: { id: 42, first_name: 'Kyle' }, text: 'note this' } });
+    await until(() => service.cards().length === 1);
+    service.answerApproval(service.cards()[0].id, true, false); // answered in the window, as the Phone view does
+    await until(() => log.read('telegram', '42').some((e) => e.kind === 'reply'));
+    assert.deepEqual(log.read('telegram', '42').map((e) => e.kind).reverse(), ['user', 'card', 'answer', 'reply']);
+    assert.equal(log.list()[0].label, 'Telegram · Kyle');
+    assert.match(seen[0].text, /^\[from the phone \(Telegram\)\]\nnote this$/);
+    const sid = phone.chatSessions(sessionsFile, 'telegram').get('42');
+    assert.ok(sid, 'the chat map is on disk');
+    // a restart: a new bot over the same file continues the same session
+    bot.stop();
+    await new Promise((r) => setTimeout(r, 400)); // the old poll ends
+    bot = new Telegram({ getConfig: () => config, agent: service, apiBase: tg.base, phone: log, sessions: phone.chatSessions(sessionsFile, 'telegram') });
+    await bot.start();
+    tg.push({ message: { chat: { id: 42, first_name: 'Kyle' }, text: 'and again' } });
+    await until(() => service.cards().length === 1);
+    service.answerApproval(service.cards()[0].id, false, false);
+    await until(() => log.read('telegram', '42')[0]?.kind === 'reply' && log.read('telegram', '42')[0].text === 'not written');
+    assert.equal(seen[1].previous, 'r1', "Steward's thread continues");
+    assert.ok(log.read('telegram', '42').every((e) => e.sessionId === sid));
+  } finally {
+    bot.stop();
+    tg.server.close();
+  }
+});
+
 test('a wrong token is reported, not crashed on', async () => {
   const tg = await fakeTelegram();
   const bot = new Telegram({ getConfig: () => ({ token: 'BAD', enabled: true, allowedChats: [] }), agent: {}, apiBase: tg.base });

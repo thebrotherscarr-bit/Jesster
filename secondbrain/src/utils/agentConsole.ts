@@ -16,7 +16,7 @@ export const CONSOLE_SHELVES: { id: ConsoleShelf; label: string }[] = [
 ];
 
 /** The top bar's buttons, each marked data-topbar in Header.tsx (and AtlasButton.tsx); nothing else stands there. */
-export const TOP_BAR = ['Notes', 'Agent', 'Open Aurora', 'Settings', 'Update', 'Update notes kernel', 'Ollama (web only)'];
+export const TOP_BAR = ['Notes', 'Agent', 'Phone', 'Open Aurora', 'Settings', 'Update', 'Update notes kernel', 'Ollama (web only)'];
 
 /**
  * The controls that left the top bar for the console, each marked data-console in AgentConsole.tsx (or the shelf
@@ -25,8 +25,7 @@ export const TOP_BAR = ['Notes', 'Agent', 'Open Aurora', 'Settings', 'Update', '
 export const MOVED_TO_CONSOLE: { control: string; shelf: ConsoleShelf; file: string }[] = [
   { control: 'Steward', shelf: 'servers', file: 'AgentConsole.tsx' },
   { control: 'Services', shelf: 'servers', file: 'ServersShelf.tsx' },
-  { control: 'Ollama', shelf: 'servers', file: 'AgentConsole.tsx' },
-  { control: 'Integrations', shelf: 'servers', file: 'AgentConsole.tsx' },
+  // Ollama and Integrations went on to Settings (2026-11-04: no window opened from a shelf; utils/settingsMap.ts)
   { control: 'Approvals', shelf: 'approvals', file: 'ApprovalsShelf.tsx' },
   { control: 'Tool policy', shelf: 'tools', file: 'AgentConsole.tsx' },
 ];

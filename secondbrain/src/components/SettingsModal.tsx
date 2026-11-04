@@ -3,19 +3,28 @@ import { X, Inbox, RefreshCw, FolderGit2, Unplug } from 'lucide-react';
 import { InboxStatus } from '../types/desktop.ts';
 import { ArchiveSection } from './settings/ArchiveSection.tsx';
 import { ReportBack } from './settings/ReportBack.tsx';
+import { OllamaSection } from './settings/OllamaSection.tsx';
+import { IntegrationsSection } from './settings/IntegrationsSection.tsx';
+import { VoiceSection } from './settings/VoiceSection.tsx';
+import { OllamaConfig } from '../types/index.ts';
+import { VoiceSettings } from '../voice/useVoice.ts';
 
 interface SettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
-  /** extra sections other features add */
-  children?: React.ReactNode;
+  ollamaConfig: OllamaConfig;
+  onUpdateOllama: (c: Partial<OllamaConfig>) => void;
+  voice?: VoiceSettings;
+  onVoiceChange?: (v: Partial<VoiceSettings>) => void;
 }
 
 /**
- * The app's own settings: where notes are kept, the inbox from Claude, and the archive digger. Steward's settings
- * (Telegram, Aurora sharing, his tools, MCP servers, automations) are on the Agent tab's console.
+ * The app's one Settings window, every section on it flat (the operator, 2026-11-04: "no buried settings that are
+ * nested"): the notes folder, the inbox, the archive digger, Ollama, integrations and voice. Steward's own settings
+ * (Aurora sharing, his tools, MCP servers, automations) are on the Agent tab's console, Telegram on the Phone view;
+ * utils/settingsMap.ts lists where each one is.
  */
-export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, children }) => {
+export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, ollamaConfig, onUpdateOllama, voice, onVoiceChange }) => {
   const bridge = window.secondbrainDesktop;
   const [inbox, setInbox] = useState<InboxStatus | null>(null);
   const [busy, setBusy] = useState(false);
@@ -119,7 +128,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, c
         </section>
 
         <ArchiveSection />
-        {children}
+        <OllamaSection config={ollamaConfig} onUpdateConfig={onUpdateOllama} />
+        <IntegrationsSection />
+        {voice && onVoiceChange && <VoiceSection voice={voice} onChange={onVoiceChange} />}
       </div>
     </div>
   );

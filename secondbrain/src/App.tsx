@@ -13,10 +13,9 @@ import { Sidebar } from './components/Sidebar.tsx';
 import { NotesList } from './components/NotesList.tsx';
 import { NoteEditor } from './components/NoteEditor.tsx';
 import { defaultTab } from './utils/tabs.ts';
-import { OllamaSetupModal } from './components/OllamaSetupModal.tsx';
 import { SettingsModal } from './components/SettingsModal.tsx';
-import { IntegrationsModal } from './components/IntegrationsModal.tsx';
 import { AgentView } from './components/AgentView.tsx';
+import { PhoneView } from './components/PhoneView.tsx';
 import { HoldsDock } from './components/HoldsDock.tsx';
 import { useVoiceSettings } from './voice/useVoice.ts';
 import { useKernelSync } from './hooks/useKernelSync.ts';
@@ -49,9 +48,8 @@ export default function App() {
   // "Ask Steward about this note" fills the Agent tab's message box (n makes a second ask of the same note land)
   const [agentDraft, setAgentDraft] = useState<{ text: string; n: number } | undefined>();
 
-  const [isOllamaModalOpen, setIsOllamaModalOpen] = useState(false);
+  // the one Settings window: Ollama, integrations and voice are its sections (utils/settingsMap.ts)
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [isIntegrationsOpen, setIsIntegrationsOpen] = useState(false);
 
   // Ollama Configuration State
   const [ollamaConfig, setOllamaConfig] = useState<OllamaConfig>(() => {
@@ -235,7 +233,7 @@ export default function App() {
       <Header
         activeTab={activeTab}
         onSelectTab={setActiveTab}
-        onOpenOllamaModal={window.secondbrainDesktop?.agent ? undefined : () => setIsOllamaModalOpen(true)}
+        onOpenOllamaModal={window.secondbrainDesktop?.agent ? undefined : () => setIsSettingsOpen(true)}
         ollamaConfig={ollamaConfig}
         storage={storage}
         onOpenSettings={window.secondbrainDesktop?.settings ? () => setIsSettingsOpen(true) : undefined}
@@ -298,9 +296,15 @@ export default function App() {
                 setSelectedNoteId(id);
                 setActiveTab('notes');
               }}
-              onOpenOllama={() => setIsOllamaModalOpen(true)}
-              onOpenIntegrations={window.secondbrainDesktop?.integrations ? () => setIsIntegrationsOpen(true) : undefined}
+              onVoiceChange={setVoice}
             />
+          </div>
+        )}
+
+        {/* the phone's conversations with Steward; kept mounted so it follows them live */}
+        {window.secondbrainDesktop?.phone && (
+          <div className={activeTab === 'phone' ? 'flex flex-1 min-w-0 min-h-0' : 'hidden'}>
+            <PhoneView voice={voice} onVoiceChange={setVoice} />
           </div>
         )}
       </main>
@@ -308,20 +312,12 @@ export default function App() {
       {/* SecondBrain's own cards, on every page (the Atlas glass shows Atlas's) */}
       <HoldsDock />
 
-      {/* Modals */}
-      <OllamaSetupModal
-        isOpen={isOllamaModalOpen}
-        onClose={() => setIsOllamaModalOpen(false)}
-        config={ollamaConfig}
-        onUpdateConfig={(updates) => setOllamaConfig((prev) => ({ ...prev, ...updates }))}
-      />
-
-      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
-
-      {/* opened from the console's Servers shelf */}
-      <IntegrationsModal
-        isOpen={isIntegrationsOpen}
-        onClose={() => setIsIntegrationsOpen(false)}
+      {/* the one Settings window, every section flat */}
+      <SettingsModal
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
+        ollamaConfig={ollamaConfig}
+        onUpdateOllama={(updates) => setOllamaConfig((prev) => ({ ...prev, ...updates }))}
         voice={window.secondbrainDesktop ? voice : undefined}
         onVoiceChange={setVoice}
       />

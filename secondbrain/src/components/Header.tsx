@@ -3,9 +3,9 @@ import { OllamaConfig } from '../types/index.ts';
 import { KernelSync } from '../hooks/useKernelSync.ts';
 import { DesktopUpdate } from '../hooks/useDesktopUpdate.ts';
 import { AtlasButton } from './AtlasButton.tsx';
-import { Brain, Cpu, Link2, Download, Settings as SettingsIcon, Bot } from 'lucide-react';
+import { Brain, Cpu, Link2, Download, Settings as SettingsIcon, Bot, Smartphone } from 'lucide-react';
 
-export type ActiveTab = 'notes' | 'agent';
+export type ActiveTab = 'notes' | 'agent' | 'phone';
 
 interface HeaderProps {
   activeTab: ActiveTab;
@@ -114,6 +114,14 @@ export const Header: React.FC<HeaderProps> = ({
           >
             <Bot className="w-3.5 h-3.5" />
             <span className="hidden md:inline">{agentLabel}</span>
+          </button>
+        )}
+
+        {/* the phone's conversations with Steward (Telegram today), beside the PC's Agent tab */}
+        {window.secondbrainDesktop?.phone && (
+          <button data-topbar="Phone" onClick={() => onSelectTab('phone')} title="Phone: your conversations with Steward from the phone" className={tab(activeTab === 'phone')}>
+            <Smartphone className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">Phone</span>
           </button>
         )}
 
