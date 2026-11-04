@@ -27,6 +27,27 @@
   background: rgba(160, 160, 160, 0.35);
 }
 
+/* The Agent tab's messages stay inside the window (Kyle, 2026-11-04: a long line pushed Stop and Send off to the
+   side). There is no typography plugin, so a <pre> keeps `white-space: pre` and one long line or word set the whole
+   column's width. Text and code wrap; a wide table scrolls inside itself. */
+.agent-md {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.agent-md pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+}
+.agent-md table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.agent-md img {
+  max-width: 100%;
+}
+
 /* Markdown styling inside preview */
 .markdown-body h1 {
   font-size: 1.75rem;

@@ -180,7 +180,7 @@ export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice }) => 
   };
 
   return (
-    <div className="flex flex-1 min-h-0">
+    <div className="flex flex-1 min-w-0 min-h-0">
       <aside className="hidden md:flex w-64 shrink-0 min-h-0 flex-col border-r border-neutral-800">
         <button
           onClick={() => {
@@ -226,7 +226,7 @@ export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice }) => 
             const el = e.currentTarget;
             atBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
           }}
-          className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-8 py-6 space-y-4"
+          className="flex-1 min-w-0 min-h-0 overflow-y-auto overflow-x-hidden px-4 sm:px-8 py-6 space-y-4"
         >
           {!turns.length && (
             <div className="max-w-xl mx-auto text-center text-neutral-400 mt-16 space-y-2">
@@ -253,7 +253,7 @@ export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice }) => 
           {turns.map((t, i) =>
             t.role === 'user' ? (
               <div key={i} className="flex justify-end">
-                <div className="max-w-[80%] rounded-2xl bg-neutral-800 px-4 py-2.5 text-sm text-white whitespace-pre-wrap">{t.text}</div>
+                <div className="max-w-[80%] min-w-0 rounded-2xl bg-neutral-800 px-4 py-2.5 text-sm text-white whitespace-pre-wrap [overflow-wrap:anywhere]">{t.text}</div>
               </div>
             ) : t.role === 'tool' ? (
               <div key={i} className="text-[11px] text-neutral-500 font-mono whitespace-pre-wrap break-words pl-2 border-l border-neutral-800">
@@ -267,16 +267,16 @@ export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice }) => 
             ) : t.role === 'check' ? (
               <div key={i} className="rounded-xl border border-violet-900 bg-violet-950/30 px-3 py-2 space-y-1" aria-label="Claude's check">
                 <div className="text-[11px] uppercase tracking-wider text-violet-300">Claude's check</div>
-                <div className="prose prose-invert prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: renderMarkdown(t.text) }} />
+                <div className="agent-md prose prose-invert prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: renderMarkdown(t.text) }} />
               </div>
             ) : t.role === 'error' ? (
-              <div key={i} role="alert" className="text-sm text-amber-300 bg-amber-950/40 border border-amber-900 rounded-lg px-3 py-2">
+              <div key={i} role="alert" className="text-sm text-amber-300 bg-amber-950/40 border border-amber-900 rounded-lg px-3 py-2 [overflow-wrap:anywhere]">
                 {t.text}
               </div>
             ) : (
               <div
                 key={i}
-                className="prose prose-invert prose-sm max-w-none"
+                className="agent-md prose prose-invert prose-sm max-w-none"
                 dangerouslySetInnerHTML={{ __html: renderMarkdown(t.text) }}
               />
             )
@@ -284,9 +284,9 @@ export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice }) => 
           {approvals.map((r) => (
             <div key={r.id} role="alertdialog" className="rounded-xl border border-amber-800 bg-amber-950/40 p-3 space-y-2">
               <div className="flex items-center gap-2 text-sm text-amber-200">
-                <ShieldAlert className="w-4 h-4" /> The agent wants to use <code>{r.name}</code>
+                <ShieldAlert className="w-4 h-4 shrink-0" /> <span className="min-w-0 [overflow-wrap:anywhere]">The agent wants to use <code>{r.name}</code></span>
               </div>
-              <pre className="text-xs text-neutral-200 whitespace-pre-wrap break-words bg-black/40 rounded-md p-2">{r.summary}</pre>
+              <pre className="text-xs text-neutral-200 whitespace-pre-wrap break-words [overflow-wrap:anywhere] max-w-full bg-black/40 rounded-md p-2">{r.summary}</pre>
               <div className="flex gap-2">
                 <button onClick={() => answer(r, true)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 text-xs text-white hover:bg-emerald-500">
                   <Check className="w-3.5 h-3.5" /> Allow once
@@ -302,12 +302,12 @@ export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice }) => 
                   onKeyDown={(e) => e.key === 'Enter' && replyOn(r)}
                   placeholder="Reply on this card…"
                   aria-label="Reply on this card"
-                  className="flex-1 bg-neutral-900 border border-neutral-700 rounded-lg px-2 py-1 text-xs text-neutral-100"
+                  className="flex-1 min-w-0 bg-neutral-900 border border-neutral-700 rounded-lg px-2 py-1 text-xs text-neutral-100"
                 />
                 <button
                   onClick={() => replyOn(r)}
                   disabled={!(replies[r.id] || '').trim()}
-                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-neutral-700 text-xs text-neutral-200 hover:bg-neutral-800 disabled:opacity-40"
+                  className="shrink-0 flex items-center gap-1 px-3 py-1.5 rounded-lg border border-neutral-700 text-xs text-neutral-200 hover:bg-neutral-800 disabled:opacity-40"
                 >
                   <Send className="w-3.5 h-3.5" /> Reply
                 </button>
@@ -318,7 +318,7 @@ export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice }) => 
           {voiceError && <div role="alert" className="text-xs text-amber-400">{voiceError}</div>}
           {recorder.progress && <div className="text-xs text-neutral-500">Preparing speech model: {recorder.progress}</div>}
         </div>
-        <div className="border-t border-neutral-800 p-3 flex gap-2 items-end">
+        <div className="border-t border-neutral-800 p-3 flex gap-2 items-end min-w-0">
           <textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -331,22 +331,22 @@ export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice }) => 
             rows={2}
             placeholder="Ask the agent… (Enter to send, Shift+Enter for a new line)"
             aria-label="Message the agent"
-            className="flex-1 resize-none rounded-xl bg-neutral-900 border border-neutral-800 px-3 py-2 text-sm text-white placeholder:text-neutral-500 focus:outline-none focus:border-neutral-600"
+            className="flex-1 min-w-0 resize-none rounded-xl bg-neutral-900 border border-neutral-800 px-3 py-2 text-sm text-white placeholder:text-neutral-500 focus:outline-none focus:border-neutral-600"
           />
           <button
             onClick={() => (recorder.state === 'recording' ? recorder.stop() : recorder.state === 'idle' && (setVoiceError(null), recorder.start()))}
             aria-label={recorder.state === 'recording' ? 'Stop recording' : 'Speak'}
             title={recorder.state === 'recording' ? 'Stop and transcribe' : recorder.state === 'idle' ? 'Speak (Whisper, on this PC)' : recorder.progress || 'Transcribing…'}
-            className={`p-2.5 rounded-xl border ${recorder.state === 'recording' ? 'border-rose-500 bg-rose-950 text-rose-300 animate-pulse' : 'border-neutral-700 text-neutral-200 hover:bg-neutral-800'}`}
+            className={`shrink-0 p-2.5 rounded-xl border ${recorder.state === 'recording' ? 'border-rose-500 bg-rose-950 text-rose-300 animate-pulse' : 'border-neutral-700 text-neutral-200 hover:bg-neutral-800'}`}
           >
             {recorder.state === 'idle' || recorder.state === 'recording' ? <Mic className="w-4 h-4" /> : <Loader2 className="w-4 h-4 animate-spin" />}
           </button>
           {busy && !cardWaits ? (
-            <button onClick={() => sessionId && agent.stop(sessionId)} aria-label="Stop" className="p-2.5 rounded-xl border border-neutral-700 text-neutral-200 hover:bg-neutral-800">
+            <button onClick={() => sessionId && agent.stop(sessionId)} aria-label="Stop" className="shrink-0 p-2.5 rounded-xl border border-neutral-700 text-neutral-200 hover:bg-neutral-800">
               <Square className="w-4 h-4" />
             </button>
           ) : (
-            <button onClick={send} aria-label="Send" className="p-2.5 rounded-xl bg-white text-black hover:bg-neutral-200 disabled:opacity-40" disabled={!input.trim()}>
+            <button onClick={send} aria-label="Send" className="shrink-0 p-2.5 rounded-xl bg-white text-black hover:bg-neutral-200 disabled:opacity-40" disabled={!input.trim()}>
               <Send className="w-4 h-4" />
             </button>
           )}

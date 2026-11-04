@@ -495,7 +495,7 @@ export default function App() {
 
         {/* kept mounted so a conversation survives switching tabs */}
         {window.secondbrainDesktop?.agent && (
-          <div className={activeTab === 'agent' ? 'flex flex-1 min-h-0' : 'hidden'}>
+          <div className={activeTab === 'agent' ? 'flex flex-1 min-w-0 min-h-0' : 'hidden'}>
             <AgentView
               ollamaConfig={ollamaConfig}
               voice={voice}
