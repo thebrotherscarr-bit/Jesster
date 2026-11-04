@@ -425,7 +425,8 @@ test('a message sent while a card waits answers it No, then goes to Steward next
   const answers = [];
   const steward = {
     ensure: async () => 'http://steward',
-    turn: async ({ text, approve }) => {
+    turn: async ({ text: sent, approve }) => {
+      const text = sent.startsWith('[') ? sent.slice(sent.indexOf(']') + 2) : sent; // the source line withSource adds
       asked.push(text);
       if (text === 'fix the test') answers.push(await approve('approve_plan', { plan: '1. fix' }, 'approve_plan'));
       return { answer: 'ok', previous: `r${asked.length}`, calls: [] };
