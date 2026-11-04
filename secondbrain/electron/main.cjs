@@ -24,6 +24,7 @@ const memory = require('./agent/memory.cjs');
 const sched = require('./agent/schedules.cjs');
 const { McpClient } = require('./agent/mcp.cjs');
 const { Telegram } = require('./agent/telegram.cjs');
+const phone = require('./agent/phone.cjs');
 const subagents = require('./agent/subagents.cjs');
 const terminal = require('./agent/terminal.cjs');
 const browser = require('./agent/browser.cjs');
@@ -704,6 +705,21 @@ ipcMain.handle('mcp:reconnect', async (event) => {
   return { config: getMcp().rawConfig(), file: getMcp().file(), status: await connectMcp() };
 });
 
+// ---- the phone's conversations (agent/phone.cjs): kept for the Phone view, sent to it live ----------
+let phoneLog = null;
+const getPhoneLog = () =>
+  (phoneLog ||= phone.log(path.join(app.getPath('userData'), 'phone-log.jsonl'), { onAppend: (e) => mainWindow && mainWindow.webContents.send('phone:entry', e) }));
+ipcMain.handle('phone:list', (event) => {
+  guard(event);
+  return getPhoneLog().list();
+});
+ipcMain.handle('phone:read', (event, channel, chatId) => {
+  guard(event);
+  // the cards still waiting, so the view shows Allow/Deny on those only
+  const open = getAgent().cards().map((c) => c.id);
+  return { entries: getPhoneLog().read(String(channel), String(chatId)), open };
+});
+
 // ---- Telegram ----------------------------------------------------------------
 let telegram = null;
 function getTelegram() {
@@ -711,6 +727,9 @@ function getTelegram() {
     telegram = new Telegram({
       getConfig: () => getSettings().get('telegram'),
       agent: getAgent(),
+      phone: getPhoneLog(),
+      // each chat's conversation with Steward, kept across restarts
+      sessions: phone.chatSessions(path.join(app.getPath('userData'), 'phone-sessions.json'), 'telegram'),
       onState: (st) => mainWindow && mainWindow.webContents.send('telegram:state', st),
       // tests point this at a fake Bot API; normally Telegram's own
       apiBase: process.env.SECONDBRAIN_TELEGRAM_API || undefined,

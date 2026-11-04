@@ -5,6 +5,7 @@ import { AgentEvent, ApprovalRequest } from '../types/desktop.ts';
 import { OllamaConfig } from '../types/index.ts';
 import { renderMarkdown } from '../utils/markdown.ts';
 import { AgentConsole } from './AgentConsole.tsx';
+import { SpeakToggle } from './SpeakToggle.tsx';
 import { CHATS_OPEN_KEY, CONSOLE_OPEN_KEY, keepPanel, panelOpen } from '../utils/agentConsole.ts';
 
 // where the two folding panels keep their state (none when the window's storage cannot be reached)
@@ -30,9 +31,8 @@ interface AgentViewProps {
   onOpenNote: (id: string) => void;
   /** a message to start from: the Notes tab's "Ask Steward" (n changes on every ask) */
   draft?: { text: string; n: number };
-  /** the console's Servers shelf opens these app windows */
-  onOpenOllama?: () => void;
-  onOpenIntegrations?: () => void;
+  /** the speaker in the header: voice.speakReplies on or off */
+  onVoiceChange?: (v: Partial<VoiceSettings>) => void;
 }
 
 /**
@@ -41,7 +41,7 @@ interface AgentViewProps {
  * saved as a session note. Beside it, the console (AgentConsole.tsx): everything
  * that watches and steers Steward, opened and closed like Aurora's Inspector.
  */
-export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice, draft, onOpenOllama, onOpenIntegrations }) => {
+export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice, draft, onVoiceChange }) => {
   const agent = window.secondbrainDesktop?.agent;
   const [sessions, setSessions] = useState<{ id: string; title: string; updatedAt: number; source?: string }[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -259,12 +259,14 @@ export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice, draft
           <span className="text-neutral-200 font-semibold">{backend === 'steward' ? 'Steward' : 'Agent'}</span>
           <span className="text-neutral-600">/</span>
           <span className="text-neutral-500 truncate min-w-0">{sessions.find((s) => s.id === sessionId)?.title.replace(/^Agent: /, '') || 'new conversation'}</span>
+          <span className="ml-auto" />
+          <SpeakToggle voice={voice} onVoiceChange={onVoiceChange} />
           <button
             onClick={() => showConsole(!consoleOpen)}
             aria-pressed={consoleOpen}
             aria-label={consoleOpen ? 'Close the console' : 'Open the console'}
             title="The console: servers, approvals, evals, runs, tools, skills and memory"
-            className={`ml-auto shrink-0 flex items-center gap-1.5 px-2 py-1 rounded-md ${consoleOpen ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:text-white hover:bg-neutral-900'}`}
+            className={`shrink-0 flex items-center gap-1.5 px-2 py-1 rounded-md ${consoleOpen ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:text-white hover:bg-neutral-900'}`}
           >
             <PanelRight className="w-3.5 h-3.5" /> Console
           </button>
@@ -401,7 +403,7 @@ export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice, draft
           )}
         </div>
       </section>
-      {consoleOpen && <AgentConsole ollamaConfig={ollamaConfig} onClose={() => showConsole(false)} onOpenOllama={onOpenOllama} onOpenIntegrations={onOpenIntegrations} />}
+      {consoleOpen && <AgentConsole onClose={() => showConsole(false)} />}
     </div>
   );
 };

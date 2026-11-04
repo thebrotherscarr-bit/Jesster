@@ -31,12 +31,9 @@ export const VoiceSection: React.FC<{ voice: VoiceSettings; onChange: (v: Partia
       <p className="text-xs text-neutral-400">
         Talk to the agent with the mic button in the Agent tab, and send Telegram voice notes. Speech is turned into
         text by whisper.cpp on this machine (the one Manjuel uses, in its <code>bin</code> folder): nothing is
-        downloaded. Replies can be read aloud with Windows' own voices.
+        downloaded. Replies are read aloud with Windows' own voices: turn that on or off with the speaker button at the
+        top of the Agent tab and the Phone view.
       </p>
-      <label className="flex items-center gap-2 text-xs text-neutral-200">
-        <input type="checkbox" checked={voice.speakReplies} aria-label="Read replies aloud" onChange={(e) => onChange({ speakReplies: e.target.checked })} />
-        Read the agent's replies aloud
-      </label>
       <div className="flex gap-2">
         <input
           value={model}

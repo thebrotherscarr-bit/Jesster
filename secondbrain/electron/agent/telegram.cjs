@@ -29,7 +29,11 @@ class Telegram {
    * requests for the UI; agent: AgentService; transcribe(buffer, mime): text
    * for voice notes (voice feature), optional.
    */
-  constructor({ getConfig, agent, onState = () => {}, apiBase = API, transcribe = null, cardTimeout = CARD_TIMEOUT_MS }) {
+  /**
+   * phone: phone.cjs log(), where each exchange is kept for the Phone view; sessions: chat id -> session id, kept
+   * across restarts (phone.cjs chatSessions), else in memory.
+   */
+  constructor({ getConfig, agent, onState = () => {}, apiBase = API, transcribe = null, cardTimeout = CARD_TIMEOUT_MS, phone = null, sessions = null }) {
     this.getConfig = getConfig;
     this.agent = agent;
     this.onState = onState;
@@ -38,7 +42,9 @@ class Telegram {
     this.offset = 0;
     this.running = false;
     this.pending = new Map(); // chat id -> { id, name, at }
-    this.sessions = new Map(); // chat id -> session id
+    this.sessions = sessions || new Map(); // chat id -> session id
+    this.phone = phone;
+    this.titles = new Map(); // chat id -> the chat's name, for the Phone view
     this.approvals = new Map(); // approval id -> resolve
     // the service's card id (Steward's) -> { chat, messageId, text, timer }: where it was sent, to drop its buttons
     this.cards = new Map();
@@ -135,6 +141,16 @@ class Telegram {
     }
   }
 
+  /** One line of a chat's exchange into the phone log; a log that cannot be written never stops the chat. */
+  record(chatId, line) {
+    if (!this.phone) return;
+    try {
+      this.phone.append({ channel: 'telegram', chatId: String(chatId), title: this.titles.get(String(chatId)) || '', sessionId: this.sessions.get(String(chatId)) || null, ...line });
+    } catch {
+      /* not kept */
+    }
+  }
+
   allowed(chatId) {
     return (this.getConfig().allowedChats || []).map(String).includes(String(chatId));
   }
@@ -177,6 +193,7 @@ class Telegram {
       }
       entry.messageId = sent.message?.message_id ?? null;
       entry.text = sent.text;
+      this.record(chatId, { kind: 'card', cardId: card.id, name: card.name, text: card.summary });
       // answered while it was being sent: its buttons go now
       if (!this.cards.has(card.id) && entry.answer) await this.dropButtons(entry, entry.answer);
     };
@@ -189,6 +206,7 @@ class Telegram {
     this.cards.delete(answer.id);
     clearTimeout(entry.timer);
     entry.answer = answer;
+    this.record(entry.chat, { kind: 'answer', cardId: answer.id, answer: answer.answer, where: answer.where, text: ANSWERS[answer.answer] || answer.answer });
     if (entry.messageId !== null) await this.dropButtons(entry, answer);
   }
 
@@ -248,6 +266,7 @@ class Telegram {
     }
     if (!text) return;
     const key = String(chatId);
+    this.titles.set(key, [msg.chat.first_name, msg.chat.last_name].filter(Boolean).join(' ') || msg.chat.title || msg.chat.username || '');
     if (text === '/new' || text === '/start') {
       this.sessions.delete(key);
       await this.send(chatId, 'New conversation. What do you need?');
@@ -278,12 +297,15 @@ class Telegram {
     await this.api('sendChatAction', { chat_id: chatId, action: 'typing' }).catch(() => {});
     // the chat's session is named before the turn, so a message typed while a card waits finds it
     const sessionId = this.sessions.get(key) || newSessionId();
-    this.sessions.set(key, sessionId);
-    const reply = (r) =>
-      this.send(chatId, r.answer).catch((e) => {
+    if (this.sessions.get(key) !== sessionId) this.sessions.set(key, sessionId);
+    this.record(chatId, { kind: 'user', text });
+    const reply = (r) => {
+      this.record(chatId, { kind: 'reply', text: r.answer });
+      return this.send(chatId, r.answer).catch((e) => {
         this.error = e.message;
         this.emit();
       });
+    };
     let r;
     try {
       r = await this.agent.ask({

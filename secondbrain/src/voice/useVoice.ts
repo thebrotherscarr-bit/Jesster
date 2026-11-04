@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { DEFAULT_MODEL, getEngine, setEngine, speak, transcribe, Progress } from './engine.ts';
+import { DEFAULT_MODEL, getEngine, setEngine, speak, stopSpeaking, transcribe, Progress } from './engine.ts';
 import { decodeTo16k } from './audio.ts';
 import '../types/desktop.ts';
 
@@ -100,4 +100,4 @@ export function useRecorder(model: string, onText: (text: string) => void, onErr
   return { state, progress, start, stop };
 }
 
-export { speak };
+export { speak, stopSpeaking };

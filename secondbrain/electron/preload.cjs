@@ -94,6 +94,16 @@ contextBridge.exposeInMainWorld('secondbrainDesktop', {
     save: (text) => ipcRenderer.invoke('mcp:save', text),
     reconnect: () => ipcRenderer.invoke('mcp:reconnect'),
   },
+  // the Phone view: the phone's conversations with Steward (Telegram today), as they happened, and each new line live
+  phone: {
+    list: () => ipcRenderer.invoke('phone:list'),
+    read: (channel, chatId) => ipcRenderer.invoke('phone:read', channel, chatId),
+    onEntry: (cb) => {
+      const fn = (_e, entry) => cb(entry);
+      ipcRenderer.on('phone:entry', fn);
+      return () => ipcRenderer.removeListener('phone:entry', fn);
+    },
+  },
   telegram: {
     state: () => ipcRenderer.invoke('telegram:state'),
     pair: (chatId, allow) => ipcRenderer.invoke('telegram:pair', chatId, allow),
