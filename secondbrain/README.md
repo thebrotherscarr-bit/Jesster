@@ -97,6 +97,23 @@ node node_modules\electron\install.js
 
 Without it, the packaged `electron.exe` is zero length.
 
+## Versioning
+
+Every release is tagged `secondbrain-b<N>`, where `<N>` is the release
+workflow's run number, and ships `SecondBrain-win32-x64.zip`. The Update
+button compares that build number and nothing else. The app's version is
+`MAJOR.MINOR` from `package.json` with the build number as the patch:
+`version` `0.1.0` in `package.json` releases as `0.1.<N>`. The workflow
+writes it into `package.json` (so electron-packager puts it in the exe) and
+into `electron\build.json` beside the build number. To start a new minor
+line, change `package.json`'s `version` in a pull request.
+
+CI is pinned: Node and npm come from `.nvmrc` and `package.json`'s
+`engines` and `packageManager` (Node 22.23.4, npm 10.9.9), the runners are
+named images (`ubuntu-26.04`, `windows-2025-vs2026`), Python is an exact
+patch, and every action is pinned to a commit SHA with its tag beside it.
+Nothing updates these on its own; change them by hand in a pull request.
+
 ---
 
 ## How it is put together
