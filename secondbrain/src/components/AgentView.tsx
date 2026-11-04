@@ -104,9 +104,12 @@ export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice }) => 
       }
     });
     const offApproval = agent.onApproval((r) => setApprovals((a) => [...a, r]));
+    // answered elsewhere (the Services window's Approvals): the card leaves here too
+    const offAnswered = agent.onAnswered?.((d) => setApprovals((a) => a.filter((x) => x.id !== d.id)));
     return () => {
       offEvent();
       offApproval();
+      offAnswered?.();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [agent]);

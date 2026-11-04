@@ -60,6 +60,8 @@ export interface ApprovalRequest {
   name: string;
   args: Record<string, unknown>;
   summary: string;
+  /** 'review': the improvement loop's review (Allow keeps the change, Deny drops it); never Always */
+  kind?: 'review';
 }
 
 export interface AgentBridge {
@@ -71,6 +73,8 @@ export interface AgentBridge {
   tools: () => Promise<{ name: string; description: string }[]>;
   onEvent: (cb: (e: AgentEvent) => void) => () => void;
   onApproval: (cb: (r: ApprovalRequest) => void) => () => void;
+  /** a card answered anywhere: it leaves every view */
+  onAnswered?: (cb: (done: { id: string; sessionId: string }) => void) => () => void;
   onShow?: (cb: (sessionId: string) => void) => () => void;
 }
 
@@ -267,6 +271,38 @@ export interface DesktopBridge {
   };
   /** The Services window's Servers shelf: every server SecondBrain runs or watches, with start, stop, restart and its log */
   services?: ServicesBridge;
+  /** The Services window's Approvals shelf: open cards of both planes, Always allow, Steward's tool policy */
+  approvals?: ApprovalsBridge;
+}
+
+/** One open card: the Agent tab's (answered with agent.approve) or the door's hold (answered with door.call). */
+export type ApprovalItem =
+  | { plane: 'agent'; id: string; tool: string; sessionId: string; summary: string; args: Record<string, unknown>; at: number; kind?: 'review' }
+  | { plane: 'door'; id: string; tool: string; project: string; caller: string; when: string; args: Record<string, unknown>; at: number };
+
+/** A standing Always allow: one tool with the exact text its card showed (for Steward's cards, its exact arguments). */
+export interface AlwaysEntry {
+  key: string;
+  name: string;
+  summary: string;
+  at: number;
+}
+
+export type ToolApproval = 'always' | 'never' | 'rule';
+
+export type ToolPolicy =
+  | { state: 'absent'; file: string | null }
+  | { state: 'malformed'; file: string; error: string }
+  | { state: 'ok'; file: string; ts: string | null; tools: { name: string; source: string; approval: ToolApproval; notes?: string }[] };
+
+export interface ApprovalsBridge {
+  /** every open card, newest first; doorError when the door's could not be read */
+  list: () => Promise<{ items: ApprovalItem[]; doorError?: string }>;
+  always: () => Promise<AlwaysEntry[]>;
+  /** forget one entry by its key, or all when no key is given; the entries left */
+  reset: (key?: string) => Promise<AlwaysEntry[]>;
+  /** Steward's storage/tool-policy.json, read only */
+  policy: () => Promise<ToolPolicy>;
 }
 
 export type ServiceKind = 'owned' | 'external';

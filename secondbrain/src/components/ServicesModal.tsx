@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Server, X, RefreshCw, ScrollText } from 'lucide-react';
 import { ServiceInfo } from '../types/desktop.ts';
 import { LOG_LINES, kindWord, lastLines, statusTone, statusWord } from '../utils/services.ts';
+import { ApprovalsShelf } from './ApprovalsShelf.tsx';
 
 const EVERY_MS = 3000;
 
@@ -22,11 +23,12 @@ export const ServicesButton: React.FC<{ onOpen: () => void }> = ({ onOpen }) => 
 
 /**
  * The Services window, built as Steward's is (tabs under the title, one bordered box of rows): Servers, one row per
- * server with its port, status, who runs it, Start, Stop, Restart and its log. MCP and Integrations come next.
+ * server with its port, status, who runs it, Start, Stop, Restart and its log; Approvals, every open card of both
+ * planes with Always allow and Steward's tool policy (ApprovalsShelf). MCP and Integrations come next.
  */
 export const ServicesModal: React.FC<{ isOpen: boolean; onClose: () => void }> = ({ isOpen, onClose }) => {
   const api = window.secondbrainDesktop?.services;
-  const [tab, setTab] = useState<'servers' | 'mcp' | 'integrations'>('servers');
+  const [tab, setTab] = useState<'servers' | 'approvals' | 'mcp' | 'integrations'>('servers');
   const [servers, setServers] = useState<ServiceInfo[] | null>(null);
   const [listError, setListError] = useState('');
   const [busy, setBusy] = useState<string | null>(null);
@@ -112,13 +114,13 @@ export const ServicesModal: React.FC<{ isOpen: boolean; onClose: () => void }> =
         </div>
 
         <div className="flex items-center gap-1 px-5 pt-3">
-          {(['servers', 'mcp', 'integrations'] as const).map((t) => (
+          {(['servers', 'approvals', 'mcp', 'integrations'] as const).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
               className={`px-2.5 py-1 rounded-md text-xs ${tab === t ? 'bg-neutral-800 text-white font-semibold' : 'text-neutral-400 hover:text-white hover:bg-neutral-900'}`}
             >
-              {t === 'servers' ? 'Servers' : t === 'mcp' ? 'MCP' : 'Integrations'}
+              {t === 'servers' ? 'Servers' : t === 'approvals' ? 'Approvals' : t === 'mcp' ? 'MCP' : 'Integrations'}
             </button>
           ))}
           {tab === 'servers' && (
@@ -130,6 +132,8 @@ export const ServicesModal: React.FC<{ isOpen: boolean; onClose: () => void }> =
 
         {!api ? (
           <p className="px-5 py-4 text-xs text-neutral-400">Services run in the SecondBrain desktop app.</p>
+        ) : tab === 'approvals' ? (
+          <ApprovalsShelf />
         ) : tab === 'mcp' ? (
           <section className="px-5 py-4" aria-label="MCP">
             <p className="text-xs text-neutral-500">MCP: coming next.</p>

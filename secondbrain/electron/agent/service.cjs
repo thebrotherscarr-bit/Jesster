@@ -27,8 +27,9 @@ class AgentService {
     this.threads = threads;
     this.registry = new Registry().add(core);
     this.sessions = new Map(); // id -> { messages, busy, abort }
-    this.pending = new Map(); // approval id -> { resolve, key, sessionId }
-    this.alwaysAllow = new Set();
+    this.pending = new Map(); // approval id -> { resolve, key, sessionId, name, args, summary, at, kind? }
+    // Always allow: key `${name}:${summary}` -> { name, summary, at }; in memory, so it ends when SecondBrain does
+    this.alwaysAllow = new Map();
   }
 
   session(id) {
@@ -52,7 +53,7 @@ class AgentService {
       if (this.alwaysAllow.has(key)) return Promise.resolve(true);
       const id = crypto.randomBytes(6).toString('hex');
       this.emit('agent:approval', { id, sessionId, name, args, summary });
-      return new Promise((resolve) => this.pending.set(id, { resolve, key, sessionId }));
+      return new Promise((resolve) => this.pending.set(id, { resolve, key, sessionId, name, args, summary, at: Date.now() }));
     };
   }
 
@@ -71,7 +72,7 @@ class AgentService {
         `Allow once = keep the change. Deny = drop it. Or type guidance in the box to send it back for another attempt.\n\n` +
         String(r.output || '').slice(-1500);
       this.emit('agent:approval', { id, sessionId, name: 'review', kind: 'review', args: request || {}, summary });
-      return new Promise((resolve) => this.pending.set(id, { resolve, key: `review:${id}`, sessionId, kind: 'review' }));
+      return new Promise((resolve) => this.pending.set(id, { resolve, key: `review:${id}`, sessionId, kind: 'review', name: 'review', args: request || {}, summary, at: Date.now() }));
     };
   }
 
@@ -79,13 +80,32 @@ class AgentService {
     const p = this.pending.get(id);
     if (!p) return false;
     this.pending.delete(id);
+    // the card is gone wherever it shows (the Agent tab, the Services window's Approvals)
+    this.emit('agent:approval-done', { id, sessionId: p.sessionId });
     if (p.kind === 'review') {
       p.resolve(typeof text === 'string' && text.trim() ? text.trim() : allow ? 'keep' : 'drop');
       return true;
     }
-    if (allow && always) this.alwaysAllow.add(p.key);
+    if (allow && always) this.alwaysAllow.set(p.key, { name: p.name, summary: p.summary, at: Date.now() });
     p.resolve(Boolean(allow));
     return true;
+  }
+
+  /** The cards waiting now, as the window was sent them, with when each was asked. */
+  cards() {
+    return [...this.pending].map(([id, p]) => ({ id, sessionId: p.sessionId, name: p.name, args: p.args, summary: p.summary, at: p.at, ...(p.kind ? { kind: p.kind } : {}) }));
+  }
+
+  /** The standing Always allow entries: each is one tool with the exact text its card showed. */
+  always() {
+    return [...this.alwaysAllow].map(([key, a]) => ({ key, name: a.name, summary: a.summary, at: a.at }));
+  }
+
+  /** Forget one Always allow entry by its key, or every one when no key is given; the entries left. */
+  resetAlways(key) {
+    if (typeof key === 'string' && key) this.alwaysAllow.delete(key);
+    else this.alwaysAllow.clear();
+    return this.always();
   }
 
   /**
