@@ -469,7 +469,7 @@ function getAgent() {
       getModel: () => getSettings().get('agent'),
       emit: (channel, payload) => mainWindow && mainWindow.webContents.send(channel, payload),
       extras: (opts) => Promise.all(agentExtras.map((fn) => fn(opts))).then((xs) => xs.flat()),
-      steward: { ensure: stewardService.ensure, turn: steward.turn },
+      steward: { ensure: stewardService.ensure, turn: steward.turn, up: stewardService.up },
       checker: checkStewardTurn,
       threads: steward.threads(path.join(app.getPath('userData'), 'steward-threads.json')),
     });

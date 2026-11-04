@@ -7,9 +7,15 @@
  * instruction to approve it in the app — strangers who find the bot get
  * nothing else. Risky tools ask with Allow/Deny buttons in the chat.
  *
+ * When Steward is the agent (Settings → agent.backend 'steward'), each chat is
+ * its own conversation with him, as an Agent-tab session is: his cards (the
+ * plan, his tools, a review) are the window's cards, shown here as the same
+ * buttons, and a message typed while one waits is handled as in the Agent tab.
+ *
  * Commands: /new (fresh conversation), /stop, /status.
  */
 const crypto = require('crypto');
+const { newSessionId } = require('./agent.cjs');
 
 const API = 'https://api.telegram.org';
 const MAX_TEXT = 4000;
@@ -31,6 +37,7 @@ class Telegram {
     this.pending = new Map(); // chat id -> { id, name, at }
     this.sessions = new Map(); // chat id -> session id
     this.approvals = new Map(); // approval id -> resolve
+    this.cards = new Map(); // the service's card id (Steward's) -> the chat it was sent to
     this.me = null;
     this.error = null;
     this.abort = null;
@@ -55,7 +62,8 @@ class Telegram {
   async send(chatId, text, extra = {}) {
     const chunks = [];
     for (let s = String(text || '(empty)'); s.length; s = s.slice(MAX_TEXT)) chunks.push(s.slice(0, MAX_TEXT));
-    for (const c of chunks) await this.api('sendMessage', { chat_id: chatId, text: c, ...extra });
+    // buttons ride on the last piece, so a long card is answered once
+    for (const [i, c] of chunks.entries()) await this.api('sendMessage', { chat_id: chatId, text: c, ...(i === chunks.length - 1 ? extra : {}) });
   }
 
   state() {
@@ -126,9 +134,7 @@ class Telegram {
   approver(chatId) {
     return async (name, args, summary) => {
       const id = crypto.randomBytes(5).toString('hex');
-      await this.send(chatId, `The agent wants to use ${name}:\n\n${summary}`.slice(0, 3500), {
-        reply_markup: { inline_keyboard: [[{ text: '✅ Allow', callback_data: `ap:${id}:y` }, { text: '❌ Deny', callback_data: `ap:${id}:n` }]] },
-      });
+      await this.send(chatId, `The agent wants to use ${name}:\n\n${summary}`.slice(0, 3500), { reply_markup: buttons(id) });
       return new Promise((resolve) => {
         this.approvals.set(id, resolve);
         // no answer in 10 minutes: no (and the timer never keeps the app alive)
@@ -139,15 +145,35 @@ class Telegram {
     };
   }
 
+  /**
+   * Steward's cards in the chat: each is the window's card (AgentService), shown with the same
+   * buttons; a button answers it through the service, as the Agent tab's Allow/Deny do.
+   */
+  cardSender(chatId) {
+    return async (card) => {
+      this.cards.set(card.id, String(chatId));
+      const head = card.kind === 'review' ? '' : `Steward wants to use ${card.name}:\n\n`;
+      await this.send(chatId, `${head}${card.summary}`, { reply_markup: buttons(card.id) });
+    };
+  }
+
   async handle(u) {
     if (u.callback_query) {
       const q = u.callback_query;
       const m = /^ap:([0-9a-f]+):([yn])$/.exec(q.data || '');
-      if (m && this.allowed(q.message?.chat?.id)) {
+      const chat = String(q.message?.chat?.id);
+      if (m && this.allowed(chat)) {
+        const yes = m[2] === 'y';
         const resolve = this.approvals.get(m[1]);
         this.approvals.delete(m[1]);
-        await this.api('answerCallbackQuery', { callback_query_id: q.id, text: resolve ? (m[2] === 'y' ? 'Allowed' : 'Denied') : 'Expired' });
-        if (resolve) resolve(m[2] === 'y');
+        let answered = Boolean(resolve);
+        if (resolve) resolve(yes);
+        else if (this.cards.get(m[1]) === chat) {
+          // a card of Steward's: answered where the window's are, unless it was answered there first
+          this.cards.delete(m[1]);
+          answered = this.agent.answerApproval(m[1], yes, false);
+        }
+        await this.api('answerCallbackQuery', { callback_query_id: q.id, text: answered ? (yes ? 'Allowed' : 'Denied') : 'Expired' });
       }
       return;
     }
@@ -182,18 +208,53 @@ class Telegram {
       return;
     }
     if (text === '/stop') {
-      if (this.sessions.has(key)) this.agent.stop(this.sessions.get(key));
+      const sid = this.sessions.get(key);
+      if (sid) {
+        this.agent.stop(sid);
+        // a card still waiting (Steward's) is answered No, so his stopped turn can end
+        for (const c of this.agent.cards?.() || []) if (c.sessionId === sid) this.agent.answerApproval(c.id, false);
+      }
       await this.send(chatId, 'Stopped.');
       return;
     }
     if (text === '/status') {
-      await this.send(chatId, `Jesster is running. Model: ${this.agent.getModel().model}. Tools: ${this.agent.registry.schemas().length}.`);
+      const m = this.agent.getModel();
+      if (m.backend === 'steward' && this.agent.steward) {
+        const up = await Promise.resolve()
+          .then(() => this.agent.steward.up?.())
+          .catch(() => false);
+        await this.send(chatId, `Jesster is running. Steward is the agent; his service is ${up ? 'up' : 'not answering (the next message starts it)'}.`);
+        return;
+      }
+      await this.send(chatId, `Jesster is running. Model: ${m.model}. Tools: ${this.agent.registry.schemas().length}.`);
       return;
     }
     await this.api('sendChatAction', { chat_id: chatId, action: 'typing' }).catch(() => {});
-    const r = await this.agent.ask({ text, sessionId: this.sessions.get(key), source: 'telegram', approve: this.approver(chatId) });
-    this.sessions.set(key, r.sessionId);
-    await this.send(chatId, r.answer);
+    // the chat's session is named before the turn, so a message typed while a card waits finds it
+    const sessionId = this.sessions.get(key) || newSessionId();
+    this.sessions.set(key, sessionId);
+    const reply = (r) =>
+      this.send(chatId, r.answer).catch((e) => {
+        this.error = e.message;
+        this.emit();
+      });
+    let r;
+    try {
+      r = await this.agent.ask({
+        text,
+        sessionId,
+        source: 'telegram',
+        approve: this.approver(chatId), // the local loop's risky tools
+        onCard: this.cardSender(chatId), // Steward's cards
+        onAnswer: reply, // the answer to a message that waited behind a card
+      });
+    } catch (e) {
+      await this.send(chatId, e.message); // e.g. still working on the last message
+      return;
+    }
+    if (r.answeredReview) return this.send(chatId, 'Sent back to the fixer as guidance.');
+    if (r.queued) return this.send(chatId, 'The waiting card was answered No; this message goes to Steward next.');
+    await reply(r);
   }
 
   /** For automations: send to every paired chat. */
@@ -207,6 +268,11 @@ class Telegram {
     this.pending.delete(String(chatId));
     this.emit();
   }
+}
+
+/** Allow/Deny buttons for one card. */
+function buttons(id) {
+  return { inline_keyboard: [[{ text: '✅ Allow', callback_data: `ap:${id}:y` }, { text: '❌ Deny', callback_data: `ap:${id}:n` }]] };
 }
 
 module.exports = { Telegram };

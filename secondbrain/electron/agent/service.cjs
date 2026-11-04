@@ -11,8 +11,8 @@ class AgentService {
   /**
    * getVault(): the vault; getModel(): { host, model, maxSteps };
    * emit(channel, payload): to the window; extras(): system prompt pieces
-   * (memory, skills index) added by later features; steward: { ensure, turn } (steward.cjs),
-   * the Agent tab's agent when getModel().backend is 'steward'.
+   * (memory, skills index) added by later features; steward: { ensure, turn, up } (steward.cjs),
+   * the agent of the Agent tab and of Telegram when getModel().backend is 'steward'.
    */
   constructor({ getVault, getModel, emit = () => {}, extras = () => [], steward = null, checker = null, threads = null }) {
     this.getVault = getVault;
@@ -46,15 +46,29 @@ class AgentService {
     return this.sessions.get(id);
   }
 
-  /** Ask the window's user before a risky tool runs. */
-  approveInWindow(sessionId) {
+  /**
+   * Ask the window's user before a risky tool runs. `onCard(card)`, when given, is told of each card
+   * as well (Telegram shows it as Allow/Deny buttons); the card is the window's, so it is answered by
+   * answerApproval from either place, and a message typed while it waits is handled the same way.
+   */
+  approveInWindow(sessionId, onCard) {
     return (name, args, summary) => {
       const key = `${name}:${summary}`;
       if (this.alwaysAllow.has(key)) return Promise.resolve(true);
       const id = crypto.randomBytes(6).toString('hex');
       this.emit('agent:approval', { id, sessionId, name, args, summary });
-      return new Promise((resolve) => this.pending.set(id, { resolve, key, sessionId, name, args, summary, at: Date.now() }));
+      const answer = new Promise((resolve) => this.pending.set(id, { resolve, key, sessionId, name, args, summary, at: Date.now() }));
+      this.tellCard(onCard, { id, sessionId, name, args, summary });
+      return answer;
     };
+  }
+
+  /** A card's other place (Telegram) is told of it; a failure there leaves the card in the window. */
+  tellCard(onCard, card) {
+    if (!onCard) return;
+    Promise.resolve()
+      .then(() => onCard(card))
+      .catch(() => {});
   }
 
   /**
@@ -62,7 +76,7 @@ class AgentService {
    * there"): Allow keeps the change, Deny drops it, and a message typed while it waits goes back to the fixer as
    * guidance. Resolves the reply text.
    */
-  reviewInWindow(sessionId) {
+  reviewInWindow(sessionId, onCard) {
     return (request) => {
       const id = crypto.randomBytes(6).toString('hex');
       const r = request || {};
@@ -72,7 +86,9 @@ class AgentService {
         `Allow once = keep the change. Deny = drop it. Or type guidance in the box to send it back for another attempt.\n\n` +
         String(r.output || '').slice(-1500);
       this.emit('agent:approval', { id, sessionId, name: 'review', kind: 'review', args: request || {}, summary });
-      return new Promise((resolve) => this.pending.set(id, { resolve, key: `review:${id}`, sessionId, kind: 'review', name: 'review', args: request || {}, summary, at: Date.now() }));
+      const answer = new Promise((resolve) => this.pending.set(id, { resolve, key: `review:${id}`, sessionId, kind: 'review', name: 'review', args: request || {}, summary, at: Date.now() }));
+      this.tellCard(onCard, { id, sessionId, name: 'review', kind: 'review', args: request || {}, summary });
+      return answer;
     };
   }
 
@@ -111,10 +127,12 @@ class AgentService {
   /**
    * One user message → the agent's answer. `source` names where it came from
    * (app, telegram, schedule, subagent); `approve` overrides how risky tools
-   * are confirmed; `only` limits the tools offered.
+   * are confirmed; `only` limits the tools offered. With Steward, `onCard(card)` is told of each of
+   * his cards (Telegram's buttons), and `onAnswer(result)` gets the result of a message that was
+   * queued behind a card (it runs after the turn it interrupted, so ask() cannot return it).
    */
   async ask(request) {
-    const { text, sessionId, source = 'app', approve, only, onEvent, save = true, maxSteps } = request;
+    const { text, sessionId, source = 'app', approve, only, onEvent, save = true, maxSteps, onCard } = request;
     const id = sessionId || newSessionId();
     const s = this.session(id);
     if (s.busy) {
@@ -143,9 +161,9 @@ class AgentService {
     };
     send({ type: 'user', text, source });
     try {
-      // the Agent tab talks to Steward; schedules and subagents keep the local loop for now
-      if (this.steward && backend === 'steward' && source === 'app') {
-        return { sessionId: id, answer: await this.askSteward(s, text, id, send, approve) };
+      // the Agent tab and Telegram talk to Steward; schedules and subagents keep the local loop for now
+      if (this.steward && backend === 'steward' && (source === 'app' || source === 'telegram')) {
+        return { sessionId: id, answer: await this.askSteward(s, text, id, send, approve, onCard) };
       }
       const answer = await runTurn({
         host,
@@ -179,16 +197,17 @@ class AgentService {
       // a message typed while a card waited runs now, as its own turn; the tab stays busy
       const next = s.next;
       s.next = null;
-      if (next) this.ask(next);
+      if (next) this.ask(next).then((r) => next.onAnswer?.(r), () => {});
       else send({ type: 'done' });
     }
   }
 
   /**
    * One turn with Steward: his service is started if needed, the conversation continues from
-   * this session's last response id, and his approval requests come to the window's cards.
+   * this session's last response id, and his approval requests come to the window's cards (and,
+   * with `onCard`, to Telegram's buttons too: then the cards are always the window's own).
    */
-  async askSteward(s, text, id, send, approve) {
+  async askSteward(s, text, id, send, approve, onCard) {
     const base = await this.steward.ensure();
     // his service runs his MAF workflow, which keeps the plan and execute modes itself: the plan
     // comes as an approval request (a card), and the tab sends only the text
@@ -198,8 +217,8 @@ class AgentService {
       base,
       text,
       previous: s.stewardPrevious,
-      approve: approve || this.approveInWindow(id),
-      review: this.reviewInWindow(id),
+      approve: onCard ? this.approveInWindow(id, onCard) : approve || this.approveInWindow(id),
+      review: this.reviewInWindow(id, onCard),
       metadata: s.improve ? { steward_workflow: 'improve' } : undefined,
       onEvent: send,
       signal: s.abort.signal,

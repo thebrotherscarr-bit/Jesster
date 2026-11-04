@@ -233,7 +233,8 @@ async function turn({ base, text, previous, approve, review, metadata, onEvent =
  * and stop all the MCP servers in secondbrain that steward uses"). `stop` ends the Python listening on the port and
  * its whole process tree (`killTree`), whoever started it: on Windows a venv's python.exe is a launcher with the real
  * Python under it, so killing only the child SecondBrain spawned can leave the port held. A stopped service is
- * `held` until Start or Restart, so `keepUp` does not bring it back behind the user's back.
+ * `held` until Start or Restart, so `keepUp` does not bring it back behind the user's back. `up()` says whether
+ * something answers on the port now, starting nothing.
  */
 function service({ getConfig, vaultDir, answering, waitFor, startOwned, wait = 90000, script = SCRIPT, port: fixedPort = 0, log = 'steward.log', portOwner = () => null, killTree = () => {} }) {
   let starting = null;
@@ -278,7 +279,9 @@ function service({ getConfig, vaultDir, answering, waitFor, startOwned, wait = 9
     await stop();
     return start();
   }
-  return { ensure, start, stop, restart, held: () => held, port: portOf };
+  // whether something answers on the port now, without starting anything (Telegram's /status)
+  const up = async () => Boolean(await answering(portOf()));
+  return { ensure, start, stop, restart, up, held: () => held, port: portOf };
 }
 
 /**

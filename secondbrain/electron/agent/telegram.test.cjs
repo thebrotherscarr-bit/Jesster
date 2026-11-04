@@ -83,13 +83,14 @@ test('pairing, conversation, approvals over buttons, /new and broadcasts', async
     // follow-ups continue the same session; /new starts a fresh one
     tg.push({ message: { chat: { id: 42 }, text: 'and tomorrow?' } });
     await until(() => asks.length === 2);
-    assert.equal(asks[1].sessionId, 's1');
+    assert.ok(asks[0].sessionId, 'the chat names its session before the turn');
+    assert.equal(asks[1].sessionId, asks[0].sessionId);
     tg.push({ message: { chat: { id: 42 }, text: '/new' } });
     await until(() => tg.sent.some((s) => /New conversation/.test(s.text || '')));
     // risky tools ask with buttons
     tg.push({ message: { chat: { id: 42 }, text: 'run something risky' } });
     await until(() => tg.sent.some((s) => s.reply_markup));
-    assert.equal(asks.at(-1).sessionId, undefined, 'after /new there is no session yet');
+    assert.notEqual(asks.at(-1).sessionId, asks[0].sessionId, 'after /new it is a fresh session');
     const prompt = tg.sent.find((s) => s.reply_markup);
     assert.match(prompt.text, /wants to use terminal_run/);
     const yes = prompt.reply_markup.inline_keyboard[0][0].callback_data;
@@ -106,6 +107,119 @@ test('pairing, conversation, approvals over buttons, /new and broadcasts', async
   } finally {
     bot.stop();
     tg.server.close();
+  }
+});
+
+test("with Steward as the agent, a paired chat is a Steward conversation: his cards are buttons, a reply answers a card, /new, /stop and /status", async () => {
+  const tg = await fakeTelegram();
+  const vault = new Vault(fs.mkdtempSync(path.join(os.tmpdir(), 'tg-steward-')));
+  // the local loop's Ollama, for the backend that is not Steward
+  const ollama = http.createServer((req, res) => {
+    req.resume();
+    req.on('end', () => res.end(JSON.stringify({ message: { role: 'assistant', content: 'local answer' } })));
+  });
+  await new Promise((r) => ollama.listen(0, '127.0.0.1', r));
+  const model = { backend: 'steward', model: 'gpt-oss:20b', host: `http://127.0.0.1:${ollama.address().port}` };
+  const turns = [];
+  const decided = [];
+  const steward = {
+    ensure: async () => 'http://steward',
+    up: async () => true,
+    turn: async ({ text, previous, approve, review, signal }) => {
+      turns.push({ text, previous });
+      let answer = `steward: ${text}`;
+      if (text === 'fix the test' || text === 'hang') {
+        const ok = await approve('approve_plan', { plan: '1. fix' }, 'approve_plan {"plan": "1. fix"}');
+        decided.push(ok);
+        if (signal.aborted) throw Object.assign(new Error('aborted'), { name: 'AbortError' });
+        answer = ok ? 'fixed' : 'plan declined';
+      }
+      if (text.startsWith('improve:')) answer = `review said: ${await review({ attempt: 1, passed: true, changed: ['a.py'] })}`;
+      if (text === 'long') answer = 'y'.repeat(9000);
+      return { answer, previous: `r${turns.length}`, calls: [] };
+    },
+  };
+  const windowCards = [];
+  const users = [];
+  const service = new AgentService({
+    getVault: () => vault,
+    getModel: () => model,
+    steward,
+    emit: (channel, e) => {
+      if (channel === 'agent:approval') windowCards.push(e);
+      if (channel === 'agent:event' && e.type === 'user') users.push(e);
+    },
+  });
+  const config = { token: 'TOKEN', enabled: true, allowedChats: ['42'] };
+  const bot = new Telegram({ getConfig: () => config, agent: service, apiBase: tg.base });
+  await bot.start();
+  const texts = () => tg.sent.filter((s) => s.method === 'sendMessage').map((s) => s.text);
+  const buttonsFor = (re) => tg.sent.filter((s) => s.reply_markup && re.test(s.text)).at(-1).reply_markup.inline_keyboard[0];
+  const say = (text, chat = 42) => tg.push({ message: { chat: { id: chat }, text } });
+  try {
+    // an unpaired chat gets nothing from Steward
+    say('hello', 7);
+    await until(() => texts().some((t) => /isn't paired/.test(t)));
+    assert.equal(turns.length, 0);
+    // a paired chat's message reaches Steward, as source telegram, and follow-ups continue his thread
+    say('hi');
+    await until(() => texts().includes('steward: hi'));
+    assert.deepEqual(users.map((u) => u.source), ['telegram']);
+    say('again');
+    await until(() => texts().includes('steward: again'));
+    assert.equal(turns[1].previous, 'r1', 'the chat keeps its Steward conversation');
+    // his plan card becomes the chat's buttons (and is the window's card too); the button answers it
+    say('fix the test');
+    await until(() => tg.sent.some((s) => s.reply_markup && /Steward wants to use approve_plan/.test(s.text)));
+    assert.equal(windowCards.length, 1);
+    tg.push({ callback_query: { id: 'cb1', data: buttonsFor(/approve_plan/)[0].callback_data, message: { chat: { id: 42 } } } });
+    await until(() => texts().includes('fixed'));
+    assert.deepEqual(decided, [true]);
+    assert.ok(tg.sent.some((s) => s.method === 'answerCallbackQuery' && s.text === 'Allowed'));
+    assert.equal(service.cards().length, 0, 'the window card is gone');
+    // a message typed while a card waits answers it No, then goes to Steward next
+    say('fix the test');
+    await until(() => windowCards.length === 2);
+    say('no, only read it');
+    await until(() => texts().includes('steward: no, only read it'));
+    assert.deepEqual(decided, [true, false]);
+    assert.ok(texts().includes('plan declined'));
+    assert.ok(texts().some((t) => /answered No/.test(t)));
+    // a message typed at a review card is its guidance
+    say('improve: shorter steps');
+    await until(() => windowCards.length === 3);
+    assert.equal(windowCards[2].kind, 'review');
+    say('keep the steps short');
+    await until(() => texts().includes('review said: keep the steps short'));
+    // /new starts a fresh Steward conversation
+    say('/new');
+    await until(() => texts().some((t) => /New conversation/.test(t)));
+    say('fresh');
+    await until(() => texts().includes('steward: fresh'));
+    assert.equal(turns.at(-1).previous, undefined);
+    // /stop stops his run, and a card still waiting is answered No
+    say('hang');
+    await until(() => windowCards.length === 4);
+    say('/stop');
+    await until(() => texts().filter((t) => t === 'Stopped.').length === 2);
+    assert.equal(decided.at(-1), false);
+    // /status says whether his service is up
+    say('/status');
+    await until(() => texts().some((t) => /Steward is the agent; his service is up/.test(t)));
+    // a long answer is split under Telegram's limit
+    say('long');
+    await until(() => texts().filter((t) => /^y+$/.test(t)).length === 3);
+    assert.ok(texts().every((t) => t.length <= 4000));
+    // another backend: the local loop answers, Steward is not asked
+    const before = turns.length;
+    model.backend = 'ollama';
+    say('local please');
+    await until(() => texts().includes('local answer'));
+    assert.equal(turns.length, before);
+  } finally {
+    bot.stop();
+    tg.server.close();
+    ollama.close();
   }
 });
 
