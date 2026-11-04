@@ -74,6 +74,10 @@ test('an eval run reads against its set baseline', () => {
 test('an answered card reads the same from either plane', () => {
   assert.deepEqual(historyRow({ id: 'a', name: 'run_shell', allow: true, always: false, summary: 'ls', answeredAt: 5 }, 0), { key: 'a', tool: 'run_shell', decision: 'allowed', at: 5, detail: 'ls' });
   assert.equal(historyRow({ id: 'b', tool: 'git_push', decision: 'deny', when: '2026-11-04T00:00:00Z', args: { x: 1 } }, 1).decision, 'deny');
+  // The shape approvals.cjs's history() stores: { id, tool, summary, answer, where, time }.
+  const stored = historyRow({ id: 'c', tool: 'service_control', summary: 'restart steward', answer: 'allow', where: 'telegram', time: '2026-11-04T19:00:00.000Z' }, 2);
+  assert.equal(stored.decision, 'allow (telegram)');
+  assert.equal(stored.at, Date.parse('2026-11-04T19:00:00.000Z'));
   assert.equal(historyRow({ allow: false }, 2).decision, 'denied');
   assert.equal(historyRow(null, 3).key, '3');
 });

@@ -61,7 +61,8 @@ export interface HistoryRow {
 
 export function historyRow(x: unknown, i: number): HistoryRow {
   const r = (x && typeof x === 'object' ? x : {}) as Record<string, unknown>;
-  const at = Number(r.answeredAt ?? r.at) || Date.parse(String(r.when || '')) || 0;
+  const when = r.time ?? r.when;
+  const at = Number(r.answeredAt ?? r.at ?? (typeof when === 'number' ? when : NaN)) || Date.parse(String(when || '')) || 0;
   const decision =
     typeof r.decision === 'string'
       ? r.decision
@@ -73,7 +74,11 @@ export function historyRow(x: unknown, i: number): HistoryRow {
           : 'denied'
         : typeof r.outcome === 'string'
           ? r.outcome
-          : '';
+          : typeof r.answer === 'string'
+            ? r.where
+              ? `${r.answer} (${r.where})`
+              : r.answer
+            : '';
   return {
     key: String(r.id ?? i),
     tool: String(r.tool ?? r.name ?? ''),
