@@ -258,8 +258,6 @@ export interface DesktopBridge {
   /** the door's git and hold tools, as the operator: the GitHub shelf's hand (door:call) */
   door?: {
     call: (name: string, args?: Record<string, unknown>) => Promise<{ text: string; isError: boolean }>;
-    /** a flow's git block: reads and bringing level run, other writes wait in Waiting on you */
-    flow?: (name: string, args?: Record<string, unknown>) => Promise<{ text: string; isError: boolean }>;
   };
   pick?: (kind: 'file' | 'folder' | 'exe', title: string) => Promise<string | null>;
   /** Steward's button (electron/agent/system.cjs): the pieces he runs on, and what he works with */
@@ -273,6 +271,69 @@ export interface DesktopBridge {
   services?: ServicesBridge;
   /** The Services window's Approvals shelf: open cards of both planes, Always allow, Steward's tool policy */
   approvals?: ApprovalsBridge;
+  /** The Agent tab's console (electron/console.cjs): Steward's evals, runs, skills and memory, read from his folder */
+  stewardConsole?: StewardConsoleBridge;
+}
+
+export interface EvalRun {
+  ts: string;
+  set: string;
+  passed: number;
+  total: number;
+  checksPassed: number;
+  checksTotal: number;
+  model: string;
+  gitHead: string;
+  exitCode: number | null;
+  cases: { input: string; passed: boolean; failed: { name: string; reason: string }[] }[];
+}
+
+export interface EvalsView {
+  file: string;
+  history: EvalRun[];
+  /** eval_baselines.json as he writes it: { set: { checks, of, from } } */
+  baseline: unknown;
+  baselineError?: string;
+}
+
+export interface TraceRun {
+  traceId: string;
+  start: string;
+  end: string;
+  root: string;
+  spans: number;
+  tools: { at: string; name: string; args: string; ok: boolean }[];
+  errors: { name: string; message: string }[];
+}
+
+export interface RunsView {
+  file: string;
+  /** the traces file's size, and how much of its end was read */
+  size: number;
+  read: number;
+  runs: TraceRun[];
+  background: number;
+  backgroundErrors: number;
+}
+
+export interface SkillInfo {
+  folder: string;
+  name: string;
+  description: string;
+}
+
+export interface MemoryFile {
+  path: string;
+  size: number;
+}
+
+export interface StewardConsoleBridge {
+  evals: () => Promise<EvalsView>;
+  runs: () => Promise<RunsView>;
+  skills: () => Promise<{ skills: SkillInfo[] }>;
+  memory: () => Promise<{ files: MemoryFile[] }>;
+  /** one memory file's text, by its path from memory() */
+  memoryRead: (path: string) => Promise<{ path: string; size: number; text: string; cut: boolean }>;
 }
 
 /** One open card: the Agent tab's (answered with agent.approve) or the door's hold (answered with door.call). */

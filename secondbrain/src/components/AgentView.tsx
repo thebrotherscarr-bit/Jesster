@@ -1,9 +1,12 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Bot, Plus, Send, Square, Wrench, ShieldAlert, Check, X, MessageSquare, Mic, Loader2 } from 'lucide-react';
+import { Bot, Plus, Send, Square, Wrench, ShieldAlert, Check, X, MessageSquare, Mic, Loader2, PanelRight } from 'lucide-react';
 import { VoiceSettings, useRecorder, speak } from '../voice/useVoice.ts';
 import { AgentEvent, ApprovalRequest } from '../types/desktop.ts';
 import { OllamaConfig } from '../types/index.ts';
 import { renderMarkdown } from '../utils/markdown.ts';
+import { AgentConsole } from './AgentConsole.tsx';
+
+const CONSOLE_OPEN_KEY = 'secondbrain_console_open_v1';
 
 interface Turn {
   role: 'user' | 'assistant' | 'thinking' | 'tool' | 'error' | 'check';
@@ -17,14 +20,18 @@ interface AgentViewProps {
   ollamaConfig: OllamaConfig;
   voice?: VoiceSettings;
   onOpenNote: (id: string) => void;
+  /** the console's Servers shelf opens these app windows */
+  onOpenOllama?: () => void;
+  onOpenIntegrations?: () => void;
 }
 
 /**
  * The agent: chat with a model that uses tools (notes, todo, web, and more
  * as features add them). Runs in the desktop app; every conversation is
- * saved as a session note.
+ * saved as a session note. Beside it, the console (AgentConsole.tsx): everything
+ * that watches and steers Steward, opened and closed like Aurora's Inspector.
  */
-export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice }) => {
+export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice, onOpenOllama, onOpenIntegrations }) => {
   const agent = window.secondbrainDesktop?.agent;
   const [sessions, setSessions] = useState<{ id: string; title: string; updatedAt: number; source?: string }[]>([]);
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -32,7 +39,21 @@ export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice }) => 
   const [busy, setBusy] = useState(false);
   const [input, setInput] = useState('');
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
-  const [tools, setTools] = useState<{ name: string; description: string }[]>([]);
+  const [consoleOpen, setConsoleOpen] = useState(() => {
+    try {
+      return localStorage.getItem(CONSOLE_OPEN_KEY) !== '0';
+    } catch {
+      return true;
+    }
+  });
+  const showConsole = (on: boolean) => {
+    setConsoleOpen(on);
+    try {
+      localStorage.setItem(CONSOLE_OPEN_KEY, on ? '1' : '0');
+    } catch {
+      /* the choice is not kept */
+    }
+  };
   // 'steward': the tab talks to Steward (electron/agent/steward.cjs); otherwise the local loop
   const [backend, setBackend] = useState('');
   const current = useRef<string | null>(null);
@@ -54,7 +75,6 @@ export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice }) => 
   useEffect(() => {
     if (!agent) return;
     refresh();
-    agent.tools().then(setTools);
     window.secondbrainDesktop?.settings
       ?.get()
       .then((s) => setBackend(String(s.agent?.backend || '')))
@@ -104,7 +124,7 @@ export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice }) => 
       }
     });
     const offApproval = agent.onApproval((r) => setApprovals((a) => [...a, r]));
-    // answered elsewhere (the Services window's Approvals): the card leaves here too
+    // answered elsewhere (the console's Approvals shelf): the card leaves here too
     const offAnswered = agent.onAnswered?.((d) => setApprovals((a) => a.filter((x) => x.id !== d.id)));
     return () => {
       offEvent();
@@ -210,19 +230,25 @@ export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice }) => 
             </li>
           ))}
         </ul>
-        <details className="m-3 text-[11px] text-neutral-500">
-          <summary className="cursor-pointer">{tools.length} tools available</summary>
-          <ul className="mt-1 space-y-0.5 max-h-48 overflow-y-auto">
-            {tools.map((t) => (
-              <li key={t.name} title={t.description}>
-                <code>{t.name}</code>
-              </li>
-            ))}
-          </ul>
-        </details>
       </aside>
 
       <section className="flex flex-1 min-w-0 min-h-0 flex-col">
+        {/* one header line, as Aurora's terminal has: who you are talking to, and the console's toggle */}
+        <div className="flex items-center gap-2 px-4 py-2 border-b border-neutral-800 text-xs">
+          <Bot className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+          <span className="text-neutral-200 font-semibold">{backend === 'steward' ? 'Steward' : 'Agent'}</span>
+          <span className="text-neutral-600">/</span>
+          <span className="text-neutral-500 truncate min-w-0">{sessions.find((s) => s.id === sessionId)?.title.replace(/^Agent: /, '') || 'new conversation'}</span>
+          <button
+            onClick={() => showConsole(!consoleOpen)}
+            aria-pressed={consoleOpen}
+            aria-label={consoleOpen ? 'Close the console' : 'Open the console'}
+            title="The console: servers, approvals, evals, runs, tools, skills and memory"
+            className={`ml-auto shrink-0 flex items-center gap-1.5 px-2 py-1 rounded-md ${consoleOpen ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:text-white hover:bg-neutral-900'}`}
+          >
+            <PanelRight className="w-3.5 h-3.5" /> Console
+          </button>
+        </div>
         <div
           ref={pane}
           onScroll={(e) => {
@@ -355,6 +381,7 @@ export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice }) => 
           )}
         </div>
       </section>
+      {consoleOpen && <AgentConsole ollamaConfig={ollamaConfig} onClose={() => showConsole(false)} onOpenOllama={onOpenOllama} onOpenIntegrations={onOpenIntegrations} />}
     </div>
   );
 };

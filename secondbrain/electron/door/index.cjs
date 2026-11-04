@@ -329,14 +329,7 @@ function register({ atlas, ipcMain, guard, getSettings, vaultDir, getAgent, show
     if (!SHELF_TOOLS.has(name)) throw new Error(`not a GitHub shelf tool: ${name}`);
     return door.call(name, args && typeof args === 'object' ? args : {}, OPERATOR);
   });
-  // A FLOW'S git block (plan-github-shelf, G3). A flow is not his hand: its reads run, and bringing a
-  // repository level runs (his card, 2026-10-23: "Yes, fast-forward freely" -- git_pull is fast-forward only
-  // and refuses over unsaved work), but never into the ground while a sitting is open (RULE 9). Every other
-  // write waits for him in GitHub's Waiting on you, pull requests too.
-  ipcMain.handle('door:flow', async (event, name, args) => {
-    guard(event);
-    return flowCall(door, name, args && typeof args === 'object' ? args : {});
-  });
+  // (door:flow, the Flows page's git block, left with the Flows page on 2026-11-04; flowCall stays, tested.)
   return door;
 }
 

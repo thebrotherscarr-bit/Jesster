@@ -945,6 +945,7 @@ ipcMain.handle('approvals:policy', (event) => {
   guard(event);
   return approvals.readPolicy(steward.findSteward((getSettings().get('agent').steward || {}).dir, vaultDir()));
 });
+require('./console.cjs').register({ ipcMain, guard, stewardDir: () => steward.findSteward((getSettings().get('agent').steward || {}).dir, vaultDir()) }); // the Agent tab's console
 
 ipcMain.handle('desktop:version', (event) => (fromApp(event) ? updater.buildInfo() : null));
 ipcMain.handle('desktop:check-update', (event) => {

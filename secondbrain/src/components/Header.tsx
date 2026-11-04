@@ -1,75 +1,23 @@
 import React, { useEffect, useState } from 'react';
-import { InboxStatus } from '../types/desktop.ts';
 import { OllamaConfig } from '../types/index.ts';
 import { KernelSync } from '../hooks/useKernelSync.ts';
 import { DesktopUpdate } from '../hooks/useDesktopUpdate.ts';
-import { DesktopVault } from '../hooks/useDesktopVault.ts';
 import { AtlasButton } from './AtlasButton.tsx';
-import { StewardButton } from './StewardButton.tsx';
-import { ServicesButton } from './ServicesModal.tsx';
-import { Plus, Brain, MessageSquare, Zap, Cpu, Menu, Link2, Download, FilePlus2, RefreshCw, Plug, Workflow, Settings as SettingsIcon, Bot, GitBranch } from 'lucide-react';
+import { Brain, Cpu, Menu, Link2, Download, Settings as SettingsIcon, Bot } from 'lucide-react';
 
-export type ActiveTab = 'notes' | 'ask' | 'agent' | 'flows' | 'github';
+export type ActiveTab = 'notes' | 'agent';
 
 interface HeaderProps {
   activeTab: ActiveTab;
   onSelectTab: (tab: ActiveTab) => void;
-  onOpenQuickCapture: () => void;
-  onOpenOllamaModal: () => void;
-  /** Claude, ChatGPT, Gemini and voice (desktop app) */
-  onOpenIntegrations?: () => void;
-  /** Steward's window: his pieces and what he uses (desktop app) */
-  onOpenSteward?: () => void;
-  /** the Services window: the servers SecondBrain runs or watches (desktop app) */
-  onOpenServices?: () => void;
-  onCreateNewNote: () => void;
+  /** the Ollama connection: up here only where there is no Agent tab, whose console carries it (the web build) */
+  onOpenOllamaModal?: () => void;
   ollamaConfig: OllamaConfig;
   storage?: KernelSync;
   desktopUpdate?: DesktopUpdate | null;
-  desktopVault?: DesktopVault | null;
   onOpenSettings?: () => void;
   onToggleMobileMenu?: () => void;
 }
-
-/** Pull the notes Claude left in the bridge inbox now (Settings → Inbox sets it up). */
-export const InboxSyncButton: React.FC = () => {
-  const inbox = window.secondbrainDesktop?.inbox;
-  const [s, setS] = useState<InboxStatus | null>(null);
-  const [busy, setBusy] = useState(false);
-  useEffect(() => {
-    if (!inbox) return;
-    inbox.status().then(setS).catch(() => {});
-    return inbox.onStatus(setS);
-  }, [inbox]);
-  if (!inbox || !s?.clone) return null;
-  const running = busy || s.running;
-  const title = s.error
-    ? `Inbox sync failed: ${s.error}`
-    : s.last
-      ? `Inbox from Claude: last synced ${new Date(s.last.at).toLocaleTimeString()}, ${s.last.filed.length ? `filed ${s.last.filed.map((f) => f.title).join(', ')}` : 'nothing new'}. Click to sync now.`
-      : 'Inbox from Claude: sync now';
-  return (
-    <button
-      onClick={async () => {
-        setBusy(true);
-        try {
-          setS(await inbox.sync());
-        } catch (e) {
-          setS({ ...s, error: e instanceof Error ? e.message : String(e) });
-        } finally {
-          setBusy(false);
-        }
-      }}
-      disabled={running}
-      title={title}
-      aria-label="Sync the inbox from Claude"
-      className={`flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-md transition-colors whitespace-nowrap shrink-0 hover:bg-neutral-900 ${s.error ? 'text-amber-400' : 'text-neutral-400 hover:text-neutral-200'}`}
-    >
-      <RefreshCw className={`w-3.5 h-3.5 text-sky-400 ${running ? 'animate-spin' : ''}`} />
-      <span className="hidden md:inline">Sync</span>
-    </button>
-  );
-};
 
 /** Where notes are kept: the Jesster vault (with its chain) or this browser. */
 const StorageBadge: React.FC<{ storage?: KernelSync }> = ({ storage }) => {
@@ -109,19 +57,18 @@ const StorageBadge: React.FC<{ storage?: KernelSync }> = ({ storage }) => {
   );
 };
 
+/**
+ * The top bar: the app's own navigation and nothing else (the operator, 2026-11-04: "there is a lot of clutter in the
+ * top bar"). Every button here is marked data-topbar and utils/agentConsole.ts TOP_BAR lists them; Steward's controls
+ * (his status, the servers, approvals, Ollama, integrations) are on the Agent tab's console.
+ */
 export const Header: React.FC<HeaderProps> = ({
   activeTab,
   onSelectTab,
-  onOpenQuickCapture,
   onOpenOllamaModal,
-  onOpenIntegrations,
-  onOpenSteward,
-  onOpenServices,
-  onCreateNewNote,
   ollamaConfig,
   storage,
   desktopUpdate,
-  desktopVault,
   onOpenSettings,
   onToggleMobileMenu,
 }) => {
@@ -134,12 +81,15 @@ export const Header: React.FC<HeaderProps> = ({
       .catch(() => {});
   }, []);
   const agentLabel = backend === 'steward' ? 'Agent: Steward' : 'Agent';
+  const tab = (on: boolean) =>
+    `flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-md transition-colors whitespace-nowrap shrink-0 ${on ? 'bg-neutral-800 text-white font-semibold' : 'hover:text-neutral-200 hover:bg-neutral-900'}`;
   return (
     <header className="h-14 border-b border-neutral-800 bg-neutral-950/80 backdrop-blur-md px-3 sm:px-6 flex items-center justify-between gap-2 shrink-0 z-20">
-      {/* Zone 1: Brand Wordmark */}
+      {/* the wordmark */}
       <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
-        {onToggleMobileMenu && (
+        {onToggleMobileMenu && activeTab === 'notes' && (
           <button
+            data-topbar="Menu"
             onClick={onToggleMobileMenu}
             className="md:hidden p-1.5 text-neutral-400 hover:text-white rounded-lg hover:bg-neutral-800 transition-colors shrink-0"
             aria-label="Toggle navigation menu"
@@ -160,115 +110,47 @@ export const Header: React.FC<HeaderProps> = ({
         </span>
       </div>
 
-      {/* Zone 2: Navigation Links / Tabs */}
-      <nav className="flex items-center gap-1 text-xs font-medium text-neutral-400">
-        <button
-          onClick={() => onSelectTab('notes')}
-          title="Notes Library"
-          className={`flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-md transition-colors whitespace-nowrap shrink-0 ${
-            activeTab === 'notes'
-              ? 'bg-neutral-800 text-white font-semibold'
-              : 'hover:text-neutral-200 hover:bg-neutral-900'
-          }`}
-        >
+      {/* where you are: the tabs, and Aurora beside them */}
+      <nav className="flex items-center gap-1 text-xs font-medium text-neutral-400 min-w-0">
+        <button data-topbar="Notes" onClick={() => onSelectTab('notes')} title="Notes" className={tab(activeTab === 'notes')}>
           <Brain className="w-3.5 h-3.5" />
           <span className="hidden md:inline">Notes</span>
         </button>
 
-        <button
-          onClick={() => onSelectTab('ask')}
-          title="Ask Your Second Brain (Local Ollama)"
-          className={`flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-md transition-colors whitespace-nowrap shrink-0 ${
-            activeTab === 'ask'
-              ? 'bg-neutral-800 text-white font-semibold'
-              : 'hover:text-neutral-200 hover:bg-neutral-900'
-          }`}
-        >
-          <MessageSquare className="w-3.5 h-3.5 text-emerald-400" />
-          <span className="hidden md:inline">Ask Brain</span>
-        </button>
-
         {window.secondbrainDesktop?.agent && (
           <button
+            data-topbar="Agent"
             onClick={() => onSelectTab('agent')}
-            title={backend === 'steward' ? 'Agent: Steward, who uses tools on your notes and the web' : 'Agent: a model that uses tools on your notes and the web'}
-            className={`flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-md transition-colors whitespace-nowrap shrink-0 ${
-              activeTab === 'agent' ? 'bg-neutral-800 text-white font-semibold' : 'hover:text-neutral-200 hover:bg-neutral-900'
-            }`}
+            title={backend === 'steward' ? 'Agent: Steward, and his console' : 'Agent: a model that uses tools on your notes and the web'}
+            className={tab(activeTab === 'agent')}
           >
             <Bot className="w-3.5 h-3.5" />
             <span className="hidden md:inline">{agentLabel}</span>
           </button>
         )}
 
-        <button
-          onClick={() => onSelectTab('flows')}
-          title="Flows: wire blocks output to input (notes, search, models, save)"
-          className={`flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-md transition-colors whitespace-nowrap shrink-0 ${
-            activeTab === 'flows' ? 'bg-neutral-800 text-white font-semibold' : 'hover:text-neutral-200 hover:bg-neutral-900'
-          }`}
-        >
-          <Workflow className="w-3.5 h-3.5 text-sky-400" />
-          <span className="hidden md:inline">Flows</span>
-        </button>
-
         <AtlasButton />
-
-        <button
-          onClick={onOpenQuickCapture}
-          className="hidden md:flex items-center gap-1.5 px-2.5 py-1.5 rounded-md transition-colors whitespace-nowrap shrink-0 text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900"
-          title="Instant Quick Capture (Ctrl/Cmd+K)"
-        >
-          <Zap className="w-3.5 h-3.5 text-amber-400" />
-          <span>Capture</span>
-        </button>
-
-        {/* GitHub, where Sync stood (his word, 2026-10-23: "take that button, change it to GitHub, fucking add all the shit in there"):
-            every repository, its lines, marks and pull requests, the git flows, and Claude's inbox sync */}
-        {window.secondbrainDesktop?.door ? (
-          <button
-            onClick={() => onSelectTab('github')}
-            title="GitHub: every repository on this PC, its lines of work, version marks and pull requests, the git flows, and Claude's inbox"
-            className={`flex items-center gap-1.5 px-2 sm:px-3 py-1.5 rounded-md transition-colors whitespace-nowrap shrink-0 ${
-              activeTab === 'github' ? 'bg-neutral-800 text-white font-semibold' : 'text-neutral-400 hover:text-neutral-200 hover:bg-neutral-900'
-            }`}
-          >
-            <GitBranch className="w-3.5 h-3.5 text-violet-400" />
-            <span className="hidden md:inline">GitHub</span>
-          </button>
-        ) : (
-          <InboxSyncButton />
-        )}
       </nav>
 
-      {/* Zone 3: Actions */}
+      {/* the app itself: where notes are kept, updates and Settings */}
       <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
-        {desktopVault ? (
-          <>
-            <button
-              onClick={() => desktopVault.importFiles()}
-              title="Import documents from anywhere on this PC as notes (Markdown, text, Word, HTML, code). You can also drop files on the window."
-              className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg border border-neutral-800 bg-neutral-900 hover:bg-neutral-800 text-xs text-neutral-300 hover:text-white transition-colors shrink-0"
-            >
-              <FilePlus2 className="w-3.5 h-3.5" />
-              <span className="hidden md:inline">Import files</span>
-            </button>
-          </>
-        ) : (
-          <StorageBadge storage={storage} />
-        )}
-        {onOpenSettings && (
+        <StorageBadge storage={storage} />
+        {onOpenOllamaModal && (
           <button
-            onClick={onOpenSettings}
-            title="Settings: inbox, agent, Aurora, archive, Telegram, terminal"
-            aria-label="Settings"
-            className="p-1.5 rounded-lg border border-neutral-800 bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white transition-colors shrink-0"
+            data-topbar="Ollama (web only)"
+            onClick={onOpenOllamaModal}
+            aria-label="Configure local Ollama connection"
+            className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg border border-neutral-800 bg-neutral-900 hover:bg-neutral-800 text-xs transition-colors shrink-0"
           >
-            <SettingsIcon className="w-3.5 h-3.5" />
+            <Cpu className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
+            <span className={`text-[11px] font-medium whitespace-nowrap ${ollamaConfig.isConnected ? 'text-emerald-400' : ollamaConfig.isSimulatedMode ? 'text-cyan-400' : 'text-amber-400'}`}>
+              {ollamaConfig.isConnected ? 'Live' : ollamaConfig.isSimulatedMode ? 'Sim' : 'Ollama'}
+            </span>
           </button>
         )}
         {desktopUpdate?.available && (
           <button
+            data-topbar="Update"
             onClick={() => desktopUpdate.apply()}
             disabled={desktopUpdate.updating}
             title={desktopUpdate.error || `Build ${desktopUpdate.latest} is out (you have ${desktopUpdate.current}): ${desktopUpdate.title}. The app restarts on the new build; notes are kept.`}
@@ -280,65 +162,27 @@ export const Header: React.FC<HeaderProps> = ({
         )}
         {storage?.version && storage.version.behind > 0 && storage.update && (
           <button
+            data-topbar="Update notes kernel"
             onClick={() => storage.update?.()}
             disabled={storage.updating}
-            title={`${storage.version.behind} new commit(s) on ${storage.version.branch}: ${storage.version.latest}`}
+            title={`Notes kernel: ${storage.version.behind} new commit(s) on ${storage.version.branch}: ${storage.version.latest}`}
             className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg border border-sky-800 bg-sky-950/60 hover:bg-sky-900 text-xs text-sky-300 hover:text-white transition-colors shrink-0 disabled:opacity-60"
           >
             <Download className="w-3.5 h-3.5" />
             <span className="hidden sm:inline">{storage.updating ? 'Updating…' : 'Update'}</span>
           </button>
         )}
-        {/* Ollama Status Button */}
-        <button
-          onClick={onOpenOllamaModal}
-          aria-label="Configure local Ollama connection"
-          className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg border border-neutral-800 bg-neutral-900 hover:bg-neutral-800 text-xs transition-colors shrink-0"
-        >
-          <Cpu className="w-3.5 h-3.5 text-neutral-400 shrink-0" />
-          <span
-            className={`text-[11px] font-medium whitespace-nowrap ${
-              ollamaConfig.isConnected
-                ? 'text-emerald-400'
-                : ollamaConfig.isSimulatedMode
-                ? 'text-cyan-400'
-                : 'text-amber-400'
-            }`}
-          >
-            {ollamaConfig.isConnected
-              ? 'Live'
-              : ollamaConfig.isSimulatedMode
-              ? 'Sim'
-              : 'Ollama'}
-          </span>
-        </button>
-
-        {/* Steward: his service, the door and what he uses (the outside services stay in Integrations) */}
-        {onOpenSteward && <StewardButton onOpen={onOpenSteward} />}
-
-        {/* Services: every server SecondBrain runs or watches, beside Steward's */}
-        {onOpenServices && <ServicesButton onOpen={onOpenServices} />}
-
-        {onOpenIntegrations && (
+        {onOpenSettings && (
           <button
-            onClick={onOpenIntegrations}
-            title="Integrations: Claude, ChatGPT and Gemini, their apps on your notes, and voice"
-            className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1.5 rounded-lg border border-neutral-800 bg-neutral-900 hover:bg-neutral-800 text-xs text-neutral-300 hover:text-white transition-colors shrink-0"
+            data-topbar="Settings"
+            onClick={onOpenSettings}
+            title="Settings: notes folder, inbox, archive"
+            aria-label="Settings"
+            className="p-1.5 rounded-lg border border-neutral-800 bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white transition-colors shrink-0"
           >
-            <Plug className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-            <span className="text-[11px] font-medium hidden sm:inline">Integrations</span>
+            <SettingsIcon className="w-3.5 h-3.5" />
           </button>
         )}
-
-        {/* Primary New Note CTA */}
-        <button
-          onClick={onCreateNewNote}
-          aria-label="Create new note"
-          className="flex items-center gap-1 px-2.5 sm:px-3 py-1.5 text-xs font-semibold text-neutral-900 bg-white hover:bg-neutral-100 rounded-lg transition-colors whitespace-nowrap shrink-0"
-        >
-          <Plus className="w-3.5 h-3.5 shrink-0" />
-          <span className="hidden sm:inline">New Note</span>
-        </button>
       </div>
     </header>
   );

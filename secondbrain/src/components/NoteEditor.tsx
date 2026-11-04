@@ -73,7 +73,7 @@ export const NoteEditor: React.FC<NoteEditorProps> = ({
         </div>
         <h3 className="text-sm font-semibold text-white mb-1">No Note Selected</h3>
         <p className="text-xs max-w-sm text-neutral-400 mb-4">
-          Select a note from the library or create a new one to start writing and synthesizing.
+          Select a note from the library to read or edit it. Steward writes new notes.
         </p>
       </div>
     );

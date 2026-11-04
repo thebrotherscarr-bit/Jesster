@@ -1,7 +1,7 @@
 import React from 'react';
 import { Note } from '../types/index.ts';
 import { calculateNoteStats } from '../utils/notes.ts';
-import { Search, Pin, Trash2, Plus, X } from 'lucide-react';
+import { Search, Pin, Trash2, X } from 'lucide-react';
 
 interface NotesListProps {
   notes: Note[];
@@ -9,7 +9,6 @@ interface NotesListProps {
   onSelectNote: (id: string) => void;
   onTogglePin: (id: string, e: React.MouseEvent) => void;
   onDeleteNote: (id: string, e: React.MouseEvent) => void;
-  onCreateNote: () => void;
   searchQuery: string;
   onSearchChange: (q: string) => void;
   sortBy: 'updated' | 'created' | 'title' | 'words';
@@ -23,7 +22,6 @@ export const NotesList: React.FC<NotesListProps> = ({
   onSelectNote,
   onTogglePin,
   onDeleteNote,
-  onCreateNote,
   searchQuery,
   onSearchChange,
   sortBy,
@@ -88,14 +86,7 @@ export const NotesList: React.FC<NotesListProps> = ({
       <div className="flex-1 overflow-y-auto divide-y divide-neutral-900">
         {notes.length === 0 ? (
           <div className="p-6 text-center space-y-3">
-            <p className="text-xs text-neutral-400">No matching notes found.</p>
-            <button
-              onClick={onCreateNote}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-neutral-900 bg-white hover:bg-neutral-100 rounded-lg transition-colors"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Create Note</span>
-            </button>
+            <p className="text-xs text-neutral-400">No matching notes found. Ask Steward to write one.</p>
           </div>
         ) : (
           notes.map((note) => {
