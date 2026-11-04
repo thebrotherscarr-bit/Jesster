@@ -1,12 +1,20 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Bot, Plus, Send, Square, Wrench, ShieldAlert, Check, X, MessageSquare, Mic, Loader2, PanelRight } from 'lucide-react';
+import { Bot, Plus, Send, Square, Wrench, ShieldAlert, Check, X, Mic, Loader2, PanelLeft, PanelRight } from 'lucide-react';
 import { VoiceSettings, useRecorder, speak } from '../voice/useVoice.ts';
 import { AgentEvent, ApprovalRequest } from '../types/desktop.ts';
 import { OllamaConfig } from '../types/index.ts';
 import { renderMarkdown } from '../utils/markdown.ts';
 import { AgentConsole } from './AgentConsole.tsx';
+import { CHATS_OPEN_KEY, CONSOLE_OPEN_KEY, keepPanel, panelOpen } from '../utils/agentConsole.ts';
 
-const CONSOLE_OPEN_KEY = 'secondbrain_console_open_v1';
+// where the two folding panels keep their state (none when the window's storage cannot be reached)
+const store = () => {
+  try {
+    return window.localStorage;
+  } catch {
+    return undefined;
+  }
+};
 
 interface Turn {
   role: 'user' | 'assistant' | 'thinking' | 'tool' | 'error' | 'check';
@@ -39,20 +47,16 @@ export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice, onOpe
   const [busy, setBusy] = useState(false);
   const [input, setInput] = useState('');
   const [approvals, setApprovals] = useState<ApprovalRequest[]>([]);
-  const [consoleOpen, setConsoleOpen] = useState(() => {
-    try {
-      return localStorage.getItem(CONSOLE_OPEN_KEY) !== '0';
-    } catch {
-      return true;
-    }
-  });
+  // the console on the right and the chats bar on the left fold the same way, each remembered
+  const [consoleOpen, setConsoleOpen] = useState(() => panelOpen(store(), CONSOLE_OPEN_KEY));
   const showConsole = (on: boolean) => {
     setConsoleOpen(on);
-    try {
-      localStorage.setItem(CONSOLE_OPEN_KEY, on ? '1' : '0');
-    } catch {
-      /* the choice is not kept */
-    }
+    keepPanel(store(), CONSOLE_OPEN_KEY, on);
+  };
+  const [chatsOpen, setChatsOpen] = useState(() => panelOpen(store(), CHATS_OPEN_KEY));
+  const showChats = (on: boolean) => {
+    setChatsOpen(on);
+    keepPanel(store(), CHATS_OPEN_KEY, on);
   };
   // 'steward': the tab talks to Steward (electron/agent/steward.cjs); otherwise the local loop
   const [backend, setBackend] = useState('');
@@ -204,37 +208,47 @@ export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice, onOpe
 
   return (
     <div className="flex flex-1 min-w-0 min-h-0">
-      <aside className="hidden md:flex w-64 shrink-0 min-h-0 flex-col border-r border-neutral-800">
-        <button
-          onClick={() => {
-            setSessionId(null);
-            setTurns([]);
-            setBusy(false);
-          }}
-          className="m-3 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg bg-white text-black text-xs font-semibold hover:bg-neutral-200"
-        >
-          <Plus className="w-3.5 h-3.5" /> New conversation
-        </button>
-        <div className="px-3 pb-2 text-[10px] uppercase tracking-wider text-neutral-500">Sessions</div>
-        <ul className="flex-1 min-h-0 overflow-y-auto px-2 space-y-0.5" aria-label="Agent sessions">
-          {sessions.map((s) => (
-            <li key={s.id}>
-              <button
-                onClick={() => open(s.id)}
-                className={`w-full text-left px-2 py-1.5 rounded-md text-xs truncate ${s.id === sessionId ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:bg-neutral-900 hover:text-neutral-200'}`}
-                title={s.title}
-              >
-                <MessageSquare className="inline w-3 h-3 mr-1.5 -mt-0.5" />
-                {s.title.replace(/^Agent: /, '')}
-              </button>
-            </li>
-          ))}
-        </ul>
-      </aside>
+      {/* the chats: a plain list of past conversations and one New chat, folded from the header like the console */}
+      {chatsOpen && (
+        <aside aria-label="Chats" className="flex w-56 max-w-[30%] shrink-0 min-w-0 min-h-0 flex-col border-r border-neutral-800">
+          <button
+            onClick={() => {
+              setSessionId(null);
+              setTurns([]);
+              setBusy(false);
+            }}
+            className="mx-2 mt-2 mb-1 flex items-center gap-1.5 px-2 py-1.5 rounded-md text-xs text-neutral-300 hover:bg-neutral-900 hover:text-white min-w-0"
+          >
+            <Plus className="w-3.5 h-3.5 shrink-0" /> <span className="truncate">New chat</span>
+          </button>
+          <ul className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-2 pb-2 space-y-0.5" aria-label="Agent sessions">
+            {sessions.map((s) => (
+              <li key={s.id} className="min-w-0">
+                <button
+                  onClick={() => open(s.id)}
+                  className={`block w-full min-w-0 text-left px-2 py-1.5 rounded-md text-xs truncate ${s.id === sessionId ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:bg-neutral-900 hover:text-neutral-200'}`}
+                  title={s.title.replace(/^Agent: /, '')}
+                >
+                  {s.title.replace(/^Agent: /, '')}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </aside>
+      )}
 
       <section className="flex flex-1 min-w-0 min-h-0 flex-col">
-        {/* one header line, as Aurora's terminal has: who you are talking to, and the console's toggle */}
-        <div className="flex items-center gap-2 px-4 py-2 border-b border-neutral-800 text-xs">
+        {/* one header line, as Aurora's terminal has: the chats' toggle, who you are talking to, and the console's toggle */}
+        <div className="flex items-center gap-2 px-4 py-2 border-b border-neutral-800 text-xs min-w-0">
+          <button
+            onClick={() => showChats(!chatsOpen)}
+            aria-pressed={chatsOpen}
+            aria-label={chatsOpen ? 'Close the chats' : 'Open the chats'}
+            title="Past conversations"
+            className={`shrink-0 flex items-center gap-1.5 px-2 py-1 rounded-md ${chatsOpen ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:text-white hover:bg-neutral-900'}`}
+          >
+            <PanelLeft className="w-3.5 h-3.5" /> Chats
+          </button>
           <Bot className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
           <span className="text-neutral-200 font-semibold">{backend === 'steward' ? 'Steward' : 'Agent'}</span>
           <span className="text-neutral-600">/</span>
