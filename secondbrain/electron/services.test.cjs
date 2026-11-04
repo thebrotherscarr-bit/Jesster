@@ -3,8 +3,11 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { registry, ollamaServer, stewardEntry, OLLAMA_EXTERNAL } = require('./services.cjs');
-const { DEFAULTS } = require('./settings.cjs');
+const { EventEmitter } = require('events');
+const { registry, ollamaServer, stewardEntry, runsOllama, OLLAMA_EXTERNAL, OLLAMA_APP } = require('./services.cjs');
+const { DEFAULTS, Settings } = require('./settings.cjs');
+
+const tick = () => new Promise((r) => setTimeout(r, 20));
 
 /** A steward.cjs service() stand-in that records what it was asked. */
 function fakeSvc(port, calls) {
@@ -25,11 +28,11 @@ function fakeSvc(port, calls) {
 }
 
 /** Ollama with every outside act recorded instead of done. */
-function fakeOllama({ enabled = false, answering = false } = {}) {
-  const seen = { starts: [], killed: [], up: answering };
+function fakeOllama({ enabled = false, answering = false, env = {}, getConfig = null } = {}) {
+  const seen = { starts: [], killed: [], children: [], up: answering, clock: 0 };
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'services-'));
   const server = ollamaServer({
-    getConfig: () => ({ ...DEFAULTS.services.ollama, enabled }),
+    getConfig: getConfig || (() => ({ ...DEFAULTS.services.ollama, enabled })),
     logDir: dir,
     probe: async () => seen.up,
     wait: async (port, ms, probe, gone) => (gone ? !seen.up : seen.up),
@@ -37,14 +40,26 @@ function fakeOllama({ enabled = false, answering = false } = {}) {
     start: (exe, args, cwd, env, logs) => {
       seen.starts.push({ exe, args, cwd, env, logs });
       seen.up = true;
-      return { pid: 77, exitCode: null };
+      const child = Object.assign(new EventEmitter(), { pid: 77, exitCode: null });
+      seen.children.push(child);
+      return child;
     },
     killTree: (pid) => {
       seen.killed.push(pid);
       seen.up = false;
     },
-    base: { PATH: 'C:\\Windows', OLLAMA_MODELS: 'D:\\models', HSA_OVERRIDE_GFX_VERSION: '10.3.0', OLLAMA_KV_CACHE_TYPE: 'f16' },
+    delay: 0,
+    now: () => seen.clock,
+    base: { PATH: 'C:\\Windows', OLLAMA_MODELS: 'D:\\models', HSA_OVERRIDE_GFX_VERSION: '10.3.0', OLLAMA_KV_CACHE_TYPE: 'f16', ...env },
   });
+  /** the newest `ollama serve` dies, `after` ms after it started */
+  seen.die = (after = 1000) => {
+    const child = seen.children[seen.children.length - 1];
+    seen.clock += after;
+    seen.up = false;
+    child.exitCode = 1;
+    child.emit('exit', 1);
+  };
   return { server, seen, dir };
 }
 
@@ -96,10 +111,10 @@ test('control goes to the entry named, and refuses what it cannot do', async () 
 });
 
 test("Ollama while off, or while the Ollama app answers on 11434, refuses Start and Stop with the reason", async () => {
-  for (const opts of [{ enabled: false }, { enabled: true, answering: true }]) {
+  for (const [opts, error] of [[{ enabled: false }, OLLAMA_EXTERNAL], [{ enabled: true, answering: true }, OLLAMA_APP]]) {
     const { server, seen } = fakeOllama(opts);
     const reg = registry([server], { probe: async () => seen.up });
-    for (const action of ['start', 'stop', 'restart']) assert.deepEqual(await reg.control('ollama', action), { ok: false, error: OLLAMA_EXTERNAL });
+    for (const action of ['start', 'stop', 'restart']) assert.deepEqual(await reg.control('ollama', action), { ok: false, error });
     assert.equal(seen.starts.length + seen.killed.length, 0, 'nothing started or stopped');
     assert.equal((await reg.list())[0].kind, 'external');
   }
@@ -125,6 +140,101 @@ test('Ollama on and nothing answering starts `ollama serve` with the pinned envi
   assert.deepEqual(await reg.control('ollama', 'stop'), { ok: true });
   assert.deepEqual(seen.killed, [77]);
   assert.equal((await reg.list())[0].status, 'held');
+});
+
+test('SECONDBRAIN_RUNS_OLLAMA=1 turns the switch on and =0 forces it off, whatever Settings says', async () => {
+  assert.deepEqual([runsOllama({ SECONDBRAIN_RUNS_OLLAMA: '1' }), runsOllama({ SECONDBRAIN_RUNS_OLLAMA: '0' }), runsOllama({}), runsOllama({ SECONDBRAIN_RUNS_OLLAMA: 'yes' })], [true, false, null, null]);
+  const on = fakeOllama({ enabled: false, env: { SECONDBRAIN_RUNS_OLLAMA: '1' } });
+  const regOn = registry([on.server], { probe: async () => on.seen.up });
+  const [rowOn] = await regOn.list();
+  assert.deepEqual([rowOn.kind, rowOn.settings.enabled, rowOn.settings.override], ['owned', true, 'on']);
+  assert.deepEqual(await regOn.control('ollama', 'start'), { ok: true });
+  assert.equal(on.seen.starts.length, 1);
+  const off = fakeOllama({ enabled: true, env: { SECONDBRAIN_RUNS_OLLAMA: '0' } });
+  const regOff = registry([off.server], { probe: async () => off.seen.up });
+  assert.deepEqual(await regOff.control('ollama', 'start'), { ok: false, error: OLLAMA_EXTERNAL });
+  const [rowOff] = await regOff.list();
+  assert.deepEqual([rowOff.kind, rowOff.settings.enabled, rowOff.settings.override], ['external', false, 'off']);
+  assert.equal(off.seen.starts.length, 0);
+  // with no override, Settings decides, and the override says null
+  assert.equal((await registry([fakeOllama({ enabled: true }).server]).list())[0].settings.override, null);
+});
+
+test("the toggle's write, settings.set('services', { ollama: { enabled } }), turns it on and keeps the pinned environment", async () => {
+  const s = new Settings(fs.mkdtempSync(path.join(os.tmpdir(), 'services-settings-')));
+  const { server, seen } = fakeOllama({ getConfig: () => s.get('services').ollama });
+  const reg = registry([server], { probe: async () => seen.up });
+  assert.equal((await reg.list())[0].kind, 'external');
+  s.set('services', { ollama: { enabled: true } }); // what the Servers shelf's toggle sends (src/utils/services.ts ollamaSwitch)
+  assert.deepEqual(s.get('services').ollama.env, DEFAULTS.services.ollama.env, 'the pinned environment stays');
+  const [row] = await reg.list();
+  assert.deepEqual([row.kind, row.settings.enabled], ['owned', true]);
+  s.set('services', { ollama: { enabled: false } });
+  assert.equal((await reg.list())[0].kind, 'external');
+});
+
+test('an `ollama serve` SecondBrain started is started again when it dies; Stop is not undone; five quick deaths stop it', async () => {
+  const { server, seen } = fakeOllama({ enabled: true });
+  const reg = registry([server], { probe: async () => seen.up });
+  assert.deepEqual(await reg.control('ollama', 'start'), { ok: true });
+  seen.die(60000); // a long run, then a death: started again
+  await tick();
+  assert.equal(seen.starts.length, 2);
+  for (let i = 0; i < 4; i++) {
+    seen.die(1000);
+    await tick();
+  }
+  assert.equal(seen.starts.length, 6, 'four quick deaths are started again');
+  seen.die(1000); // the fifth in a row
+  await tick();
+  assert.equal(seen.starts.length, 6, 'the fifth quick death is not');
+  const [row] = await reg.list();
+  assert.match(row.error, /stopped 5 times in a row/);
+  assert.equal(row.status, 'down');
+  // Start tries again, and clears the count
+  assert.deepEqual(await reg.control('ollama', 'start'), { ok: true });
+  assert.equal(seen.starts.length, 7);
+  assert.equal((await reg.list())[0].error, undefined);
+  // a Stop is the user's: its exit is not undone
+  assert.deepEqual(await reg.control('ollama', 'stop'), { ok: true });
+  seen.die(1000);
+  await tick();
+  assert.equal(seen.starts.length, 7);
+});
+
+test('a dead `ollama serve` is not started again once the switch is off, once the Ollama app has the port, or once SecondBrain quits', async () => {
+  let enabled = true;
+  const off = fakeOllama({ getConfig: () => ({ ...DEFAULTS.services.ollama, enabled }) });
+  await off.server.start();
+  enabled = false;
+  off.seen.die(60000);
+  await tick();
+  assert.equal(off.seen.starts.length, 1, 'switched off');
+
+  const app = fakeOllama({ enabled: true });
+  await app.server.start();
+  app.seen.die(60000);
+  app.seen.up = true; // the Ollama app came back on 11434
+  await tick();
+  assert.equal(app.seen.starts.length, 1, 'never over the Ollama app');
+
+  const quit = fakeOllama({ enabled: true });
+  await quit.server.start();
+  quit.server.dispose();
+  quit.seen.die(60000);
+  await tick();
+  assert.equal(quit.seen.starts.length, 1, 'SecondBrain is quitting');
+});
+
+test('a running `ollama serve` SecondBrain started can still be stopped after the switch is turned off', async () => {
+  let enabled = true;
+  const { server, seen } = fakeOllama({ getConfig: () => ({ ...DEFAULTS.services.ollama, enabled }) });
+  const reg = registry([server], { probe: async () => seen.up });
+  assert.deepEqual(await reg.control('ollama', 'start'), { ok: true });
+  enabled = false;
+  assert.deepEqual(await reg.control('ollama', 'stop'), { ok: true });
+  assert.deepEqual(seen.killed, [77]);
+  assert.deepEqual(await reg.control('ollama', 'start'), { ok: false, error: OLLAMA_EXTERNAL });
 });
 
 test("log gives the last N lines of an entry's own log (at most 500), and refuses an unknown id", async () => {

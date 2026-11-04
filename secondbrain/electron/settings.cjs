@@ -21,7 +21,10 @@ const DEFAULTS = {
   atlas: { exe: '', ground: '', python: 'python', engine: true, trusted: false, all: false }, // Settings → Atlas & Manjuel, remembered
   archive: { python: 'python', cli: '', model: '' },
   // the Servers shelf (services.cjs): SecondBrain runs `ollama serve` only when this is on, with this environment
-  // pinned over its own; OLLAMA_MODELS '' keeps the one SecondBrain was started with (his User variable)
+  // pinned over its own; OLLAMA_MODELS '' keeps the one SecondBrain was started with (his User variable).
+  // The environment variable SECONDBRAIN_RUNS_OLLAMA, read when SecondBrain starts, overrides `enabled`: 1 turns it on,
+  // 0 forces it off (the Servers shelf's toggle then shows it as set there). OLLAMA_NO_CLOUD=1 turns off Ollama's cloud
+  // features; OLLAMA_HOST=127.0.0.1 keeps it on loopback.
   services: {
     ollama: {
       enabled: false,
