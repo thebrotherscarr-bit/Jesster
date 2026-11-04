@@ -1,12 +1,10 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { X, Check, CircleAlert, Cpu, Plug, RefreshCw } from 'lucide-react';
+import { X, Check, CircleAlert, RefreshCw } from 'lucide-react';
 import { EvalsView, MemoryFile, RunsView, SkillInfo, StewardStatus, StewardUses, ToolPolicy } from '../types/desktop.ts';
-import { OllamaConfig } from '../types/index.ts';
 import { CONSOLE_SHELVES, ConsoleShelf, mcpServers, shortTime, versusBaseline } from '../utils/agentConsole.ts';
 import { approvalWord } from '../utils/approvals.ts';
 import { ServersShelf } from './ServersShelf.tsx';
 import { ApprovalsShelf } from './ApprovalsShelf.tsx';
-import { TelegramSection } from './settings/TelegramSection.tsx';
 import { AtlasSection } from './settings/AtlasSection.tsx';
 import { AutomationsSection } from './settings/AutomationsSection.tsx';
 import { McpSection } from './settings/McpSection.tsx';
@@ -142,29 +140,13 @@ const ESTATE: { name: string; is: string }[] = [
   { name: 'Ollama', is: 'The local models, on 11434. One model at a time on this PC.' },
 ];
 
-const ServersPane: React.FC<{ ollamaConfig: OllamaConfig; onOpenOllama?: () => void; onOpenIntegrations?: () => void }> = ({ ollamaConfig, onOpenOllama, onOpenIntegrations }) => (
+// Ollama, integrations and voice are sections of Settings, and Telegram is on the Phone view (utils/settingsMap.ts):
+// nothing here opens a window of its own
+const ServersPane: React.FC = () => (
   <>
     <StewardCard />
     <ServersShelf />
-    <Card title="Models and connections" hint="The Ollama connection this app uses, and the outside model services with their keys.">
-      <div className="flex flex-wrap gap-1.5">
-        {onOpenOllama && (
-          <button onClick={onOpenOllama} data-console="Ollama" aria-label="Configure local Ollama connection" className={BTN}>
-            <Cpu className="w-3 h-3" /> Ollama:{' '}
-            <span className={ollamaConfig.isConnected ? 'text-emerald-400' : ollamaConfig.isSimulatedMode ? 'text-cyan-400' : 'text-amber-400'}>
-              {ollamaConfig.isConnected ? 'live' : ollamaConfig.isSimulatedMode ? 'simulated' : 'not connected'}
-            </span>
-          </button>
-        )}
-        {onOpenIntegrations && (
-          <button onClick={onOpenIntegrations} data-console="Integrations" className={BTN}>
-            <Plug className="w-3 h-3" /> Integrations and voice
-          </button>
-        )}
-      </div>
-    </Card>
     <div className="rounded-xl border border-neutral-800 overflow-hidden [&>section]:px-3 [&>section:last-child]:border-b-0">
-      <TelegramSection />
       <AtlasSection />
     </div>
     <details className="rounded-xl border border-neutral-800 p-3 text-xs">
@@ -445,12 +427,7 @@ const SHELF_KEY = 'secondbrain_console_shelf_v1';
  * The console, beside the conversation (Aurora's Inspector: a panel of tabs that opens beside the terminal and closes
  * with its X). One shelf at a time; the last one used is remembered.
  */
-export const AgentConsole: React.FC<{ ollamaConfig: OllamaConfig; onClose: () => void; onOpenOllama?: () => void; onOpenIntegrations?: () => void }> = ({
-  ollamaConfig,
-  onClose,
-  onOpenOllama,
-  onOpenIntegrations,
-}) => {
+export const AgentConsole: React.FC<{ onClose: () => void }> = ({ onClose }) => {
   const [shelf, setShelf] = useState<ConsoleShelf>(() => {
     const saved = (typeof localStorage !== 'undefined' && localStorage.getItem(SHELF_KEY)) || '';
     return CONSOLE_SHELVES.some((s) => s.id === saved) ? (saved as ConsoleShelf) : 'servers';
@@ -488,7 +465,7 @@ export const AgentConsole: React.FC<{ ollamaConfig: OllamaConfig; onClose: () =>
         ))}
       </div>
       <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 space-y-3">
-        {shelf === 'servers' && <ServersPane ollamaConfig={ollamaConfig} onOpenOllama={onOpenOllama} onOpenIntegrations={onOpenIntegrations} />}
+        {shelf === 'servers' && <ServersPane />}
         {shelf === 'approvals' && <ApprovalsShelf />}
         {shelf === 'evals' && <EvalsPane />}
         {shelf === 'runs' && <RunsPane />}

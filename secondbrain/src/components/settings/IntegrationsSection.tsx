@@ -1,8 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { X, Plug, KeyRound, Check, Copy, RefreshCw, MonitorSmartphone } from 'lucide-react';
-import { IntegrationsState, ProviderId } from '../types/desktop.ts';
-import { VoiceSection } from './settings/VoiceSection.tsx';
-import { VoiceSettings } from '../voice/useVoice.ts';
+import { KeyRound, Check, Copy, RefreshCw, MonitorSmartphone } from 'lucide-react';
+import { IntegrationsState, ProviderId } from '../../types/desktop.ts';
 
 const clean = (e: unknown) => (e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e));
 
@@ -86,47 +84,25 @@ const ProviderRow: React.FC<{
 };
 
 /**
- * Integrations (next to Live): bring Claude, ChatGPT and Gemini into the app
- * with your API keys, connect their own apps to your notes, and voice.
+ * Integrations: bring Claude, ChatGPT and Gemini into the app with your API keys, and connect their own apps to your
+ * notes. Sections of Settings (they were a window of their own, opened from the console); key values are never shown.
  */
-export const IntegrationsModal: React.FC<{
-  isOpen: boolean;
-  onClose: () => void;
-  voice?: VoiceSettings;
-  onVoiceChange?: (v: Partial<VoiceSettings>) => void;
-  onChanged?: (s: IntegrationsState) => void;
-}> = ({ isOpen, onClose, voice, onVoiceChange, onChanged }) => {
+export const IntegrationsSection: React.FC = () => {
   const api = window.secondbrainDesktop?.integrations;
   const [s, setS] = useState<IntegrationsState | null>(null);
   const [note, setNote] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const update = (x: IntegrationsState) => {
-    setS(x);
-    onChanged?.(x);
-  };
+  const update = (x: IntegrationsState) => setS(x);
 
   useEffect(() => {
-    if (isOpen && api) api.get().then(update).catch((e) => setNote(clean(e)));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen, api]);
+    if (api) api.get().then(update).catch((e) => setNote(clean(e)));
+  }, [api]);
 
-  if (!isOpen) return null;
+  if (!api) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={onClose}>
-      <div role="dialog" aria-label="Integrations" className="w-full max-w-2xl max-h-[85vh] overflow-y-auto rounded-2xl border border-neutral-800 bg-neutral-950 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="flex items-center justify-between px-5 py-4 border-b border-neutral-800 sticky top-0 bg-neutral-950 z-10">
-          <h2 className="text-sm font-semibold text-white flex items-center gap-2"><Plug className="w-4 h-4 text-sky-400" /> Integrations</h2>
-          <button onClick={onClose} className="p-1.5 rounded-lg text-neutral-400 hover:text-white hover:bg-neutral-800" aria-label="Close integrations">
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-
-        {!api ? (
-          <p className="px-5 py-4 text-xs text-neutral-400">Integrations run in the Jesster desktop app.</p>
-        ) : (
-          <>
+    <>
             <section className="px-5 py-4 border-b border-neutral-900 space-y-3" aria-label="Models">
               <div className="flex items-center gap-2 text-white text-sm font-medium"><KeyRound className="w-4 h-4 text-amber-300" /> Claude, ChatGPT and Gemini in Jesster</div>
               <p className="text-xs text-neutral-400">
@@ -202,11 +178,6 @@ export const IntegrationsModal: React.FC<{
               )}
               {note && <p className="text-xs text-neutral-300">{note}</p>}
             </section>
-          </>
-        )}
-
-        {voice && onVoiceChange && <VoiceSection voice={voice} onChange={onVoiceChange} />}
-      </div>
-    </div>
+    </>
   );
 };

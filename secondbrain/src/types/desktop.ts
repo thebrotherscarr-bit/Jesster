@@ -210,7 +210,43 @@ export interface AtlasOptions {
   all?: boolean;
 }
 
+/** A phone channel; only Telegram is wired today. */
+export type PhoneChannel = 'telegram' | 'whatsapp' | 'discord';
+
+/** One line of a phone conversation (electron/agent/phone.cjs): what was said, a card, or its answer. */
+export interface PhoneEntry {
+  at: string;
+  channel: PhoneChannel;
+  chatId: string;
+  title?: string;
+  sessionId?: string | null;
+  kind: 'user' | 'reply' | 'card' | 'answer';
+  text: string;
+  cardId?: string;
+  name?: string;
+  answer?: string;
+  where?: string;
+}
+
+/** One phone conversation in the Phone view's list. */
+export interface PhoneConversation {
+  channel: PhoneChannel;
+  chatId: string;
+  title: string;
+  label: string;
+  at: string;
+  last: string;
+}
+
+export interface PhoneBridge {
+  list: () => Promise<PhoneConversation[]>;
+  /** a conversation's lines, newest first, and the card ids still waiting */
+  read: (channel: PhoneChannel, chatId: string) => Promise<{ entries: PhoneEntry[]; open: string[] }>;
+  onEntry: (cb: (e: PhoneEntry) => void) => () => void;
+}
+
 export interface DesktopBridge {
+  phone?: PhoneBridge;
   version: () => Promise<{ build: number; commit: string } | null>;
   checkUpdate: () => Promise<{
     current: { build: number; commit: string };

@@ -7,6 +7,18 @@ const crypto = require('crypto');
 const { Registry, core } = require('./tools.cjs');
 const { runTurn, newSessionId, saveSession, messagesFromNote } = require('./agent.cjs');
 
+// where a turn to Steward comes from, told to him on its first line (the operator, 2026-11-04: "this is the pc" and
+// "this is the phone"); the phone's channels are kept off the Agent tab's chat list (they are the Phone view's)
+const SOURCES = { app: 'from the PC (Agent tab)', telegram: 'from the phone (Telegram)', whatsapp: 'from the phone (WhatsApp)', discord: 'from the phone (Discord)' };
+const PHONE = ['telegram', 'whatsapp', 'discord'];
+
+/** The text Steward is sent: a short line naming where it came from, then the message (an improve: word stays first). */
+function withSource(text, source) {
+  const line = SOURCES[source];
+  if (!line) return text;
+  return /^\s*improve:/i.test(text) ? `${text}\n\n[${line}]` : `[${line}]\n${text}`;
+}
+
 class AgentService {
   /**
    * getVault(): the vault; getModel(): { host, model, maxSteps };
@@ -196,7 +208,7 @@ class AgentService {
     try {
       // the Agent tab and Telegram talk to Steward; schedules and subagents keep the local loop for now
       if (this.steward && backend === 'steward' && (source === 'app' || source === 'telegram')) {
-        return { sessionId: id, answer: await this.askSteward(s, text, id, send, approve, onCard) };
+        return { sessionId: id, answer: await this.askSteward(s, text, id, send, approve, onCard, source) };
       }
       const answer = await runTurn({
         host,
@@ -240,7 +252,7 @@ class AgentService {
    * this session's last response id, and his approval requests come to the window's cards (and,
    * with `onCard`, to Telegram's buttons too: then the cards are always the window's own).
    */
-  async askSteward(s, text, id, send, approve, onCard) {
+  async askSteward(s, text, id, send, approve, onCard, source = 'app') {
     const base = await this.steward.ensure();
     // his service runs his MAF workflow, which keeps the plan and execute modes itself: the plan
     // comes as an approval request (a card), and the tab sends only the text
@@ -248,7 +260,7 @@ class AgentService {
     if (!s.stewardPrevious && /^\s*improve:/i.test(text)) s.improve = true;
     const r = await this.steward.turn({
       base,
-      text,
+      text: withSource(text, source),
       previous: s.stewardPrevious,
       approve: onCard ? this.approveInWindow(id, onCard) : approve || this.approveInWindow(id),
       review: this.reviewInWindow(id, onCard),
@@ -282,10 +294,11 @@ class AgentService {
     this.sessions.get(sessionId)?.abort?.abort();
   }
 
+  /** The Agent tab's conversations: the phone's (Telegram, ...) are the Phone view's, not listed here. */
   list() {
     return this.getVault()
       .load()
-      .filter((n) => n.tags.includes('agent-session'))
+      .filter((n) => n.tags.includes('agent-session') && !n.tags.some((t) => PHONE.includes(t)))
       .sort((a, b) => b.updatedAt - a.updatedAt)
       .slice(0, 100)
       .map((n) => ({ id: n.id, title: n.title, updatedAt: n.updatedAt, source: n.tags.find((t) => t !== 'agent-session') }));
@@ -297,4 +310,4 @@ class AgentService {
   }
 }
 
-module.exports = { AgentService };
+module.exports = { AgentService, withSource, SOURCES, PHONE };

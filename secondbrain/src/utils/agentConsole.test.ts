@@ -28,14 +28,16 @@ test('every control that left the top bar stands in the console', () => {
   }
   const panel = read('../components/AgentConsole.tsx');
   for (const shelf of ['ServersShelf', 'ApprovalsShelf']) assert.match(panel, new RegExp(`<${shelf} />`), `${shelf} is on the console, once`);
-  for (const section of ['TelegramSection', 'AtlasSection', 'TerminalSection', 'BrowserSection', 'ComputerSection', 'CheckSection', 'McpSection', 'AutomationsSection'])
+  for (const section of ['AtlasSection', 'TerminalSection', 'BrowserSection', 'ComputerSection', 'CheckSection', 'McpSection', 'AutomationsSection'])
     assert.match(panel, new RegExp(`<${section} />`), `${section} moved from Settings to the console`);
   const settings = read('../components/SettingsModal.tsx');
   for (const section of ['TelegramSection', 'AtlasSection', 'TerminalSection', 'McpSection']) assert.ok(!settings.includes(section), `${section} is not also in Settings`);
+  // Telegram's setup is the Phone view's (2026-11-04)
+  assert.match(read('../components/PhoneView.tsx'), /<TelegramSection \/>/);
 });
 
 test('the removed pages and windows are gone', () => {
-  for (const f of ['FlowsView', 'GitHubView', 'GitHubPanels', 'AskBrainView', 'QuickCaptureModal', 'ServicesModal', 'StewardButton'])
+  for (const f of ['FlowsView', 'GitHubView', 'GitHubPanels', 'AskBrainView', 'QuickCaptureModal', 'ServicesModal', 'StewardButton', 'OllamaSetupModal', 'IntegrationsModal'])
     assert.equal(existsSync(new URL(`../components/${f}.tsx`, import.meta.url)), false, `${f}.tsx`);
   const app = read('../App.tsx');
   for (const gone of ['FlowsView', 'AskBrainView', 'QuickCaptureModal', 'ServicesModal', 'StewardModal', 'handleCreateNewNote']) assert.ok(!app.includes(gone), gone);
