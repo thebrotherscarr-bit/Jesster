@@ -7,6 +7,7 @@ import { SpeakToggle } from './SpeakToggle.tsx';
 import { TelegramSection } from './settings/TelegramSection.tsx';
 import { DiscordSection } from './settings/DiscordSection.tsx';
 import { WhatsAppSection } from './settings/WhatsAppSection.tsx';
+import { channelOn, visibleChats } from '../utils/channels.ts';
 
 /**
  * The phone (the operator, 2026-11-04: "so we know like 'this is the pc' and 'this is the phone'"): the Agent tab's
@@ -26,8 +27,15 @@ export const PhoneView: React.FC<{ voice?: VoiceSettings; onVoiceChange?: (v: Pa
   const current = useRef<PhoneConversation | null>(null);
   current.current = chat;
   const pane = useRef<HTMLDivElement>(null);
+  // the channels that are on (channels.json), named for the Setup button and the empty pane
+  const setupNames = (['telegram', 'whatsapp', 'discord'] as const)
+    .filter((c) => channelOn(c))
+    .map((c) => ({ telegram: 'Telegram', whatsapp: 'WhatsApp', discord: 'Discord' })[c])
+    .join(', ')
+    .replace(/, (?=[^,]*$)/, ' and ');
 
-  const refresh = () => phone?.list().then(setChats).catch(() => {});
+  // only the conversations on a channel that is on (src/utils/channels.ts)
+  const refresh = () => phone?.list().then((l) => setChats(visibleChats(l))).catch(() => {});
 
   const show = async (c: PhoneConversation) => {
     setChat(c);
@@ -97,7 +105,7 @@ export const PhoneView: React.FC<{ voice?: VoiceSettings; onVoiceChange?: (v: Pa
           <button
             onClick={() => setSetup(!setup)}
             aria-pressed={setup}
-            title="Telegram, WhatsApp and Discord: linking them and the paired chats"
+            title={`${setupNames}: linking them and the paired chats`}
             className={`shrink-0 flex items-center gap-1.5 px-2 py-1 rounded-md ${setup ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:text-white hover:bg-neutral-900'}`}
           >
             <Settings2 className="w-3.5 h-3.5" /> Setup
@@ -106,8 +114,8 @@ export const PhoneView: React.FC<{ voice?: VoiceSettings; onVoiceChange?: (v: Pa
         {setup && (
           <div className="border-b border-neutral-800 max-h-[50%] overflow-y-auto">
             <TelegramSection />
-            <WhatsAppSection />
-            <DiscordSection />
+            {channelOn('whatsapp') && <WhatsAppSection />}
+            {channelOn('discord') && <DiscordSection />}
           </div>
         )}
         <div ref={pane} className="flex-1 min-w-0 min-h-0 overflow-y-auto overflow-x-hidden px-4 sm:px-8 py-6 space-y-4">
@@ -115,7 +123,7 @@ export const PhoneView: React.FC<{ voice?: VoiceSettings; onVoiceChange?: (v: Pa
             <div className="max-w-xl mx-auto text-center text-neutral-400 mt-16 space-y-2">
               <Smartphone className="w-10 h-10 mx-auto text-sky-400" />
               <p className="text-sm text-neutral-200">What you and Steward said on the phone.</p>
-              <p className="text-xs">Pick a conversation on the left. Telegram, WhatsApp and Discord are set up under Setup.</p>
+              <p className="text-xs">Pick a conversation on the left. {setupNames} {setupNames.includes(' and ') ? 'are' : 'is'} set up under Setup.</p>
             </div>
           )}
           {entries.map((e, i) =>

@@ -1,28 +1,31 @@
 import React, { useEffect, useState } from 'react';
 import { MessageCircle, Check, X } from 'lucide-react';
 import { DiscordState } from '../../types/desktop.ts';
+import { channelOn, tokenPatch } from '../../utils/channels.ts';
 
 /** Discord: chat with SecondBrain from your phone, in a DM with your own bot (electron/agent/discord.cjs). */
 export const DiscordSection: React.FC = () => {
   const desk = window.secondbrainDesktop;
   const bridge = desk?.discord;
   const [state, setState] = useState<DiscordState | null>(null);
-  const [token, setToken] = useState('');
+  const [token, setToken] = useState(''); // only what the user types; the saved token stays in the main process
+  const [saved, setSaved] = useState(''); // the saved token's last four, from the masked settings
   const [enabled, setEnabled] = useState(false);
   const [note, setNote] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!bridge || !desk?.settings) return;
+    if (!bridge || !desk?.settings || !channelOn('discord')) return;
     bridge.state().then(setState);
     desk.settings.get().then((s) => {
       const d = (s.discord || {}) as { token?: string; enabled?: boolean };
-      setToken(d.token || '');
+      setSaved(d.token ? d.token.slice(-4) : '');
       setEnabled(Boolean(d.enabled));
     });
     return bridge.onState(setState);
   }, [bridge, desk]);
 
-  if (!bridge || !desk?.settings) return null;
+  // off until channels.json switches it on (the operator, 2026-11-04: "Telegram and Whatsapp, not Discord yet")
+  if (!bridge || !desk?.settings || !channelOn('discord')) return null;
 
   const save = async (patch: { token?: string; enabled?: boolean }) => {
     setNote(null);
@@ -47,11 +50,22 @@ export const DiscordSection: React.FC = () => {
           type="password"
           value={token}
           onChange={(e) => setToken(e.target.value)}
-          placeholder="Bot token from the Developer Portal"
+          placeholder={saved ? `Saved, ends in ${saved}. Paste a new token to replace it` : 'Bot token from the Developer Portal'}
           aria-label="Discord bot token"
           className="flex-1 rounded-lg bg-neutral-900 border border-neutral-800 px-2.5 py-1.5 text-xs text-white"
         />
-        <button onClick={() => save({ token, enabled: true }).then(() => setEnabled(true))} className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs text-white">
+        <button
+          disabled={!token.trim() && !saved}
+          onClick={() => {
+            const patch = tokenPatch(token);
+            save(patch).then(() => {
+              setEnabled(true);
+              if (patch.token) setSaved(patch.token.slice(-4));
+              setToken('');
+            });
+          }}
+          className="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 disabled:opacity-40 text-xs text-white"
+        >
           Save and start
         </button>
       </div>

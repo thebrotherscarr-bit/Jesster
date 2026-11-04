@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { MessageSquare, Check, X } from 'lucide-react';
 import { WhatsAppState } from '../../types/desktop.ts';
+import { channelOn } from '../../utils/channels.ts';
 
 /** WhatsApp: chat with SecondBrain from your phone, on your own account linked as a device (electron/agent/whatsapp.cjs). */
 export const WhatsAppSection: React.FC = () => {
@@ -10,12 +11,13 @@ export const WhatsAppSection: React.FC = () => {
   const [note, setNote] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!bridge) return;
+    if (!bridge || !channelOn('whatsapp')) return;
     bridge.state().then(setState);
     return bridge.onState(setState);
   }, [bridge]);
 
-  if (!bridge || !desk?.settings) return null;
+  // shown while channels.json switches WhatsApp on
+  if (!bridge || !desk?.settings || !channelOn('whatsapp')) return null;
 
   const save = async (patch: { enabled?: boolean; selfChat?: boolean }) => {
     setNote(null);
