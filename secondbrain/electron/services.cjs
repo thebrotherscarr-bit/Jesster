@@ -69,7 +69,8 @@ function ollamaServer({ getConfig, logDir, start = startOwned, probe = answering
   let quick = 0;
   let error = '';
   let disposed = false;
-  const ours = () => Boolean(child && child.exitCode === null);
+  let startedAt = null;
+  const ours =() => Boolean(child && child.exitCode === null);
   const cfg = () => getConfig() || {};
   const enabled = () => (forced === null ? Boolean(cfg().enabled) : forced);
   const logs = () => (typeof logDir === 'function' ? logDir() : logDir); // the app's logs folder, asked once it is ready
@@ -85,6 +86,7 @@ function ollamaServer({ getConfig, logDir, start = startOwned, probe = answering
     const began = now();
     const c = start(find(base), ['serve'], logs(), ollamaEnv(cfg().env, base), ['ollama.log', 'ollama.log']);
     child = c;
+    startedAt = new Date(began).toISOString();
     if (c && typeof c.once === 'function') c.once('exit', () => died(c, began));
   }
   function died(c, began) {
@@ -132,6 +134,8 @@ function ollamaServer({ getConfig, logDir, start = startOwned, probe = answering
       await begin();
     },
     held: () => held,
+    pid: () => (ours() ? child.pid : null),
+    started: () => (ours() ? startedAt : null),
     error: () => error,
     dispose: () => {
       disposed = true;
@@ -178,6 +182,9 @@ function registry(entries, { probe = answering } = {}) {
     const up = e.up ? await e.up() : port ? await probe(port) : false;
     const status = busy.has(e.id) ? 'starting' : up ? 'up' : e.held && e.held() ? 'held' : 'down';
     const out = { id: e.id, label: e.label, port, kind: await value(e.kind || 'owned'), status, canControl: Boolean(e.start), logPath: (e.logPath && e.logPath()) || null };
+    // the process SecondBrain runs it as, and since when (null when it runs none: one found running, or stopped)
+    out.pid = (e.pid && e.pid()) || null;
+    out.started = (e.started && e.started()) || null;
     if (why) out.why = why; // a refusal to come: Start on an Ollama the app runs says so, so his buttons stay live
     const err = e.error ? e.error() : '';
     if (err) out.error = err; // why a server it keeps up is no longer started again
@@ -208,6 +215,8 @@ function registry(entries, { probe = answering } = {}) {
       const e = find(id);
       if (!e) return { ok: false, error: `Unknown server: ${id}` };
       const file = (e.logPath && e.logPath()) || null;
+      // never a keys file (RULE 7), whatever an entry names
+      if (file && /^\.env/i.test(path.basename(file))) return { ok: false, error: `${e.label}'s log is not read: ${path.basename(file)} is a keys file.` };
       return { ok: true, file, text: file ? tail(file, lines) : '' };
     },
   };
@@ -215,7 +224,7 @@ function registry(entries, { probe = answering } = {}) {
 
 /** A steward.cjs service() as an entry: the instance main.cjs already made, with its log in Steward's folder. */
 function stewardEntry({ id, label, svc, logPath }) {
-  return { id, label, port: svc.port, kind: 'owned', start: svc.start, stop: svc.stop, restart: svc.restart, held: svc.held, logPath };
+  return { id, label, port: svc.port, kind: 'owned', start: svc.start, stop: svc.stop, restart: svc.restart, held: svc.held, pid: svc.pid, started: svc.started, logPath };
 }
 
 module.exports = { registry, ollamaServer, ollamaEnv, findOllama, runsOllama, stewardEntry, tail, OLLAMA_PORT, OLLAMA_EXTERNAL, OLLAMA_APP, RUNS_OLLAMA, MAX_LINES };

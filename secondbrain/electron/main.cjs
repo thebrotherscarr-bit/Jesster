@@ -38,6 +38,7 @@ const distDir = path.join(__dirname, '..', 'dist');
 // give the app a brand-new, empty storage bucket on every launch.
 const APP_PORT = Number(process.env.SECONDBRAIN_PORT) || 43110;
 const APP_ORIGIN = `http://127.0.0.1:${APP_PORT}`;
+const APP_STARTED = new Date().toISOString();
 
 let mainWindow = null;
 let localServer = null;
@@ -447,6 +448,8 @@ const stewardMcp = steward.service({
   port: steward.MCP_PORT,
   log: 'steward-mcp.log',
 });
+// both go down with SecondBrain, each with its whole process tree (not only the venv launcher)
+steward.stopOnQuit(app, [stewardService, stewardMcp]);
 // Claude's check of each Steward turn (agent/checker.cjs): on the Claude key and model in
 // Integrations, with Steward's Charter note, only while Settings → Claude's check is on
 function checkStewardTurn({ turn, signal }) {
@@ -461,10 +464,14 @@ function checkStewardTurn({ turn, signal }) {
     signal,
   });
 }
+// every answered card, kept in the userData folder (approvals.cjs history): the console and Steward's approvals_history
+let approvalsHistory = null;
+const getApprovalsHistory = () => (approvalsHistory ||= approvals.history(path.join(app.getPath('userData'), approvals.HISTORY_FILE)));
 let agent = null;
 function getAgent() {
   if (!agent) {
     agent = new AgentService({
+      history: getApprovalsHistory(),
       getVault,
       getModel: () => getSettings().get('agent'),
       emit: (channel, payload) => mainWindow && mainWindow.webContents.send(channel, payload),
@@ -605,7 +612,7 @@ ipcMain.handle('steward:uses', (event) => {
   guard(event);
   const share = getSettings().get('share');
   // the lists his connection gets: the same handler /mcp answers him with, asked in-process
-  const ctx = { vault: getVault(), source: 'atlas', agent: getAgent() };
+  const ctx = { vault: getVault(), source: 'atlas', agent: getAgent(), estate: estateDeps() };
   const mcp = (method) => atlas.handleMcp({ jsonrpc: '2.0', id: 1, method }, { registry: getAgent().registry, ctx, writes: Boolean(share.writes) });
   const stewardDir = steward.findSteward((getSettings().get('agent').steward || {}).dir, vaultDir());
   return stewardSystem.uses({ mcp, stewardDir, shareOn: share.enabled });
@@ -801,6 +808,8 @@ async function serveMcp(req, res) {
       // agent_send / agent_read: the Agent tab, typed into from outside
       agent: getAgent(),
       showAgent: (id) => mainWindow && mainWindow.webContents.send('agent:show', id),
+      // the Estate's tools (estate.cjs): the Servers shelf, the updater, the approvals history
+      estate: estateDeps(),
     };
     const out = await atlas.handleMcp(req.body, { registry: getAgent().registry, ctx, writes: Boolean(share.writes) });
     if (out === null) return res.status(202).end();
@@ -871,7 +880,8 @@ const ollamaServer = services.ollamaServer({ getConfig: () => getSettings().get(
 const servers = services.registry([
   services.stewardEntry({ id: 'steward', label: "Steward's service", svc: stewardService, logPath: stewardLog('steward.log') }),
   services.stewardEntry({ id: 'steward-mcp', label: "Steward's MCP", svc: stewardMcp, logPath: stewardLog('steward-mcp.log') }),
-  { id: 'door', label: 'The door', port: atlasGlass.DOOR_PORT, kind: 'owned' },
+  // SecondBrain itself serves the door: its process, since SecondBrain started
+  { id: 'door', label: 'The door', port: atlasGlass.DOOR_PORT, kind: 'owned', pid: () => process.pid, started: () => APP_STARTED },
   {
     id: 'glass',
     label: 'The Atlas glass',
@@ -898,6 +908,20 @@ ipcMain.handle('services:log', (event, id, lines) => {
   guard(event);
   return servers.log(String(id), lines);
 });
+// ---- the Estate for Steward (estate.cjs): the same registry, updater and history, as MCP tools on /mcp ----------
+function estateDeps() {
+  return {
+    servers,
+    buildInfo: updater.buildInfo,
+    check: updater.check,
+    apply: updater.apply,
+    history: getApprovalsHistory(),
+    sitting: () => {
+      const g = atlasGlass.findGround((getSettings().get('atlas') || {}).ground, vaultDir());
+      return g ? atlasGlass.openSitting(g) : '';
+    },
+  };
+}
 
 // ---- the Approvals shelf (approvals.cjs): the open cards of both planes, Always allow, Steward's tool policy ----
 // a card is answered where it always was (agent:approve, door:call hold_answer); these only read, and reset Always
@@ -912,6 +936,10 @@ ipcMain.handle('approvals:always', (event) => {
 ipcMain.handle('approvals:reset', (event, key) => {
   guard(event);
   return getAgent().resetAlways(typeof key === 'string' ? key : null);
+});
+ipcMain.handle('approvals:history', (event, limit) => {
+  guard(event);
+  return getApprovalsHistory().read(limit);
 });
 ipcMain.handle('approvals:policy', (event) => {
   guard(event);

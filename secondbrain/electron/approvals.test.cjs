@@ -138,3 +138,43 @@ test("Steward's tool policy: absent, malformed, and present", () => {
   });
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('every answered card is kept in the history, newest first, capped to its newest lines', async () => {
+  const { history, HISTORY_FILE } = require('./approvals.cjs');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'approvals-history-'));
+  const h = history(path.join(dir, HISTORY_FILE), { cap: 5 });
+  const svc = new AgentService({ getVault: () => ({ load: () => [] }), getModel: () => ({}), history: h });
+  const told = [];
+  svc.onAnswered((e) => told.push(e));
+  const ask = svc.approveInWindow('s1');
+  const a = ask('terminal_run', { command: 'dir' }, 'dir');
+  const b = ask('write_note', { title: 'x' }, 'write x');
+  const c = ask('git_push', {}, 'push');
+  const [ida, idb, idc] = svc.cards().map((x) => x.id);
+  svc.answerApproval(ida, true, false);
+  svc.answerApproval(idb, true, true);
+  svc.answerApproval(idc, false, false, undefined, { where: 'telegram' });
+  assert.deepEqual(await Promise.all([a, b, c]), [true, true, false]);
+  const kept = h.read(10);
+  assert.deepEqual(kept.map((e) => [e.id, e.tool, e.summary, e.answer, e.where]), [
+    [idc, 'git_push', 'push', 'deny', 'telegram'],
+    [idb, 'write_note', 'write x', 'always', 'window'],
+    [ida, 'terminal_run', 'dir', 'allow', 'window'],
+  ]);
+  assert.ok(kept.every((e) => !Number.isNaN(Date.parse(e.time))));
+  assert.deepEqual(told.map((e) => e.id), [ida, idb, idc], 'and told to the listeners (Telegram)');
+  // a review's answer too
+  const review = svc.reviewInWindow('s1')({ attempt: 1, passed: true });
+  const idr = svc.cards()[0].id;
+  svc.answerApproval(idr, false, false);
+  assert.equal(await review, 'drop');
+  assert.equal(h.read(1)[0].answer, 'drop');
+  // capped: the newest 5 lines stay
+  for (let i = 0; i < 4; i++) h.append({ id: `x${i}`, tool: 't', summary: '', answer: 'allow', where: 'window', time: new Date().toISOString() });
+  const lines = fs.readFileSync(h.file, 'utf8').trim().split('\n');
+  assert.equal(lines.length, 5);
+  assert.deepEqual(h.read(200).map((e) => e.id), ['x3', 'x2', 'x1', 'x0', idr]);
+  assert.equal(h.read(2).length, 2);
+  assert.equal(h.read(100000).length, 5, 'read is held to 200 and to what is there');
+  fs.rmSync(dir, { recursive: true, force: true });
+});

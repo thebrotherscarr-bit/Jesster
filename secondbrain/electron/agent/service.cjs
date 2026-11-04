@@ -14,7 +14,7 @@ class AgentService {
    * (memory, skills index) added by later features; steward: { ensure, turn, up } (steward.cjs),
    * the agent of the Agent tab and of Telegram when getModel().backend is 'steward'.
    */
-  constructor({ getVault, getModel, emit = () => {}, extras = () => [], steward = null, checker = null, threads = null }) {
+  constructor({ getVault, getModel, emit = () => {}, extras = () => [], steward = null, checker = null, threads = null, history = null }) {
     this.getVault = getVault;
     this.getModel = getModel;
     this.emit = emit;
@@ -25,6 +25,10 @@ class AgentService {
     // threads: { get(id), set(id, { previous }) } (steward.cjs), so a conversation keeps
     // Steward's thread across a restart
     this.threads = threads;
+    // history: { append(entry) } (approvals.cjs history()): every answered card is kept there
+    this.history = history;
+    // told of every answered card (Telegram drops the card's buttons and shows the answer)
+    this.answeredHooks = [];
     this.registry = new Registry().add(core);
     this.sessions = new Map(); // id -> { messages, busy, abort }
     this.pending = new Map(); // approval id -> { resolve, key, sessionId, name, args, summary, at, kind? }
@@ -92,19 +96,47 @@ class AgentService {
     };
   }
 
-  answerApproval(id, allow, always, text) {
+  /** `fn(entry)` is told of every answered card, with the entry kept in the history. */
+  onAnswered(fn) {
+    this.answeredHooks.push(fn);
+  }
+
+  /**
+   * Answer a waiting card. `where` is the place it was answered ('window' or 'telegram'); `timeout` marks a card
+   * nobody answered in time (answered No). The answer is kept in the history and told to onAnswered's listeners.
+   */
+  answerApproval(id, allow, always, text, { where = 'window', timeout = false } = {}) {
     const p = this.pending.get(id);
     if (!p) return false;
     this.pending.delete(id);
     // the card is gone wherever it shows (the Agent tab, the Services window's Approvals)
     this.emit('agent:approval-done', { id, sessionId: p.sessionId });
+    const guidance = typeof text === 'string' && text.trim() ? text.trim() : '';
+    const answer = p.kind === 'review' ? (guidance ? 'guidance' : allow ? 'keep' : 'drop') : timeout ? 'timeout' : allow ? (always ? 'always' : 'allow') : 'deny';
+    this.answered({ id, tool: p.name, summary: p.summary, answer, where, time: new Date().toISOString() });
     if (p.kind === 'review') {
-      p.resolve(typeof text === 'string' && text.trim() ? text.trim() : allow ? 'keep' : 'drop');
+      p.resolve(guidance || (allow ? 'keep' : 'drop'));
       return true;
     }
     if (allow && always) this.alwaysAllow.set(p.key, { name: p.name, summary: p.summary, at: Date.now() });
     p.resolve(Boolean(allow));
     return true;
+  }
+
+  /** One answered card into the history and to the listeners; neither failing stops the answer. */
+  answered(entry) {
+    try {
+      this.history?.append(entry);
+    } catch {
+      /* a history that cannot be written still answers the card */
+    }
+    for (const fn of this.answeredHooks) {
+      try {
+        fn(entry);
+      } catch {
+        /* one listener failing leaves the others told */
+      }
+    }
   }
 
   /** The cards waiting now, as the window was sent them, with when each was asked. */
@@ -142,12 +174,13 @@ class AgentService {
       if (!waiting.length) throw new Error('this session is still working on the last message');
       // a message typed at a waiting review is its guidance (a No would drop the fixer's work)
       const review = waiting.find(([, p]) => p.kind === 'review');
+      const how = { where: source === 'telegram' ? 'telegram' : 'window' };
       if (review) {
-        this.answerApproval(review[0], true, false, text);
+        this.answerApproval(review[0], true, false, text, how);
         return { sessionId: id, answeredReview: true };
       }
       s.next = { ...request, sessionId: id };
-      for (const [key] of waiting) this.answerApproval(key, false);
+      for (const [key] of waiting) this.answerApproval(key, false, false, undefined, how);
       return { sessionId: id, queued: true };
     }
     s.busy = true;

@@ -30,6 +30,7 @@ function fakeTelegram() {
         return setTimeout(() => { waiters = waiters.filter((w) => w !== take); ok([]); }, 300);
       }
       sent.push({ method, ...body });
+      if (method === 'sendMessage') return ok({ message_id: sent.length, chat: { id: body.chat_id }, text: body.text });
       return ok(true);
     });
   });
@@ -220,6 +221,56 @@ test("with Steward as the agent, a paired chat is a Steward conversation: his ca
     bot.stop();
     tg.server.close();
     ollama.close();
+  }
+});
+
+test("a Steward card answered in the window loses its buttons in the chat and shows the answer; one nobody answers is No after the timeout; both are kept in the history", async () => {
+  const approvals = require('../approvals.cjs');
+  const tg = await fakeTelegram();
+  const vault = new Vault(fs.mkdtempSync(path.join(os.tmpdir(), 'tg-cards-')));
+  const history = approvals.history(path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'tg-history-')), approvals.HISTORY_FILE));
+  const decided = [];
+  const steward = {
+    ensure: async () => 'http://steward',
+    turn: async ({ text, approve }) => {
+      const ok = await approve('service_control', { service: 'ollama', action: 'restart' }, `service_control ${text}`);
+      decided.push(ok);
+      return { answer: ok ? 'done' : 'not done', previous: 'r', calls: [] };
+    },
+  };
+  const service = new AgentService({ getVault: () => vault, getModel: () => ({ backend: 'steward' }), steward, history });
+  const bot = new Telegram({ getConfig: () => ({ token: 'TOKEN', enabled: true, allowedChats: ['42'] }), agent: service, apiBase: tg.base, cardTimeout: 1500 });
+  await bot.start();
+  const edits = () => tg.sent.filter((s) => s.method === 'editMessageText');
+  try {
+    tg.push({ message: { chat: { id: 42 }, text: 'first' } });
+    await until(() => service.cards().length === 1 && bot.cards.get(service.cards()[0].id)?.messageId);
+    const card = tg.sent.find((s) => s.reply_markup && /service_control first/.test(s.text));
+    // answered in the window (agent:approve), before Telegram's timeout
+    service.answerApproval(service.cards()[0].id, true, false);
+    await until(() => edits().length === 1);
+    const edit = edits()[0];
+    assert.equal(edit.chat_id, '42');
+    assert.equal(edit.message_id, tg.sent.indexOf(card) + 1, 'the card message itself');
+    assert.match(edit.text, /service_control first\n\n— Allowed in Jesster$/);
+    assert.deepEqual(edit.reply_markup, { inline_keyboard: [] }, 'its buttons are gone');
+    assert.equal(bot.cards.size, 0, 'the card is forgotten here');
+    await until(() => decided.length === 1);
+    assert.deepEqual(decided, [true]);
+    // nobody answers: after the timeout it is No, as the local loop's cards are
+    tg.push({ message: { chat: { id: 42 }, text: 'second' } });
+    await until(() => decided.length === 2, 5000);
+    assert.equal(decided[1], false);
+    await until(() => edits().length === 2);
+    assert.match(edits()[1].text, /— No answer in 10 minutes: denied$/);
+    assert.equal(service.cards().length, 0);
+    const kept = history.read(10);
+    assert.deepEqual(kept.map((h) => [h.tool, h.answer, h.where]), [['service_control', 'timeout', 'telegram'], ['service_control', 'allow', 'window']]);
+    assert.match(kept[1].summary, /service_control first/);
+    assert.ok(kept.every((h) => h.id && !Number.isNaN(Date.parse(h.time))));
+  } finally {
+    bot.stop();
+    tg.server.close();
   }
 });
 
