@@ -14,6 +14,9 @@ const DEFAULTS = {
   agent: { host: 'http://localhost:11434', model: 'gpt-oss:20b', maxSteps: 12, backend: 'steward', steward: { dir: '', port: 43120 }, check: false },
   telegram: { token: '', allowedChats: [], enabled: false },
   discord: { token: '', allowedUsers: [], enabled: false }, // his own bot (agent/discord.cjs); allowedUsers: paired user ids
+  // his own account, linked as a device (agent/whatsapp.cjs); its keys live in userData\whatsapp-auth, not here.
+  // selfChat: answer in his "Message yourself" chat; allowedChats: other numbers he approved
+  whatsapp: { enabled: false, allowedChats: [], selfChat: true },
   terminal: { enabled: false, shell: null, alwaysAllow: [] },
   voice: { speakReplies: false, whisperModel: '' }, // '' = whisper.cpp's model, found beside it
   browser: { enabled: false, askEachAction: true }, // the agent's own browser window

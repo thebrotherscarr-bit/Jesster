@@ -137,7 +137,7 @@ class AgentService {
   }
 
   /**
-   * Answer a waiting card. `where` is the place it was answered ('window' or a phone channel: 'telegram', 'discord'); `timeout` marks a card
+   * Answer a waiting card. `where` is the place it was answered ('window' or a phone channel: 'telegram', 'whatsapp', 'discord'); `timeout` marks a card
    * nobody answered in time (answered No). The answer is kept in the history and told to onAnswered's listeners.
    */
   answerApproval(id, allow, always, text, { where = 'window', timeout = false } = {}) {

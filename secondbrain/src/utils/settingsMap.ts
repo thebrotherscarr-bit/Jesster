@@ -18,6 +18,7 @@ export interface SettingPlace {
 export const SETTINGS: SettingPlace[] = [
   { control: 'SpeakToggle', files: ['AgentView.tsx', 'PhoneView.tsx'], place: 'Agent tab and Phone view headers (read aloud on/off)', clicks: 1 },
   { control: 'TelegramSection', files: ['PhoneView.tsx'], place: 'Phone view → Setup', clicks: 2 },
+  { control: 'WhatsAppSection', files: ['PhoneView.tsx'], place: 'Phone view → Setup', clicks: 2 },
   { control: 'DiscordSection', files: ['PhoneView.tsx'], place: 'Phone view → Setup', clicks: 2 },
   { control: 'OllamaSection', files: ['SettingsModal.tsx'], place: 'Settings → Ollama', clicks: 1 },
   { control: 'IntegrationsSection', files: ['SettingsModal.tsx'], place: 'Settings → Integrations', clicks: 1 },

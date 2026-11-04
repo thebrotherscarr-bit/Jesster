@@ -80,7 +80,7 @@ const SUMMARY_MAX = 2000;
 
 /**
  * The answered cards, one JSON line each in `file` (SecondBrain's userData folder): { id, tool, summary, answer,
- * where: 'window' | 'telegram' | 'discord', time }. `append` keeps the newest `cap` lines; `read(limit)` gives the newest first,
+ * where: 'window' | 'telegram' | 'whatsapp' | 'discord', time }. `append` keeps the newest `cap` lines; `read(limit)` gives the newest first,
  * at most 200, and skips a line that is not JSON.
  */
 function history(file, { cap = HISTORY_CAP } = {}) {
