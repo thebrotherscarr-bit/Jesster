@@ -203,7 +203,8 @@ function innerHolds(reg, getInner) {
  * keeps all three repositories. The inner door carries only the first two, so a forwarded tool
  * asked of `secondbrain` is refused there by name. Since 2026-10-30 (Steward's ADR-0001, item 5)
  * also Steward's own repository, so his git tools reach it through the door under a key of his own,
- * with every write held for the operator.
+ * with every write held for the operator. Since 2026-11-04 Neiro too (the Estate's lock): Steward
+ * is the agent of the Estate, and his git reaches its five repositories, every write a card.
  */
 function worldsFor(ground) {
   return [
@@ -211,6 +212,8 @@ function worldsFor(ground) {
     ['atlas', path.join(ground, 'atlas')],
     ['secondbrain', path.join(ground, 'worlds', 'jesster')],
     ['steward', path.join(ground, 'worlds', 'steward')],
+    // 2026-11-04: Neiro, the Estate's lock, so Steward's git across the Estate reaches all five repositories
+    ['neiro', path.join(ground, 'worlds', 'neiro')],
   ];
 }
 
