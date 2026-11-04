@@ -326,6 +326,28 @@ async function keepUp(svc, up) {
 }
 
 /**
+ * Checks a service every `ms` and brings it back with keepUp. The MCP door's only check was the Steward button's
+ * status poll; the console (2026-11-04) removed that button, and after a restart 43121 stayed down. This runs in
+ * the main process, whatever the window shows. `probe(port)` answers whether the port is up. Returns the timer.
+ */
+function keepUpEvery(svc, port, probe, ms = 10000, when = () => true) {
+  let busy = false;
+  const timer = setInterval(async () => {
+    if (busy || !when()) return;
+    busy = true;
+    try {
+      await keepUp(svc, await probe(port));
+    } catch (e) {
+      console.error('[SecondBrain] keep up:', e.message);
+    } finally {
+      busy = false;
+    }
+  }, ms);
+  if (timer.unref) timer.unref();
+  return timer;
+}
+
+/**
  * Each Agent-tab conversation's thread with Steward, kept across restarts: his last response id
  * (his service keeps the replies themselves). One small JSON file.
  */
@@ -348,4 +370,4 @@ function threads(file) {
   };
 }
 
-module.exports = { turn, service, keepUp, stopOnQuit, findSteward, postJson, postStream, threads, PORT, MCP_PORT, MCP_SCRIPT };
+module.exports = { turn, service, keepUp, keepUpEvery, stopOnQuit, findSteward, postJson, postStream, threads, PORT, MCP_PORT, MCP_SCRIPT };
