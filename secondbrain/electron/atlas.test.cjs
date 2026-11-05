@@ -331,3 +331,85 @@ test('approval_ask is refused with no Agent, and needs the tool', async () => {
   assert.equal(bare.result.isError, true);
   assert.equal(service.cards().length, 0);
 });
+
+// ---- MCP 2026-07-28 beside 2025-06-18 (mcpversion.cjs) -----------------------------------------
+
+const mcpv = require('./mcpversion.cjs');
+const META = (version = '2026-07-28') => mcpv.requestMeta({ name: 'test-client', version: '0' }, {}, version);
+
+test('a 2026-07-28 client lists and calls tools with no initialize: resultType, serverInfo, cache hints, no ping', async () => {
+  const { registry, ctx } = setup();
+  const disc = await atlas.handleMcp({ jsonrpc: '2.0', id: 1, method: 'server/discover', params: { _meta: META() } }, { registry, ctx });
+  assert.equal(disc.result.resultType, 'complete');
+  assert.deepEqual(disc.result.supportedVersions, mcpv.SUPPORTED);
+  assert.ok(disc.result.supportedVersions.includes('2026-07-28') && disc.result.supportedVersions.includes('2025-06-18'));
+  assert.deepEqual(disc.result.capabilities, { tools: {}, resources: {} });
+  assert.equal(disc.result._meta['io.modelcontextprotocol/serverInfo'].name, 'secondbrain');
+  assert.match(disc.result.instructions, /SecondBrain notes vault/);
+  assert.equal(disc.result.cacheScope, 'private');
+  const list = await atlas.handleMcp({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: { _meta: META() } }, { registry, ctx });
+  assert.equal(list.result.resultType, 'complete');
+  assert.equal(list.result.ttlMs, 0);
+  assert.equal(list.result.cacheScope, 'private');
+  const names = list.result.tools.map((t) => t.name);
+  assert.ok(names.includes('search_notes') && !names.includes('write_note'));
+  const again = await atlas.handleMcp({ jsonrpc: '2.0', id: 3, method: 'tools/list', params: { _meta: META() } }, { registry, ctx });
+  assert.deepEqual(again.result.tools.map((t) => t.name), names, 'the same order every time (deterministic tools/list)');
+  const found = await atlas.handleMcp({ jsonrpc: '2.0', id: 4, method: 'tools/call', params: { name: 'search_notes', arguments: { query: 'launch' }, _meta: META() } }, { registry, ctx });
+  assert.equal(found.result.resultType, 'complete');
+  assert.match(found.result.content[0].text, /Launch plan/);
+  assert.equal(found.result.ttlMs, undefined, 'a call result is not cacheable');
+  const ping = await atlas.handleMcp({ jsonrpc: '2.0', id: 5, method: 'ping', params: { _meta: META() } }, { registry, ctx });
+  assert.equal(ping.error.code, -32601, 'ping is removed in 2026-07-28');
+  const missing = await atlas.handleMcp({ jsonrpc: '2.0', id: 6, method: 'resources/read', params: { uri: 'skill://nope/SKILL.md', _meta: META() } }, { registry, ctx });
+  assert.equal(missing.error.code, -32602, '2026-07-28 resource not found is Invalid Params');
+});
+
+test('an unknown version is -32022 with the supported list; a missing envelope key is -32602', async () => {
+  const { registry, ctx } = setup();
+  const bad = await atlas.handleMcp({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: { _meta: META('1900-01-01') } }, { registry, ctx });
+  assert.equal(bad.error.code, -32022);
+  assert.deepEqual(bad.error.data, { supported: mcpv.SUPPORTED, requested: '1900-01-01' });
+  const noCaps = await atlas.handleMcp({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: { _meta: { 'io.modelcontextprotocol/protocolVersion': '2026-07-28' } } }, { registry, ctx });
+  assert.equal(noCaps.error.code, -32602);
+});
+
+test('the legacy flow still works: initialize negotiates a 2025 version, ping answers, no resultType', async () => {
+  const { registry, ctx } = setup();
+  const init = await atlas.handleMcp({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18', capabilities: {} } }, { registry, ctx });
+  assert.equal(init.result.protocolVersion, '2025-06-18');
+  assert.equal((await atlas.handleMcp({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-11-25' } }, { registry, ctx })).result.protocolVersion, '2025-11-25');
+  assert.equal((await atlas.handleMcp({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2099-01-01' } }, { registry, ctx })).result.protocolVersion, '2025-06-18');
+  assert.deepEqual((await atlas.handleMcp({ jsonrpc: '2.0', id: 2, method: 'ping' }, { registry, ctx })).result, {});
+  const list = await atlas.handleMcp({ jsonrpc: '2.0', id: 3, method: 'tools/list' }, { registry, ctx });
+  assert.equal(list.result.resultType, undefined, 'a legacy answer is as it was');
+  assert.ok(list.result.tools.some((t) => t.name === 'search_notes'));
+});
+
+test('POST /mcp over HTTP: the header rung, 400 for a version or header refusal, 404 for an unknown method, legacy at 200', async () => {
+  const { registry, ctx } = setup();
+  const h = (method, version = '2026-07-28', name) => ({ 'mcp-protocol-version': version, 'mcp-method': method, ...(name ? { 'mcp-name': name } : {}) });
+  const listed = await atlas.serveMcpHttp({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: { _meta: META() } }, h('tools/list'), { registry, ctx });
+  assert.equal(listed.status, 200);
+  assert.equal(listed.body.result.resultType, 'complete');
+  const called = await atlas.serveMcpHttp({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'search_notes', arguments: { query: 'launch' }, _meta: META() } }, h('tools/call', '2026-07-28', 'search_notes'), { registry, ctx });
+  assert.equal(called.status, 200);
+  assert.match(called.body.result.content[0].text, /Launch plan/);
+  const b64 = await atlas.serveMcpHttp({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'search_notes', arguments: { query: 'launch' }, _meta: META() } }, h('tools/call', '2026-07-28', `=?base64?${Buffer.from('search_notes').toString('base64')}?=`), { registry, ctx });
+  assert.equal(b64.status, 200, 'Mcp-Name is decoded before it is compared');
+  const wrongName = await atlas.serveMcpHttp({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'search_notes', arguments: {}, _meta: META() } }, h('tools/call', '2026-07-28', 'read_note'), { registry, ctx });
+  assert.equal(wrongName.status, 400);
+  assert.equal(wrongName.body.error.code, -32020);
+  const noHeader = await atlas.serveMcpHttp({ jsonrpc: '2.0', id: 4, method: 'tools/list', params: { _meta: META() } }, {}, { registry, ctx });
+  assert.equal(noHeader.body.error.code, -32020);
+  const old = await atlas.serveMcpHttp({ jsonrpc: '2.0', id: 5, method: 'tools/list', params: { _meta: META('1900-01-01') } }, h('tools/list', '1900-01-01'), { registry, ctx });
+  assert.equal(old.status, 400);
+  assert.equal(old.body.error.code, -32022);
+  const unknown = await atlas.serveMcpHttp({ jsonrpc: '2.0', id: 6, method: 'prompts/list', params: { _meta: META() } }, h('prompts/list'), { registry, ctx });
+  assert.equal(unknown.status, 404);
+  assert.equal(unknown.body.error.code, -32601);
+  const legacy = await atlas.serveMcpHttp({ jsonrpc: '2.0', id: 7, method: 'prompts/list' }, { 'mcp-protocol-version': '2025-06-18' }, { registry, ctx });
+  assert.equal(legacy.status, 200, 'a legacy error rides a 200 as before');
+  const note = await atlas.serveMcpHttp({ jsonrpc: '2.0', method: 'notifications/initialized' }, {}, { registry, ctx });
+  assert.deepEqual(note, { status: 202, body: null });
+});

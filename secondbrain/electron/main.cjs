@@ -66,6 +66,8 @@ function startLocalServer() {
     const server = express();
     // SecondBrain's notes over MCP, for Atlas and Manjuel (Settings → Share)
     server.post('/mcp', express.json({ limit: '2mb' }), (req, res) => serveMcp(req, res));
+    // no standalone GET stream: 2026-07-28 removed it, and 405 is what a 2025-06-18 client expects too
+    server.get('/mcp', (req, res) => res.status(405).set('Allow', 'POST').end());
     server.use(express.static(distDir, { index: 'index.html' }));
     server.get('*', (req, res) => {
       res.sendFile(path.join(distDir, 'index.html'));
@@ -959,9 +961,11 @@ async function serveMcp(req, res) {
       // the Estate's tools (estate.cjs): the Servers shelf, the updater, the approvals history
       estate: estateDeps(),
     };
-    const out = await atlas.handleMcp(req.body, { registry: getAgent().registry, ctx, writes: Boolean(share.writes) });
-    if (out === null) return res.status(202).end();
-    res.json(out);
+    // either MCP era (mcpversion.cjs): a 2026-07-28 request is checked against its headers, and a
+    // version or header refusal is 400, an unknown method 404; a legacy one is answered as before
+    const { status, body } = await atlas.serveMcpHttp(req.body, req.headers, { registry: getAgent().registry, ctx, writes: Boolean(share.writes) });
+    if (body === null) return res.status(status).end();
+    res.status(status).json(body);
   } catch (e) {
     res.status(500).json({ jsonrpc: '2.0', id: req.body?.id ?? null, error: { code: -32603, message: e.message } });
   }
