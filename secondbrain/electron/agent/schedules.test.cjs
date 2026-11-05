@@ -101,7 +101,9 @@ test('a Steward schedule sends its prompt to Steward as an automation turn; its 
   const asked = [];
   agent.ask = (req) => (asked.push(req), realAsk({ ...req, cardTimeoutMs: 30 }));
   const t1 = at('2026-11-05T23:00:30');
-  const r = await runSchedule(schedules.due(t1)[0], { schedules, agent, vault, now: t1, onCard: (c) => phone.push(c) });
+  // the card's timer is unref'd (it never holds SecondBrain open), so the test holds the event loop while it waits
+  const hold = setInterval(() => {}, 1000);
+  const r = await runSchedule(schedules.due(t1)[0], { schedules, agent, vault, now: t1, onCard: (c) => phone.push(c) }).finally(() => clearInterval(hold));
 
   assert.equal(asked[0].source, 'automation');
   assert.equal(asked[0].automation, 'Overnight evals');
