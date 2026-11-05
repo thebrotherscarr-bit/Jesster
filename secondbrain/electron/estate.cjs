@@ -127,8 +127,11 @@ function isWrite(name, args = {}) {
   return name === 'service_control' || name === 'ollama_unload';
 }
 
-/** The set names in Steward's harness/steward/evals/: each set file's `name:` line, sorted. */
-function evalSetNames(dir) {
+/**
+ * The eval sets in Steward's harness/steward/evals/: each set file's `name:` and `tier:` lines (T0, T1, ext ...),
+ * sorted by name; a file without a name is not a set. The Flows shelf's eval examples are made from these.
+ */
+function evalSets(dir) {
   const folder = path.join(dir, ...EVALS_DIR);
   let files = [];
   try {
@@ -136,7 +139,7 @@ function evalSetNames(dir) {
   } catch {
     return [];
   }
-  const names = [];
+  const sets = new Map();
   for (const f of files) {
     let text = '';
     try {
@@ -145,9 +148,15 @@ function evalSetNames(dir) {
       continue;
     }
     const m = /^name:[ \t]*["']?([\w.-]+)["']?[ \t]*\r?$/m.exec(text);
-    if (m) names.push(m[1]);
+    const t = /^tier:[ \t]*["']?([\w.-]+)["']?[ \t]*\r?$/m.exec(text);
+    if (m && !sets.has(m[1])) sets.set(m[1], { name: m[1], tier: t ? t[1] : '' });
   }
-  return [...new Set(names)].sort();
+  return [...sets.values()].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+}
+
+/** The set names in Steward's harness/steward/evals/: each set file's `name:` line, sorted. */
+function evalSetNames(dir) {
+  return evalSets(dir).map((s) => s.name);
 }
 
 // an eval running now: an evals.py under Python, or run-bar.ps1 between its runs (not this query's own PowerShell)
@@ -391,4 +400,4 @@ async function estateCall(name, args, deps, { writes = false } = {}) {
   return { error: `no tool ${name}` };
 }
 
-module.exports = { ESTATE_TOOLS, NAMES, estateCall, isWrite, ollama, ollamaApi, status, versionsApi, repoVersion, VERSIONS_TTL_MS, evalsApi, evalSetNames, TRANSPORTS, evalStart, evalStatus, RUNNING_QUERY, MAX_LOG_LINES, MAX_HISTORY, MAX_RUNS };
+module.exports = { ESTATE_TOOLS, NAMES, estateCall, isWrite, ollama, ollamaApi, status, versionsApi, repoVersion, VERSIONS_TTL_MS, evalsApi, evalSets, evalSetNames, TRANSPORTS, evalStart, evalStatus, RUNNING_QUERY, MAX_LOG_LINES, MAX_HISTORY, MAX_RUNS };

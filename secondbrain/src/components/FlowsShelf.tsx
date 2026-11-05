@@ -1,11 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ReactFlow, ReactFlowProvider, Background, Controls, Handle, Position, type Edge, type Node, type NodeProps } from '@xyflow/react';
-import { Workflow, Bot, Send, Boxes, PanelRight, X, Play, Settings2 } from 'lucide-react';
-import type { ScheduleView, SchedulesBridge } from '../types/desktop.ts';
+import { Workflow, Bot, Send, Boxes, PanelRight, X, Play, Settings2, Plus, PenLine, Copy, Moon } from 'lucide-react';
+import type { ScheduleSpec, ScheduleView, SchedulesBridge } from '../types/desktop.ts';
 import { CARD, FlowNodeKind, FlowRunState, flowGraph, flowRunState, lastResultLine } from '../utils/flowGraph.ts';
 import { cleanError, runBlocked, runFlow } from '../utils/flowSetup.ts';
 import { FLOWS_STEWARD_OPEN_KEY, keepPanel, panelOpen } from '../utils/agentConsole.ts';
 import { AutomationsSection } from './settings/AutomationsSection.tsx';
+import { FlowEditor } from './FlowEditor.tsx';
+import { EdGraph, Recipe, isDaytime, recipeToGraph, saveSpec } from '../utils/flowEditor.ts';
 
 /**
  * The Flows shelf (the operator, 2026-11-05; plan-the-flows-shelf-ide-for-steward-s-f-04a93a, piece 1): the flows on
@@ -164,7 +166,45 @@ export interface FlowsShelfViewProps {
   onSetupOpen?: (on: boolean) => void;
   bridge?: SchedulesBridge;
   onFlowsChange?: (list: ScheduleView[]) => void;
+  /** the editor (FlowEditor): + New flow, Edit blocks and Duplicate open it; while open it takes the list's place */
+  onNew?: () => void;
+  onEdit?: (id: string) => void;
+  onDuplicate?: (id: string) => void;
+  editor?: EditorOpen | null;
+  onEditorSave?: (name: string, recipe: Recipe) => Promise<string | null>;
+  onEditorCancel?: () => void;
+  /** whether it is daytime now: a night flow's Run now asks first by day (the test sets it) */
+  daytime?: boolean;
+  /** the night question shown from the start (the test renders it) */
+  initialAskNight?: boolean;
 }
+
+/** What the editor is open on: a new flow, a copy (both saved as new) or a flow's own blocks. */
+export interface EditorOpen {
+  key: string;
+  /** the flow whose blocks change, or null for a new one */
+  id: string | null;
+  name: string;
+  graph: EdGraph;
+}
+
+/** The eval set names the flows already name (the examples carry every set): offered in Eval set's box. */
+export const knownSets = (flows: ScheduleView[]) =>
+  [...new Set(flows.flatMap((f) => (f.steps || []).flatMap((x) => (typeof x !== 'string' && x.step === 'eval_start' && Array.isArray(x.sets) ? x.sets.map(String) : []))))].sort();
+
+/** A flow's steps can be opened on the editor (a prompt-only automation has no blocks to edit). */
+export const editable = (f: ScheduleView | null) => Boolean(f && Array.isArray(f.steps) && f.steps.length);
+
+const Badge: React.FC<{ kind: 'example' | 'night' }> = ({ kind }) =>
+  kind === 'night' ? (
+    <span data-badge="night" title="Takes hours: best run at night" className="inline-flex shrink-0 items-center gap-0.5 rounded px-1 text-[10px] bg-indigo-950 text-indigo-300">
+      <Moon className="w-2.5 h-2.5" /> night
+    </span>
+  ) : (
+    <span data-badge="example" title="A built-in example: run it, duplicate it or change it" className="shrink-0 rounded px-1 text-[10px] bg-neutral-800 text-neutral-300">
+      example
+    </span>
+  );
 
 /** The shelf as drawn from its data (the test renders this). */
 export const FlowsShelfView: React.FC<FlowsShelfViewProps> = ({
@@ -181,15 +221,49 @@ export const FlowsShelfView: React.FC<FlowsShelfViewProps> = ({
   onSetupOpen,
   bridge,
   onFlowsChange,
+  onNew,
+  onEdit,
+  onDuplicate,
+  editor = null,
+  onEditorSave,
+  onEditorCancel,
+  daytime = true,
+  initialAskNight = false,
 }) => {
   const open = flows.find((f) => f.id === selectedId) || null;
   const hold = runBlocked(open, stewardBusy);
+  // a night flow's Run now by day asks first, inline (the operator, 2026-11-05)
+  const [askNight, setAskNight] = useState(initialAskNight);
+  useEffect(() => setAskNight(initialAskNight), [selectedId, initialAskNight]);
+  const run = (id: string) => {
+    if (open && open.night && daytime && !askNight) return setAskNight(true);
+    setAskNight(false);
+    onRun?.(id);
+  };
+  // our blocks draw their own card: drop React Flow's default node box
+  const style = <style>{'.sb-flows .react-flow__node{padding:0;border:none;background:transparent;width:auto;box-shadow:none;border-radius:0.75rem;text-align:left}'}</style>;
+  if (editor && onEditorSave && onEditorCancel) {
+    return (
+      <div className="sb-flows flex flex-1 min-w-0 min-h-0">
+        {style}
+        <FlowEditor key={editor.key} initial={editor.graph} name={editor.name} isNew={!editor.id} sets={knownSets(flows)} onSave={onEditorSave} onCancel={onEditorCancel} />
+        {stewardOpen && <StewardCard onClose={() => onStewardOpen(false)} />}
+      </div>
+    );
+  }
   return (
     <div className="sb-flows flex flex-1 min-w-0 min-h-0">
-      {/* our blocks draw their own card: drop React Flow's default node box */}
-      <style>{'.sb-flows .react-flow__node{padding:0;border:none;background:transparent;width:auto;box-shadow:none;border-radius:0.75rem;text-align:left}'}</style>
+      {style}
       <aside aria-label="Flows" className="flex w-64 max-w-[30%] shrink-0 min-w-0 min-h-0 flex-col border-r border-neutral-800">
-        <div className="px-3 pt-3 pb-1 text-[11px] font-semibold tracking-wider text-neutral-400 uppercase">Flows ({flows.length})</div>
+        <div className="flex items-center gap-2 px-3 pt-3 pb-1">
+          <span className="text-[11px] font-semibold tracking-wider text-neutral-400 uppercase">Flows ({flows.length})</span>
+          {onNew && (
+            <button type="button" data-new-flow onClick={onNew} title="Make a new flow from blocks"
+              className="ml-auto flex items-center gap-1 px-2 py-1 rounded-md bg-sky-600 text-[11px] text-white hover:bg-sky-500">
+              <Plus className="w-3.5 h-3.5" /> New flow
+            </button>
+          )}
+        </div>
         <ul className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden px-2 pb-2 space-y-0.5" aria-label="Flow list">
           {flows.map((f) => (
             <li key={f.id} className="min-w-0">
@@ -198,7 +272,11 @@ export const FlowsShelfView: React.FC<FlowsShelfViewProps> = ({
                 onClick={() => onSelect(f.id)}
                 className={`block w-full min-w-0 text-left px-2 py-1.5 rounded-md ${f.id === selectedId ? 'bg-neutral-800 text-white' : 'text-neutral-300 hover:bg-neutral-900'}`}
               >
-                <span className="block text-xs truncate">{f.name}</span>
+                <span className="flex items-center gap-1 min-w-0 text-xs">
+                  <span className="truncate">{f.name}</span>
+                  {f.tags?.includes('example') && <Badge kind="example" />}
+                  {f.night && <Badge kind="night" />}
+                </span>
                 <span className="block text-[11px] text-neutral-500 truncate">
                   {f.whenLabel}
                   {f.enabled ? '' : ' · off'}
@@ -210,7 +288,7 @@ export const FlowsShelfView: React.FC<FlowsShelfViewProps> = ({
             </li>
           ))}
         </ul>
-        {flows.length === 0 && !error && <p className="px-3 pb-3 text-[11px] text-neutral-500">No flows yet. Make one under Set up.</p>}
+        {flows.length === 0 && !error && <p className="px-3 pb-3 text-[11px] text-neutral-500">No flows yet. Make one with New flow.</p>}
         {error && <p className="px-3 pb-3 text-[11px] text-amber-300 break-words">{error}</p>}
       </aside>
 
@@ -220,10 +298,22 @@ export const FlowsShelfView: React.FC<FlowsShelfViewProps> = ({
           <span className="text-neutral-200 font-semibold truncate min-w-0">{open ? open.name : 'Flows'}</span>
           {open && <span className="text-neutral-500 truncate min-w-0">{open.whenLabel}</span>}
           <span className="ml-auto" />
+          {open && onEdit && editable(open) && (
+            <button type="button" data-edit={open.id} onClick={() => onEdit(open.id)} title="Change its blocks and wires on the canvas"
+              className="shrink-0 flex items-center gap-1.5 px-2 py-1 rounded-md text-neutral-300 hover:text-white hover:bg-neutral-900">
+              <PenLine className="w-3.5 h-3.5" /> Edit blocks
+            </button>
+          )}
+          {open && onDuplicate && editable(open) && (
+            <button type="button" data-duplicate={open.id} onClick={() => onDuplicate(open.id)} title="A copy of this flow to make your own"
+              className="shrink-0 flex items-center gap-1.5 px-2 py-1 rounded-md text-neutral-300 hover:text-white hover:bg-neutral-900">
+              <Copy className="w-3.5 h-3.5" /> Duplicate
+            </button>
+          )}
           {open && onRun && (
             <button
               data-run={open.id}
-              onClick={() => onRun(open.id)}
+              onClick={() => run(open.id)}
               disabled={Boolean(hold)}
               title={hold || 'Run this flow now, as its schedule would'}
               className="shrink-0 flex items-center gap-1.5 px-2 py-1 rounded-md bg-sky-600 text-white hover:bg-sky-500 disabled:bg-neutral-800 disabled:text-neutral-500"
@@ -257,6 +347,13 @@ export const FlowsShelfView: React.FC<FlowsShelfViewProps> = ({
               last run: {lastResultLine(open)}
             </span>
             {hold && onRun && <span className="ml-auto shrink-0 text-neutral-400">{hold}</span>}
+          </div>
+        )}
+        {open && askNight && (
+          <div role="alert" data-ask-night className="flex items-center gap-2 px-4 py-1.5 text-[11px] text-indigo-200 bg-indigo-950/60 border-b border-neutral-900">
+            <Moon className="w-3.5 h-3.5 shrink-0" /> This takes hours; run now anyway?
+            <button type="button" onClick={() => run(open.id)} className="px-2 py-0.5 rounded-md bg-sky-600 text-white hover:bg-sky-500">Run now anyway</button>
+            <button type="button" onClick={() => setAskNight(false)} className="px-2 py-0.5 rounded-md text-neutral-300 hover:text-white hover:bg-neutral-800">Not now</button>
           </div>
         )}
         {runError && <p role="alert" className="px-4 py-1 text-[11px] text-amber-300 break-words border-b border-neutral-900">{runError}</p>}
@@ -297,6 +394,7 @@ export const FlowsShelf: React.FC<{ active: boolean }> = ({ active }) => {
   const [runError, setRunError] = useState<string | null>(null);
   const [stewardBusy, setStewardBusy] = useState(false);
   const [setupOpen, setSetupOpen] = useState(false);
+  const [editor, setEditor] = useState<EditorOpen | null>(null);
   const [stewardOpen, setStewardOpen] = useState(() => panelOpen(store(), FLOWS_STEWARD_OPEN_KEY, false));
   const schedules = window.secondbrainDesktop?.schedules;
   const take = (list: ScheduleView[]) => {
@@ -336,6 +434,30 @@ export const FlowsShelf: React.FC<{ active: boolean }> = ({ active }) => {
       schedules.list().then(take).catch(() => {});
     }
   };
+  const openEditor = (id: string | null, copy = false) => {
+    const f = id ? flows.find((x) => x.id === id) : null;
+    const key = `${id || 'new'}-${Date.now()}`;
+    if (!f) return setEditor({ key, id: null, name: '', graph: { nodes: [], edges: [] } });
+    setEditor({ key, id: copy ? null : f.id, name: copy ? `${f.name} (copy)` : f.name, graph: recipeToGraph(f) });
+  };
+  const onEditorSave = async (name: string, recipe: Recipe): Promise<string | null> => {
+    if (!schedules || !editor) return 'The app is not connected.';
+    try {
+      const spec = saveSpec(name, recipe, !editor.id);
+      let list: ScheduleView[];
+      if (editor.id) {
+        if (!schedules.edit) return 'This build of the app cannot change a flow; update it.';
+        list = await schedules.edit(editor.id, spec);
+      } else list = await schedules.add(spec as ScheduleSpec);
+      const saved = editor.id ? list.find((f) => f.id === editor.id) : [...list].reverse().find((f) => f.name === spec.name);
+      take(list);
+      if (saved) setSelectedId(saved.id);
+      setEditor(null);
+      return null;
+    } catch (e) {
+      return cleanError(e);
+    }
+  };
   return (
     <FlowsShelfView
       flows={flows}
@@ -354,6 +476,13 @@ export const FlowsShelf: React.FC<{ active: boolean }> = ({ active }) => {
       onSetupOpen={setSetupOpen}
       bridge={schedules}
       onFlowsChange={take}
+      onNew={() => openEditor(null)}
+      onEdit={(id) => openEditor(id)}
+      onDuplicate={(id) => openEditor(id, true)}
+      editor={editor}
+      onEditorSave={onEditorSave}
+      onEditorCancel={() => setEditor(null)}
+      daytime={isDaytime(new Date())}
     />
   );
 };

@@ -23,6 +23,19 @@ const workflows = require('./workflows.cjs');
 const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const BACKENDS = ['local', 'steward'];
 
+// no "when" (the Flows shelf's canvas saves a flow without one): it runs only when Run now is pressed, never on a clock
+const MANUAL = { type: 'manual' };
+
+/** A "when" as stored: none (empty, or left out) is MANUAL; anything else is parsed. */
+function whenOf(text) {
+  return text === undefined || text === null || String(text).trim() === '' ? { ...MANUAL } : parseWhen(text);
+}
+
+/** Tags on a schedule (the Flows shelf's "example"): short words, kept as given. */
+function tagsOf(tags) {
+  return (Array.isArray(tags) ? tags : []).map((t) => String(t).trim().toLowerCase().slice(0, 24)).filter(Boolean);
+}
+
 /** Parse a "when" string; throws with the accepted forms on nonsense. */
 function parseWhen(text) {
   const t = String(text || '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -49,6 +62,7 @@ function parseWhen(text) {
 }
 
 function describeWhen(w) {
+  if (!w || w.type === 'manual') return 'only on Run now';
   if (w.type === 'daily') return `daily at ${w.time}`;
   if (w.type === 'weekdays') return `weekdays at ${w.time}`;
   if (w.type === 'weekly') return `every ${w.day} at ${w.time}`;
@@ -58,6 +72,7 @@ function describeWhen(w) {
 
 /** The first run strictly after `from` (ms), or null when there is none. */
 function nextRun(w, from) {
+  if (!w || w.type === 'manual') return null;
   if (w.type === 'once') return w.at > from ? w.at : null;
   if (w.type === 'every') return from + w.minutes * 60000;
   const [h, mi] = w.time.split(':').map(Number);
@@ -98,20 +113,23 @@ class Schedules {
     fs.writeFileSync(this.file(), JSON.stringify(list, null, 2));
   }
 
-  add({ name, prompt, when, deliver = ['note'], backend = 'local', steps, summarize }, now = Date.now()) {
+  add({ name, prompt, when, deliver = ['note'], backend = 'local', steps, summarize, tags, night }, now = Date.now()) {
     // a workflow (steps, workflows.cjs) needs no prompt of its own: its steps say what it does
     if (!name || (!prompt && !steps)) throw new Error('a schedule needs a name and a prompt');
-    const w = parseWhen(when);
+    // no when: it runs only on Run now (the Flows shelf's canvas; scheduling is Set up's)
+    const w = whenOf(when);
     const flow = steps ? { steps: workflows.validateSteps(steps), ...(summarize ? { summarize: String(summarize) } : {}) } : {};
     const s = {
       id: crypto.randomBytes(4).toString('hex'),
       name: String(name).slice(0, 80),
       prompt: String(prompt || ''),
       when: w,
-      whenText: String(when),
+      whenText: w.type === 'manual' ? '' : String(when),
       deliver: deliver.filter((d) => ['note', 'telegram'].includes(d)),
       backend: BACKENDS.includes(backend) ? backend : 'local',
       ...flow,
+      ...(tagsOf(tags).length ? { tags: tagsOf(tags) } : {}),
+      ...(night ? { night: true } : {}),
       enabled: true,
       created: now,
       lastRun: null,
@@ -147,8 +165,8 @@ class Schedules {
       next.name = String(spec.name).slice(0, 80);
     }
     if ('when' in spec) {
-      next.when = parseWhen(spec.when);
-      next.whenText = String(spec.when);
+      next.when = whenOf(spec.when);
+      next.whenText = next.when.type === 'manual' ? '' : String(spec.when);
       next.next = nextRun(next.when, now);
     }
     if ('prompt' in spec) next.prompt = String(spec.prompt || '');
@@ -161,6 +179,10 @@ class Schedules {
     if ('summarize' in spec) {
       if (spec.summarize) next.summarize = String(spec.summarize);
       else delete next.summarize;
+    }
+    if ('tags' in spec) {
+      if (tagsOf(spec.tags).length) next.tags = tagsOf(spec.tags);
+      else delete next.tags;
     }
     if (!next.prompt && !workflows.isWorkflow(next)) throw new Error('a schedule needs a name and a prompt');
     list[list.indexOf(s)] = next;
@@ -343,4 +365,4 @@ function tools(getSchedules) {
   ];
 }
 
-module.exports = { Schedules, parseWhen, describeWhen, nextRun, runSchedule, resumeSchedules, fileResult, tools, BACKENDS };
+module.exports = { Schedules, parseWhen, whenOf, MANUAL, describeWhen, nextRun, runSchedule, resumeSchedules, fileResult, tools, BACKENDS };

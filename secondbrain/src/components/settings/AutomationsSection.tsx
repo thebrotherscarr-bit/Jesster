@@ -55,9 +55,22 @@ export const AutomationsSection: React.FC<AutomationsSectionProps> = ({ bridge, 
 
   return (
     <section className="px-4 py-3 space-y-3" aria-label="Automations">
+      {/* which one the form is for, side by side (the operator, 2026-11-05: "its just change the current startup, no
+          create a new one"): the open flow, or a new automation */}
       <div className="flex items-center gap-2 text-white text-sm font-medium min-w-0">
         <CalendarClock className="w-4 h-4 text-sky-400 shrink-0" />
-        <span className="truncate">{editing ? `Change “${editing.name}”` : 'New automation'}</span>
+        <div role="tablist" aria-label="Which automation" className="flex min-w-0 rounded-lg border border-neutral-800 p-0.5 text-xs font-normal">
+          {selected && (
+            <button type="button" role="tab" aria-selected={!isNew} onClick={() => (setIsNew(false), setForm(formOf(selected)), setError(null))}
+              className={`truncate max-w-[16rem] px-2 py-1 rounded-md ${!isNew ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:text-white'}`}>
+              Change “{selected.name}”
+            </button>
+          )}
+          <button type="button" role="tab" aria-selected={isNew} data-new-automation onClick={() => (setIsNew(true), setForm(blankForm()), setError(null))}
+            className={`shrink-0 flex items-center gap-1 px-2 py-1 rounded-md ${isNew ? 'bg-sky-600 text-white' : 'text-sky-300 hover:text-white'}`}>
+            <Plus className="w-3.5 h-3.5" /> New automation
+          </button>
+        </div>
         <span className="flex-1" />
         {editing && (
           <>
@@ -71,12 +84,6 @@ export const AutomationsSection: React.FC<AutomationsSectionProps> = ({ bridge, 
               <Trash2 className="w-3.5 h-3.5" />
             </button>
           </>
-        )}
-        {!isNew && (
-          <button type="button" onClick={() => (setIsNew(true), setForm(blankForm()), setError(null))}
-            className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-normal text-neutral-300 hover:text-white hover:bg-neutral-800">
-            <Plus className="w-3.5 h-3.5" /> New
-          </button>
         )}
       </div>
       <p className="text-[11px] text-neutral-400">
@@ -100,6 +107,7 @@ export const AutomationsSection: React.FC<AutomationsSectionProps> = ({ bridge, 
           <option value="recipe">Recipe (steps, then a summary)</option>
           <option value="evals">Eval workflow</option>
           {form.type === 'local' && <option value="local">Local agent prompt</option>}
+          {form.type === 'canvas' && <option value="canvas">Blocks made on the canvas</option>}
         </select>
 
         <div className="sm:col-span-2 flex flex-wrap gap-2" role="group" aria-label="When">
@@ -148,6 +156,12 @@ export const AutomationsSection: React.FC<AutomationsSectionProps> = ({ bridge, 
             <textarea value={form.summarize} onChange={(e) => set({ summarize: e.target.value })} rows={2} aria-label="Summarize prompt"
               placeholder="What Steward writes from what the steps gathered (optional)" className={`sm:col-span-2 ${input}`} />
           </>
+        )}
+        {form.type === 'canvas' && (
+          <p className="sm:col-span-2 text-[11px] text-neutral-400">
+            Its blocks ({form.steps.join(' → ')}{form.summarize ? ' → summarize' : ''}) are changed on the canvas with Edit blocks; here you set its
+            name, when it runs and Telegram.
+          </p>
         )}
         {(form.type === 'steward' || form.type === 'local') && (
           <textarea required value={form.prompt} onChange={(e) => set({ prompt: e.target.value })} rows={2} aria-label="Prompt"
