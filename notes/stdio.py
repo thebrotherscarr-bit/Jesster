@@ -76,8 +76,44 @@ def tool_name(method):
     return method.replace(".", "_")
 
 
-def serve_mcp(kernel):
-    by_tool = {tool_name(m): m for m in kernel.methods}
+# `--only notes`: what an IDE (Cursor) gets — reading and writing notes, and
+# finding passages and context. Named one by one, so a method added later is
+# never in it by accident. No notes.remove, no notes.dump, and nothing from
+# archive, system, ingest, import, live or llm.
+PRESETS = {
+    "notes": ("notes.create", "notes.get", "notes.list", "notes.reload",
+              "notes.search", "notes.stats", "notes.tags", "notes.update",
+              "index.search", "context.for", "context.now"),
+}
+
+
+def only_methods(kernel, spec):
+    """The kernel methods an `--only` list allows. Entries are comma-separated:
+    a preset name, an exact method, or a prefix ending in `.` or `.*`.
+    An entry that matches nothing is refused, so a typo never opens or
+    silently closes the server."""
+    allowed = set()
+    for entry in [e.strip() for e in (spec or "").split(",") if e.strip()]:
+        if entry in PRESETS:
+            names = [m for m in PRESETS[entry] if m in kernel.methods]
+        elif entry.endswith(".*") or entry.endswith("."):
+            prefix = entry[:-1] if entry.endswith(".*") else entry
+            names = [m for m in kernel.methods if m.startswith(prefix)]
+        else:
+            names = [entry] if entry in kernel.methods else []
+        if not names:
+            raise KernelError("bad_params", "--only %r matches no method" % entry)
+        allowed.update(names)
+    if not allowed:
+        raise KernelError("bad_params", "--only needs at least one method")
+    return allowed
+
+
+def serve_mcp(kernel, only=None):
+    """Every kernel method is a tool, or with `only` (a set of method names)
+    just those: the rest are neither listed nor callable."""
+    by_tool = {tool_name(m): m for m in kernel.methods
+               if only is None or m in only}
     for msg in _lines():
         if not isinstance(msg, dict):
             continue
@@ -94,7 +130,8 @@ def serve_mcp(kernel):
             res = {}
         elif method == "tools/list":
             res = {"tools": [{"name": tool_name(c["name"]), "description": c["doc"],
-                              "inputSchema": c["schema"]} for c in kernel.catalog()]}
+                              "inputSchema": c["schema"]} for c in kernel.catalog()
+                              if tool_name(c["name"]) in by_tool]}
         elif method == "tools/call":
             name = params.get("name")
             if name not in by_tool:

@@ -29,7 +29,10 @@ NOTES — the command line for the Jesster notes microkernel.
                                                 git repo (see notes/bridge.py)
     python notes/cli.py update                  pull the newest build from GitHub
     python notes/cli.py rpc                     JSON-RPC 2.0 on stdio
-    python notes/cli.py mcp                     MCP server on stdio
+    python notes/cli.py mcp [--only LIST]       MCP server on stdio; --only keeps
+                                                just those methods (comma-separated
+                                                names, prefixes ending `.` or `.*`,
+                                                or the preset `notes`)
 
 The vault is --vault, else $JESSTER_VAULT, else ~/JessterNotes.
 """
@@ -252,8 +255,9 @@ def main(argv):
         serve_rpc(k)
         return 0
     if cmd == "mcp":
-        from stdio import serve_mcp
-        serve_mcp(k)
+        from stdio import only_methods, serve_mcp
+        only = _opt(rest, "--only")
+        serve_mcp(k, only_methods(k, only) if only is not None else None)
         return 0
 
     raise SystemExit(USAGE)

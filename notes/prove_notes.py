@@ -212,8 +212,9 @@ def prove_llm(root):
        refused(lambda: dead.call("llm.ask", {"q": "hello"}), "llm_unreachable"))
 
 
-def run_stdio(vault, mode, msgs):
-    p = subprocess.run([sys.executable, os.path.join(HERE, "cli.py"), "--vault", vault, mode],
+def run_stdio(vault, mode, msgs, *extra):
+    p = subprocess.run([sys.executable, os.path.join(HERE, "cli.py"), "--vault", vault, mode]
+                       + list(extra),
                        input="\n".join(json.dumps(m) for m in msgs) + "\n",
                        capture_output=True, text=True, encoding="utf-8", timeout=60)
     return [json.loads(l) for l in p.stdout.splitlines() if l.strip()]
@@ -248,6 +249,43 @@ def prove_stdio(root):
                                             "import_folder"} <= set(names), names)
     ck("mcp tools write", out[2]["result"]["structuredContent"]["id"] == "from-agent")
     ck("mcp errors are tool errors", out[3]["result"]["isError"] is True)
+
+    # --only: an IDE gets the notes and nothing else
+    full = set(names)
+    import stdio
+    ck("without --only the list is every method",
+       full == {stdio.tool_name(m) for m in io.methods}, sorted(full))
+    out = run_stdio(v, "mcp", [
+        {"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
+        {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+         "params": {"name": "archive_dig", "arguments": {}}},
+        {"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+         "params": {"name": "notes_remove", "arguments": {"id": "hello"}}},
+        {"jsonrpc": "2.0", "id": 4, "method": "tools/call",
+         "params": {"name": "notes_search", "arguments": {"q": "world"}}}],
+        "--only", "notes")
+    names = {t["name"] for t in out[0]["result"]["tools"]}
+    want = {stdio.tool_name(m) for m in stdio.PRESETS["notes"]}
+    ck("--only notes lists exactly the preset", names == want, sorted(names))
+    ck("--only notes has nothing outside the notes",
+       not [n for n in names if n.split("_")[0] in
+            ("archive", "system", "ingest", "import", "live", "llm")]
+       and not {"notes_remove", "notes_dump"} & names, sorted(names))
+    ck("--only refuses a tool outside it", out[1].get("error", {}).get("code") == -32602, out[1])
+    ck("--only refuses notes_remove", out[2].get("error", {}).get("code") == -32602
+       and os.path.exists(os.path.join(v, "hello.md")), out[2])
+    ck("--only still answers notes_search",
+       out[3]["result"]["structuredContent"]["result"][0]["id"] == "hello", out[3])
+    out = run_stdio(v, "mcp", [{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}],
+                    "--only", "notes.,context.*,index.search")
+    names = {t["name"] for t in out[0]["result"]["tools"]}
+    ck("--only takes names and prefixes",
+       {"notes_remove", "context_for", "context_now", "index_search"} <= names
+       and not any(n.startswith(("archive_", "llm_", "index_rebuild")) for n in names),
+       sorted(names))
+    ck("--only refuses an entry that matches nothing",
+       run_stdio(v, "mcp", [{"jsonrpc": "2.0", "id": 1, "method": "tools/list"}],
+                 "--only", "nosuch.") == [])
 
 
 def prove_http(root):
