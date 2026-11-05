@@ -107,5 +107,5 @@ notes through the kernel. See [`secondbrain/README.md`](secondbrain/README.md).
 
 ## License and names
 
-Apache-2.0 (`LICENSE`). See `TRADEMARKS.md` for the names policy and `SECURITY.md` to
+MIT (`LICENSE`). See `TRADEMARKS.md` for the names policy and `SECURITY.md` to
 report a vulnerability.
