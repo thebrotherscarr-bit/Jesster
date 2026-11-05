@@ -25,6 +25,7 @@ const checker = require('./agent/checker.cjs');
 const memory = require('./agent/memory.cjs');
 const sched = require('./agent/schedules.cjs');
 const workflows = require('./agent/workflows.cjs');
+const flowExamples = require('./agent/flowExamples.cjs');
 const { McpClient } = require('./agent/mcp.cjs');
 const { Telegram } = require('./agent/telegram.cjs');
 const { Discord } = require('./agent/discord.cjs');
@@ -690,8 +691,24 @@ function schedulesView() {
   return getSchedules().all().map((s) => ({ ...s, whenLabel: sched.describeWhen(s.when) }));
 }
 
+// the Flows shelf's examples (agent/flowExamples.cjs): seeded once per vault and app start, never over his own; an
+// eval set's example waits until Steward's folder is found
+let examplesSeeded = null;
+function seedFlowExamples() {
+  const vdir = getVault().dir;
+  if (examplesSeeded === vdir) return;
+  const dir = steward.findSteward((getSettings().get('agent').steward || {}).dir, vaultDir());
+  try {
+    flowExamples.seedExamples({ schedules: getSchedules(), vaultDir: vdir, sets: dir ? estate.evalSets(dir) : [] });
+    if (dir) examplesSeeded = vdir; // without Steward's folder, looked for again on the next read
+  } catch (e) {
+    console.error('[SecondBrain] flow examples:', e);
+  }
+}
+
 ipcMain.handle('schedules:list', (event) => {
   guard(event);
+  seedFlowExamples();
   return schedulesView();
 });
 ipcMain.handle('schedules:add', (event, spec) => {

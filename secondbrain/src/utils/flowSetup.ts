@@ -20,8 +20,11 @@ export const WHEN_KINDS = [
 export type WhenKind = (typeof WHEN_KINDS)[number]['id'];
 export const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const;
 
-/** What the automation does: a prompt to Steward (or, kept for the old ones, the local agent), a recipe, an eval run. */
-export type FlowType = 'steward' | 'local' | 'recipe' | 'evals';
+/**
+ * What the automation does: a prompt to Steward (or, kept for the old ones, the local agent), a recipe, an eval run,
+ * or blocks made on the canvas that this form cannot show (Set up then changes only its name, when and Telegram).
+ */
+export type FlowType = 'steward' | 'local' | 'recipe' | 'evals' | 'canvas';
 
 export interface FlowForm {
   name: string;
@@ -84,9 +87,12 @@ const stepName = (x: string | { step: string }) => (typeof x === 'string' ? x : 
 export function formOf(s: ScheduleView): FlowForm {
   const f: FlowForm = { ...blankForm(), ...whenChoices(s.whenText), name: s.name, prompt: s.prompt || '', telegram: (s.deliver || []).includes('telegram') };
   const steps = Array.isArray(s.steps) ? s.steps : [];
+  const names = steps.map(stepName);
   const start = steps.find((x) => typeof x !== 'string' && x.step === 'eval_start') as { sets?: unknown; runs?: unknown } | undefined;
-  if (start) return { ...f, type: 'evals', sets: Array.isArray(start.sets) ? start.sets.join(', ') : '', runs: Number(start.runs) || 1 };
-  if (steps.length) return { ...f, type: 'recipe', steps: steps.map(stepName), summarize: s.summarize || '' };
+  // the form's eval workflow is exactly eval_start then eval_wait; anything more (a canvas flow) is kept whole
+  if (start && names.join() === 'eval_start,eval_wait' && !s.summarize) return { ...f, type: 'evals', sets: Array.isArray(start.sets) ? start.sets.join(', ') : '', runs: Number(start.runs) || 1 };
+  if (steps.length && !start && names.every((x) => (RECIPE_STEPS as readonly string[]).includes(x))) return { ...f, type: 'recipe', steps: names, summarize: s.summarize || '' };
+  if (steps.length) return { ...f, type: 'canvas', steps: names, summarize: s.summarize || '' };
   return { ...f, type: s.backend === 'steward' ? 'steward' : 'local' };
 }
 
@@ -94,6 +100,8 @@ export function formOf(s: ScheduleView): FlowForm {
 export function specOf(f: FlowForm): ScheduleSpec {
   const deliver = f.telegram ? ['note', 'telegram'] : ['note'];
   const base = { name: f.name.trim(), when: whenText(f), deliver };
+  // its blocks are the canvas's: only the name, the when and where it goes change here
+  if (f.type === 'canvas') return base as ScheduleSpec;
   if (f.type === 'evals') {
     const sets = f.sets.split(',').map((x) => x.trim()).filter(Boolean);
     return {

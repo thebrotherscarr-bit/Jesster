@@ -92,6 +92,10 @@ export interface ScheduleView {
   summarize?: string;
   /** a workflow parked on eval_wait: the eval run it waits for */
   pending?: { tag?: string; label?: string; until: number } | null;
+  /** tags: "example" marks the Flows shelf's built-in examples (electron/agent/flowExamples.cjs) */
+  tags?: string[];
+  /** it takes hours (an eval set like aider-py): Run now by day asks first */
+  night?: boolean;
   enabled: boolean;
   next: number | null;
   lastRun: number | null;
@@ -103,7 +107,9 @@ export interface ScheduleView {
 export interface ScheduleSpec {
   name: string;
   prompt: string;
+  /** empty: no schedule, it runs only on Run now */
   when: string;
+  tags?: string[];
   deliver?: string[];
   backend?: 'local' | 'steward';
   steps?: (string | { step: string; [arg: string]: unknown })[];
