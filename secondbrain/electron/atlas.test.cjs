@@ -465,7 +465,7 @@ test('eval_start starts run-bar.ps1 for known sets only, never while an eval run
   assert.deepEqual(seen.launched, [], 'nothing started');
 
   const ok = JSON.parse(text(await call('eval_start', { sets: ['aider-py'], tag: 'ext-aider-2026-11-05' })));
-  assert.deepEqual(seen.launched, [{ dir, sets: ['aider-py'], runs: 1, tag: 'ext-aider-2026-11-05' }]);
+  assert.deepEqual(seen.launched, [{ dir, sets: ['aider-py'], runs: 1, tag: 'ext-aider-2026-11-05', transport: 'in-process' }]);
   assert.equal(ok.tag, 'ext-aider-2026-11-05');
   assert.equal(ok.progress, path.join(dir, 'storage', 'evals', 'runs', 'ext-aider-2026-11-05', 'progress.txt'));
   const dated = JSON.parse(text(await call('eval_start', { sets: ['small', 'aider-py'], runs: 2 })));
@@ -497,6 +497,7 @@ test("the app's evals: run-bar.ps1 detached in its own minimized PowerShell wind
   const src = fs.readFileSync(path.join(__dirname, 'estate.cjs'), 'utf8');
   assert.match(src, /spawn\('powershell\.exe', args, \{ cwd: dir, detached: true, stdio: 'ignore', windowsHide: false \}\)/);
   assert.match(src, /'-WindowStyle', 'Minimized', '-File', path\.join\(dir, \.\.\.RUN_BAR\)/);
+  assert.match(src, /'-Tag', tag, '-Transport', transport\]/);
   assert.match(estateMod.RUNNING_QUERY, /ProcessId <> \$PID/);
   assert.match(estateMod.RUNNING_QUERY, /evals\.py/);
   assert.match(estateMod.RUNNING_QUERY, /run-bar\.ps1/);

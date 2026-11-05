@@ -7,7 +7,8 @@ export const TransportSection: React.FC = () => {
   const [agui, setAgui] = useState(false);
 
   useEffect(() => {
-    settings?.get().then((s) => setAgui((s.agent || {}).transport === 'ag-ui'));
+    // AG-UI unless Responses was chosen here (electron/settings.cjs stewardTransport)
+    settings?.get().then((s) => setAgui(!((s.agent || {}).transport === 'responses' && (s.agent || {}).transportChosen)));
   }, [settings]);
 
   if (!settings) return null;
@@ -28,7 +29,7 @@ export const TransportSection: React.FC = () => {
           aria-label="Talk to Steward over AG-UI"
           onChange={(e) => {
             setAgui(e.target.checked);
-            settings.set('agent', { transport: e.target.checked ? 'ag-ui' : 'responses' });
+            settings.set('agent', { transport: e.target.checked ? 'ag-ui' : 'responses', transportChosen: true });
           }}
         />
         Talk to Steward over AG-UI

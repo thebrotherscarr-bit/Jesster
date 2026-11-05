@@ -54,7 +54,10 @@ function validateSteps(steps) {
       if (!Array.isArray(s.sets) || !s.sets.length) throw new Error('eval_start needs sets');
       const runs = s.runs === undefined ? 1 : Number(s.runs);
       if (!Number.isInteger(runs) || runs < 1 || runs > estate.MAX_RUNS) throw new Error(`eval_start runs is 1 to ${estate.MAX_RUNS}`);
-      return { step: 'eval_start', sets: s.sets.map(String), runs };
+      // over AG-UI by default (2026-11-05, the operator: "use it"; run-bar.ps1 -Transport ag-ui)
+      const transport = s.transport === undefined ? 'ag-ui' : String(s.transport);
+      if (!estate.TRANSPORTS.includes(transport)) throw new Error(`eval_start transport is one of ${estate.TRANSPORTS.join(', ')}`);
+      return { step: 'eval_start', sets: s.sets.map(String), runs, transport };
     }
     if (s.step === 'eval_wait') {
       const hours = s.hours === undefined ? EVAL_MAX_HOURS : Number(s.hours);
@@ -223,10 +226,10 @@ const RUNNERS = {
     if (!ctx.evals) throw new Error("Steward's evals are not served here");
     const d = new Date(ctx.now);
     const tag = `${args.sets.join('_')}-${dayOf(ctx.now)}-${pad(d.getHours())}${pad(d.getMinutes())}`;
-    const out = await estate.evalStart({ sets: args.sets, runs: args.runs || 1, tag }, ctx.evals);
+    const out = await estate.evalStart({ sets: args.sets, runs: args.runs || 1, tag, transport: args.transport || 'ag-ui' }, ctx.evals);
     if (typeof out !== 'string') throw new Error(out.error);
     ctx.state.tag = JSON.parse(out).tag;
-    return `## Eval run started\n${ctx.state.tag}: ${args.sets.join(', ')}, ${args.runs || 1} run(s) each`;
+    return `## Eval run started\n${ctx.state.tag}: ${args.sets.join(', ')}, ${args.runs || 1} run(s) each, over ${args.transport || 'ag-ui'}`;
   },
 };
 
