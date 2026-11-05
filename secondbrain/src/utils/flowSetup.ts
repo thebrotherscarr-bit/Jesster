@@ -1,14 +1,13 @@
-import type { ScheduleSpec, ScheduleView, SchedulesBridge } from '../types/desktop.ts';
+import type { ScheduleView, SchedulesBridge } from '../types/desktop.ts';
 
 /**
- * The Flows shelf's Set up panel and Run now (the operator, 2026-11-05: "need a way to actually run the things ... where
- * do i input the stuff that you asked me to set?"). The automations moved here from the Agent tab's console; the IPC
- * and the stored schedules are the same (electron/agent/schedules.cjs: add, edit, update, remove, run), so the checks
- * are schedules.cjs parseWhen and workflows.cjs validateSteps, and their messages are shown as they come back.
+ * The Flows shelf's Set up panel and Run now. ADR-0009 (Steward docs/decisions, 2026-11-05; the operator: "open ended
+ * prompt, nah. a flow thats gonna just work that doesnt need gates, yea."): a flow is an ordered chain of steps, made
+ * with + New flow and saved by itself; an automation is {flow, when, on/off} and nothing else. There is no prompt type.
+ * An automation is kept on its flow (the flow's when and enabled in schedules.json), so the IPC and the checks are the
+ * same (electron/agent/schedules.cjs: edit, update, remove, run; parseWhen), and their messages are shown as they come
+ * back. A prompt-only schedule saved before ADR-0009 is legacy: it keeps running, and is shown as one to convert.
  */
-
-/** The steps a recipe can pick: workflows.cjs STEPS less the two an eval workflow sets (flowSetup.test holds them equal). */
-export const RECIPE_STEPS = ['repo_log', 'merged_prs', 'releases', 'eval_bars', 'plan_left', 'versions', 'pull_ff'] as const;
 
 export const WHEN_KINDS = [
   { id: 'daily', label: 'Every day' },
@@ -20,48 +19,44 @@ export const WHEN_KINDS = [
 export type WhenKind = (typeof WHEN_KINDS)[number]['id'];
 export const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'] as const;
 
-/**
- * What the automation does: a prompt to Steward (or, kept for the old ones, the local agent), a recipe, an eval run,
- * or blocks made on the canvas that this form cannot show (Set up then changes only its name, when and Telegram).
- */
-export type FlowType = 'steward' | 'local' | 'recipe' | 'evals' | 'canvas';
+/** What a legacy prompt-only schedule is called wherever it is shown. */
+export const LEGACY_LABEL = 'legacy: convert to a flow';
 
-export interface FlowForm {
-  name: string;
-  type: FlowType;
+/** A flow: a saved chain of steps (what + New flow makes). */
+export const isFlow = (s: Pick<ScheduleView, 'steps'>) => Array.isArray(s.steps) && s.steps.length > 0;
+/** A prompt-only schedule from before ADR-0009: it keeps running, shown as legacy. */
+export const isLegacy = (s: Pick<ScheduleView, 'steps'>) => !isFlow(s);
+/** An automation: a flow with a when (a flow without one runs only on Run now), or a legacy schedule. */
+export const isAutomation = (s: Pick<ScheduleView, 'steps' | 'whenText'>) => isLegacy(s) || Boolean(String(s.whenText || '').trim());
+
+export const flowsOf = (list: ScheduleView[]) => list.filter(isFlow);
+export const automationsOf = (list: ScheduleView[]) => list.filter(isAutomation);
+
+/** An automation as Set up edits it: which saved flow, when (plain choices), and on or off. Nothing else. */
+export interface AutomationForm {
+  flowId: string;
   whenKind: WhenKind;
   time: string;
   day: string;
   every: number;
   everyUnit: 'h' | 'm';
   date: string;
-  prompt: string;
-  steps: string[];
-  summarize: string;
-  telegram: boolean;
-  sets: string;
-  runs: number;
+  enabled: boolean;
 }
 
-export const blankForm = (): FlowForm => ({
-  name: '',
-  type: 'steward',
+export const blankAutomation = (flowId = ''): AutomationForm => ({
+  flowId,
   whenKind: 'weekdays',
   time: '08:30',
   day: 'mon',
   every: 3,
   everyUnit: 'h',
   date: '',
-  prompt: '',
-  steps: [],
-  summarize: '',
-  telegram: false,
-  sets: 'aider-py',
-  runs: 1,
+  enabled: true,
 });
 
 /** The plain choices as the "when" text schedules.cjs parseWhen reads. */
-export function whenText(f: Pick<FlowForm, 'whenKind' | 'time' | 'day' | 'every' | 'everyUnit' | 'date'>): string {
+export function whenText(f: Pick<AutomationForm, 'whenKind' | 'time' | 'day' | 'every' | 'everyUnit' | 'date'>): string {
   if (f.whenKind === 'weekly') return `weekly ${f.day} ${f.time}`;
   if (f.whenKind === 'every') return `every ${f.every}${f.everyUnit}`;
   if (f.whenKind === 'once') return `once ${f.date} ${f.time}`;
@@ -69,7 +64,7 @@ export function whenText(f: Pick<FlowForm, 'whenKind' | 'time' | 'day' | 'every'
 }
 
 /** A schedule's "when" text read back into the plain choices (what parseWhen accepts; anything else starts at weekdays). */
-export function whenChoices(text: string): Pick<FlowForm, 'whenKind' | 'time' | 'day' | 'every' | 'everyUnit' | 'date'> {
+export function whenChoices(text: string): Pick<AutomationForm, 'whenKind' | 'time' | 'day' | 'every' | 'everyUnit' | 'date'> {
   const base = { whenKind: 'weekdays' as WhenKind, time: '08:30', day: 'mon', every: 3, everyUnit: 'h' as const, date: '' };
   const t = String(text || '').trim().toLowerCase().replace(/\s+/g, ' ');
   const pad = (s: string) => s.replace(/^(\d):/, '0$1:');
@@ -81,56 +76,32 @@ export function whenChoices(text: string): Pick<FlowForm, 'whenKind' | 'time' | 
   return base;
 }
 
-const stepName = (x: string | { step: string }) => (typeof x === 'string' ? x : String(x.step));
+/** An automation as the form shows it, to change. */
+export const automationFormOf = (s: ScheduleView): AutomationForm => ({ ...blankAutomation(s.id), ...whenChoices(s.whenText), enabled: s.enabled });
 
-/** A schedule as the form shows it, to edit. */
-export function formOf(s: ScheduleView): FlowForm {
-  const f: FlowForm = { ...blankForm(), ...whenChoices(s.whenText), name: s.name, prompt: s.prompt || '', telegram: (s.deliver || []).includes('telegram') };
-  const steps = Array.isArray(s.steps) ? s.steps : [];
-  const names = steps.map(stepName);
-  const start = steps.find((x) => typeof x !== 'string' && x.step === 'eval_start') as { sets?: unknown; runs?: unknown } | undefined;
-  // the form's eval workflow is exactly eval_start then eval_wait; anything more (a canvas flow) is kept whole
-  if (start && names.join() === 'eval_start,eval_wait' && !s.summarize) return { ...f, type: 'evals', sets: Array.isArray(start.sets) ? start.sets.join(', ') : '', runs: Number(start.runs) || 1 };
-  if (steps.length && !start && names.every((x) => (RECIPE_STEPS as readonly string[]).includes(x))) return { ...f, type: 'recipe', steps: names, summarize: s.summarize || '' };
-  if (steps.length) return { ...f, type: 'canvas', steps: names, summarize: s.summarize || '' };
-  return { ...f, type: s.backend === 'steward' ? 'steward' : 'local' };
-}
-
-/** The form as the spec schedules.cjs add (or edit) takes. An edit sends every field, so a type change clears the old one's. */
-export function specOf(f: FlowForm): ScheduleSpec {
-  const deliver = f.telegram ? ['note', 'telegram'] : ['note'];
-  const base = { name: f.name.trim(), when: whenText(f), deliver };
-  // its blocks are the canvas's: only the name, the when and where it goes change here
-  if (f.type === 'canvas') return base as ScheduleSpec;
-  if (f.type === 'evals') {
-    const sets = f.sets.split(',').map((x) => x.trim()).filter(Boolean);
-    return {
-      ...base,
-      prompt: `eval_start ${sets.join(', ')}, ${f.runs} run(s) each; wait for BAR DONE`,
-      backend: 'local',
-      steps: [{ step: 'eval_start', sets, runs: f.runs }, 'eval_wait'],
-      summarize: '',
-    };
-  }
-  if (f.type === 'recipe') return { ...base, prompt: f.prompt.trim(), backend: 'steward', steps: [...f.steps], summarize: f.summarize.trim() };
-  return { ...base, prompt: f.prompt.trim(), backend: f.type, steps: [], summarize: '' };
-}
-
-/** An IPC error in plain words: the message parseWhen or validateSteps threw, without Electron's wrapper. */
+/** An IPC error in plain words: the message parseWhen threw, without Electron's wrapper. */
 export const cleanError = (e: unknown) => (e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e));
 
-/** Save the form: a new automation (add), or a change to the open one (edit). The schedules as they stand after. */
-export async function saveFlow(bridge: SchedulesBridge, f: FlowForm, editingId: string | null): Promise<ScheduleView[]> {
-  const spec = specOf(f);
-  if (!editingId) {
-    // add stores no empty steps or summarize
-    const { steps, summarize, ...rest } = spec;
-    return bridge.add({ ...rest, ...(steps && steps.length ? { steps } : {}), ...(summarize ? { summarize } : {}) });
-  }
+/**
+ * Save an automation: the picked flow gets the when and on/off. A change that moves it to another flow takes the when
+ * off the one it was on first (that flow stays, on Run now only). The schedules as they stand after.
+ */
+export async function saveAutomation(bridge: SchedulesBridge, f: AutomationForm, editingId: string | null): Promise<ScheduleView[]> {
+  if (!f.flowId) throw new Error('Pick a saved flow (make one with + New flow)');
   if (!bridge.edit) throw new Error('this build of the app cannot change an automation; update it');
-  return bridge.edit(editingId, spec);
+  if (editingId && editingId !== f.flowId) await bridge.edit(editingId, { when: '' });
+  await bridge.edit(f.flowId, { when: whenText(f) });
+  return bridge.update(f.flowId, { enabled: f.enabled });
 }
 
+/** Delete an automation: a flow's when is taken off (the flow stays); a legacy schedule is removed. */
+export async function removeAutomation(bridge: SchedulesBridge, s: ScheduleView): Promise<ScheduleView[]> {
+  if (isLegacy(s)) return bridge.remove(s.id);
+  if (!bridge.edit) throw new Error('this build of the app cannot change an automation; update it');
+  return bridge.edit(s.id, { when: '' });
+}
+
+/** Delete a flow itself (the shelf's Delete, not Set up's). */
 export const removeFlow = (bridge: SchedulesBridge, id: string) => bridge.remove(id);
 export const setFlowEnabled = (bridge: SchedulesBridge, id: string, enabled: boolean) => bridge.update(id, { enabled });
 

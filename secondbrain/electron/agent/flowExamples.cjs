@@ -11,9 +11,8 @@
 const fs = require('fs');
 const path = require('path');
 
-// sets that take hours (the aider polyglot exercises, each a whole workflow run): badged "night", and Run now by day
-// asks first
-const NIGHT_SETS = ['aider-py'];
+// No set is badged "night" and no Run now asks first by day (ADR-0009, 2026-11-05: "run it whenever i say. day or
+// night or whenever, its my system. same as any eval.").
 
 const EVAL_SUMMARIZE =
   "Say in a few lines whether the eval set met its bar: the result line, the cases that failed and why, and anything that looks like the harness rather than the model.";
@@ -29,7 +28,6 @@ function evalExample(set) {
     summarize: EVAL_SUMMARIZE,
     deliver: ['note'],
     tags: ['example', 'eval', ...(set.tier ? [set.tier] : [])],
-    ...(NIGHT_SETS.includes(set.name) ? { night: true } : {}),
   };
 }
 
@@ -99,4 +97,4 @@ function seedExamples({ schedules, vaultDir, sets }) {
   return { added };
 }
 
-module.exports = { NIGHT_SETS, RECIPES, evalExample, examples, seedExamples, seededFile, readSeeded };
+module.exports = { RECIPES, evalExample, examples, seedExamples, seededFile, readSeeded };

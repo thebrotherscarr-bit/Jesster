@@ -1,10 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { BLOCKS, EdGraph, EdNode, KINDS, graphToRecipe, isDaytime, recipeToGraph, saveSpec } from './flowEditor.ts';
-import { formOf, specOf } from './flowSetup.ts';
+import * as flowEditor from './flowEditor.ts';
+import { BLOCKS, EdGraph, EdNode, KINDS, graphToRecipe, recipeToGraph, saveSpec } from './flowEditor.ts';
+import { automationFormOf, saveAutomation } from './flowSetup.ts';
 import { FlowsShelfView, knownSets } from '../components/FlowsShelf.tsx';
 import { FlowEditor } from '../components/FlowEditor.tsx';
 import { AutomationsSection } from '../components/settings/AutomationsSection.tsx';
@@ -106,9 +108,9 @@ test('Save: a new flow goes with no when (Run now only); a change keeps its when
   assert.equal('when' in saveSpec('Mine', recipe, false), false);
 });
 
-test('the shelf: + New flow at the top of the list; examples and night flows badged; Edit blocks and Duplicate on a flow with steps', () => {
+test('the shelf: + New flow at the top of the list; examples and legacy prompts badged; Edit blocks and Duplicate on a flow with steps', () => {
   const flows = [
-    schedule({ id: 'a', name: 'Eval: aider-py', whenText: '', whenLabel: 'only on Run now', tags: ['example', 'eval', 'ext'], night: true, steps: [{ step: 'eval_start', sets: ['aider-py'], runs: 1 }, 'eval_wait'] }),
+    schedule({ id: 'a', name: 'Eval: aider-py', whenText: '', whenLabel: 'only on Run now', tags: ['example', 'eval', 'ext'], steps: [{ step: 'eval_start', sets: ['aider-py'], runs: 1 }, 'eval_wait'] }),
     schedule({ id: 'b', name: 'Ask', prompt: 'hi', backend: 'steward' }),
   ];
   const html = renderToStaticMarkup(
@@ -116,7 +118,8 @@ test('the shelf: + New flow at the top of the list; examples and night flows bad
   );
   assert.match(html, /data-new-flow[^>]*>.*New flow/);
   assert.match(html, /data-badge="example"/);
-  assert.match(html, /data-badge="night"/);
+  assert.doesNotMatch(html, /data-badge="night"/);
+  assert.match(html, /data-badge="legacy"/, 'a prompt-only schedule is legacy');
   assert.match(html, /data-edit="a"/);
   assert.match(html, /data-duplicate="a"/);
   const prompt = renderToStaticMarkup(<FlowsShelfView flows={flows} selectedId="b" onSelect={() => {}} stewardOpen={false} onStewardOpen={() => {}} onEdit={() => {}} />);
@@ -124,13 +127,15 @@ test('the shelf: + New flow at the top of the list; examples and night flows bad
   assert.deepEqual(knownSets(flows), ['aider-py']);
 });
 
-test("a night flow's Run now by day asks first, inline", () => {
-  const flows = [schedule({ id: 'a', name: 'Eval: aider-py', night: true, steps: ['eval_wait'] })];
-  const ask = renderToStaticMarkup(<FlowsShelfView flows={flows} selectedId="a" onSelect={() => {}} stewardOpen={false} onStewardOpen={() => {}} onRun={() => {}} initialAskNight />);
-  assert.match(ask, /data-ask-night/);
-  assert.match(ask, /This takes hours; run now anyway\?/);
-  assert.equal(isDaytime(new Date(2026, 10, 5, 14)), true);
-  assert.equal(isDaytime(new Date(2026, 10, 5, 23)), false);
+test('ADR-0009: an eval flow runs whenever he says; no night badge and no daytime question', () => {
+  const flows = [schedule({ id: 'a', name: 'Eval: aider-py', tags: ['example', 'eval'], steps: [{ step: 'eval_start', sets: ['aider-py'], runs: 1 }, 'eval_wait'] })];
+  const html = renderToStaticMarkup(<FlowsShelfView flows={flows} selectedId="a" onSelect={() => {}} stewardOpen={false} onStewardOpen={() => {}} onRun={() => {}} />);
+  assert.match(html, /data-run="a"/);
+  assert.ok(!/data-run="a"[^>]* disabled=""/.test(html), 'Run now is ready, day or night');
+  assert.doesNotMatch(html, /data-ask-night|data-badge="night"|takes hours|run now anyway/i);
+  assert.ok(!('isDaytime' in flowEditor) && !('DAY_HOURS' in flowEditor), 'no daytime rule left');
+  const src = readFileSync(new URL('../components/FlowsShelf.tsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(src, /askNight|isDaytime|daytime=|\.night\b/, 'Run now is not held by the hour');
 });
 
 test('the editor: the palette is the legend (each block and what it does, the kinds\' colours), the canvas, Save', () => {
@@ -148,18 +153,15 @@ test('the editor: the palette is the legend (each block and what it does, the ki
   assert.match(html, /value="Mine"/);
 });
 
-test('Set up offers New automation beside the open flow, and keeps a canvas flow\'s blocks whole', () => {
-  const bridge = { list: async () => [], add: async () => [], update: async () => [], remove: async () => [], run: async () => ({ note: '', ok: true, schedules: [] }) } as SchedulesBridge;
-  const html = renderToStaticMarkup(<AutomationsSection bridge={bridge} selected={schedule({})} onChange={() => {}} />);
-  assert.match(html, /data-new-automation/);
-  assert.match(html, /New automation/);
-  assert.match(html, /Change “Startup”/);
-  // a canvas flow (eval_start, eval_wait, eval_bars, summarize): Set up changes its name, when and Telegram only
+test('Set up schedules a canvas flow and keeps its blocks whole: only the when and on/off are sent', async () => {
+  const calls: unknown[][] = [];
+  const bridge = {
+    list: async () => [], add: async () => [], remove: async () => [], run: async () => ({ note: '', ok: true, schedules: [] }),
+    update: async (...a: unknown[]) => (calls.push(['update', ...a]), []), edit: async (...a: unknown[]) => (calls.push(['edit', ...a]), []),
+  } as unknown as SchedulesBridge;
   const canvas = schedule({ steps: workflows.validateSteps([{ step: 'eval_start', sets: ['small'], runs: 1 }, 'eval_wait', 'eval_bars']), summarize: 'x', whenText: '' });
-  const f = formOf(canvas);
-  assert.equal(f.type, 'canvas');
-  const spec = specOf({ ...f, whenKind: 'daily', time: '02:00' });
-  assert.deepEqual(spec, { name: 'Startup', when: 'daily 02:00', deliver: ['note'] }, 'no steps or summarize sent: the blocks stay');
-  assert.equal(formOf(schedule({ steps: workflows.validateSteps([{ step: 'eval_start', sets: ['small'], runs: 1 }, 'eval_wait']) })).type, 'evals');
-  assert.equal(formOf(schedule({ steps: ['versions', 'repo_log'] })).type, 'recipe');
+  await saveAutomation(bridge, { ...automationFormOf(canvas), whenKind: 'daily', time: '02:00' }, null);
+  assert.deepEqual(calls, [['edit', 's1', { when: 'daily 02:00' }], ['update', 's1', { enabled: true }]], 'no steps or summarize sent: the blocks stay');
+  const html = renderToStaticMarkup(<AutomationsSection bridge={bridge} flows={[canvas]} selected={canvas} onChange={() => {}} startNew />);
+  assert.match(html, /data-new-automation/);
 });
