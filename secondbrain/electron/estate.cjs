@@ -3,7 +3,8 @@
  * see and work the Estate himself. Nothing here starts, stops or reads anything new: each tool is the path the window
  * already takes (the Servers shelf's registry, the updater, the Approvals history), and Ollama's own API.
  *
- *   estate_status       read   every server (name, port, up, pid, started), SecondBrain's build, Ollama, the sitting
+ *   estate_status       read   every server (name, port, up, pid, started), SecondBrain's build, Ollama, the sitting,
+ *                              and each Estate repository's version (versionsApi: local refs only, cached 60 s)
  *   estate_logs         read   the tail of one server's log, as the Servers shelf shows it (at most 400 lines)
  *   service_control     write  start | stop | restart one server, as the shelf's services:control does
  *   ollama_unload       write  one model out of memory (keep_alive 0)
@@ -51,7 +52,7 @@ const ESTATE_TOOLS = [
   {
     name: 'estate_status',
     description:
-      "The Estate as SecondBrain runs it: each server (name, port, up, pid, started), SecondBrain's build, Ollama's version and loaded models, and whether a Manjuel sitting is open.",
+      "The Estate as SecondBrain runs it: each server (name, port, up, pid, started), SecondBrain's build, Ollama's version and loaded models, whether a Manjuel sitting is open, and each repository's version (repos: branch, head, origin_main, behind and ahead of origin/main, clean; from the local refs, up to a minute old).",
     inputSchema: { type: 'object', properties: {} },
     annotations: { title: 'Estate status', ...read },
   },
@@ -267,7 +268,49 @@ function ollamaApi(port = OLLAMA.port) {
 }
 const ollama = ollamaApi();
 
-async function status({ servers, buildInfo, sitting, ollama: api = ollama }) {
+// The Estate's versions (the operator, 2026-11-05: Neiro is no longer the version gate; the versions are read here):
+// each repository's branch, HEAD, origin/main and how far apart they are, from the local refs alone (no fetch, never
+// git status or git diff), cached VERSIONS_TTL_MS so estate_status stays fast.
+const VERSIONS_TTL_MS = 60000;
+const VERSION_REPOS = ['research', 'steward', 'jesster', 'atlas'];
+
+/** One repository's version from its local refs: { name, branch, head, origin_main, behind, ahead, clean } or { name, error }. */
+async function repoVersion(repo, run) {
+  const git = (...args) => run('git', args, repo.dir);
+  const branch = await git('rev-parse', '--abbrev-ref', 'HEAD');
+  if (branch.code !== 0) return { name: repo.name, dir: repo.dir, error: String(branch.err || 'not a git repository').split('\n')[0] };
+  const head = await git('rev-parse', '--short', 'HEAD');
+  const main = await git('rev-parse', '--short', 'origin/main');
+  const v = { name: repo.name, dir: repo.dir, branch: branch.out, head: head.out || null, origin_main: main.code === 0 ? main.out : null };
+  if (main.code === 0) {
+    // "<behind> <ahead>": commits on origin/main not in HEAD, and in HEAD not on origin/main
+    const count = await git('rev-list', '--left-right', '--count', 'origin/main...HEAD');
+    const m = /^(\d+)\s+(\d+)$/.exec(String(count.out).trim());
+    if (count.code === 0 && m) Object.assign(v, { behind: Number(m[1]), ahead: Number(m[2]) });
+  }
+  // tracked changes against HEAD, read without git status (the index is not written); left out if it cannot be read
+  const dirty = await git('diff-index', '--quiet', 'HEAD', '--');
+  if (dirty.code === 0 || dirty.code === 1) v.clean = dirty.code === 0;
+  return v;
+}
+
+/**
+ * The Estate's versions, cached: `repos()` the repositories ({ name, dir }; workflows.cjs estateRepos, Neiro left
+ * out), `run(cmd, args, cwd)` → { code, out, err } (workflows.cjs run; tests give a fake), `clock()` for the cache.
+ * Returns an async function: the list, read again only once it is VERSIONS_TTL_MS old.
+ */
+function versionsApi({ repos, run, ttlMs = VERSIONS_TTL_MS, clock = Date.now }) {
+  let cache = null;
+  return async () => {
+    const now = clock();
+    if (cache && now - cache.at < ttlMs) return cache.list;
+    const list = await Promise.all(repos().filter((r) => VERSION_REPOS.includes(r.name)).map((r) => repoVersion(r, run)));
+    cache = { at: now, list };
+    return list;
+  };
+}
+
+async function status({ servers, buildInfo, sitting, ollama: api = ollama, versions }) {
   const list = await servers.list();
   const services = list.map((s) => ({ name: s.id, label: s.label, port: s.port, up: s.status === 'up', status: s.status, pid: s.pid ?? null, started: s.started ?? null }));
   let o = { up: false, version: null, models: [] };
@@ -283,7 +326,15 @@ async function status({ servers, buildInfo, sitting, ollama: api = ollama }) {
     o.error = e.message;
   }
   const n = sitting();
-  return { services, secondbrain: { build: buildInfo(), pid: process.pid }, ollama: o, sitting: n ? { open: true, n } : { open: false } };
+  let repos;
+  if (versions) {
+    try {
+      repos = await versions();
+    } catch (e) {
+      repos = { error: e.message };
+    }
+  }
+  return { services, secondbrain: { build: buildInfo(), pid: process.pid }, ollama: o, sitting: n ? { open: true, n } : { open: false }, ...(versions ? { repos } : {}) };
 }
 
 /**
@@ -335,4 +386,4 @@ async function estateCall(name, args, deps, { writes = false } = {}) {
   return { error: `no tool ${name}` };
 }
 
-module.exports = { ESTATE_TOOLS, NAMES, estateCall, isWrite, ollama, ollamaApi, status, evalsApi, evalSetNames, evalStart, evalStatus, RUNNING_QUERY, MAX_LOG_LINES, MAX_HISTORY, MAX_RUNS };
+module.exports = { ESTATE_TOOLS, NAMES, estateCall, isWrite, ollama, ollamaApi, status, versionsApi, repoVersion, VERSIONS_TTL_MS, evalsApi, evalSetNames, evalStart, evalStatus, RUNNING_QUERY, MAX_LOG_LINES, MAX_HISTORY, MAX_RUNS };

@@ -187,10 +187,10 @@ function fakeRun(calls) {
   };
 }
 
-const STARTUP_STEPS = ['pull_ff', 'repo_log', 'merged_prs', 'releases', 'eval_bars', 'plan_left'];
+const STARTUP_STEPS = ['pull_ff', 'versions', 'repo_log', 'merged_prs', 'releases', 'eval_bars', 'plan_left'];
 
 test('a workflow is data: steps from the fixed list only, each checked when saved', () => {
-  assert.deepEqual(workflows.STEPS, ['repo_log', 'merged_prs', 'releases', 'eval_bars', 'plan_left', 'pull_ff', 'eval_start', 'eval_wait']);
+  assert.deepEqual(workflows.STEPS, ['repo_log', 'merged_prs', 'releases', 'eval_bars', 'plan_left', 'versions', 'pull_ff', 'eval_start', 'eval_wait']);
   assert.throws(() => workflows.validateSteps(['repo_log', 'run_shell']), /no workflow step "run_shell"/);
   assert.throws(() => workflows.validateSteps([]), /one or more steps/);
   assert.throws(() => workflows.validateSteps([{ step: 'eval_start' }]), /needs sets/);
@@ -224,6 +224,10 @@ test('Startup, the baseline: the steps gather read-only, pull only clean mains, 
   const r = await runSchedule(schedules.due(t1)[0], {
     schedules, agent, vault, now: t1, deliverers: { telegram: async (m) => sent.push(m) }, onCard: () => {},
     repos, ground, stewardDir, run: fakeRun(calls), sitting: () => '112',
+    versions: async () => [
+      { name: 'research', branch: 'main', head: 'aaa1111', origin_main: 'aaa1111', behind: 0, ahead: 0, clean: true },
+      { name: 'steward', branch: 'fix-x', head: 'bbb2222', origin_main: 'ccc3333', behind: 3, ahead: 1, clean: false },
+    ],
   });
 
   assert.equal(r.ok, true);
@@ -245,6 +249,8 @@ test('Startup, the baseline: the steps gather read-only, pull only clean mains, 
   assert.match(text, /jesster: secondbrain-b85 \(2026-11-05T03:00:00Z\)\n/, 'only releases since the last run');
   assert.match(text, /done {2}small v4 \(T0\) run 1: 9\/10 cases/);
   assert.match(text, /1\. The eval framework, step 1\./);
+  assert.match(text, /- research: main at aaa1111; origin\/main aaa1111, 0 behind, 0 ahead, clean/);
+  assert.match(text, /- steward: fix-x at bbb2222; origin\/main ccc3333, 3 behind, 1 ahead, uncommitted changes/, 'drift shows in the morning');
   assert.doesNotMatch(text, /The plan by office/, 'only the working path');
   // the pulls happened only where allowed, and nothing ran git status or git diff
   const pulls = calls.filter((c) => c[0] === 'git' && c[1] === 'pull').map((c) => c.at(-1));

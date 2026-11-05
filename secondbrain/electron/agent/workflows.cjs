@@ -25,7 +25,7 @@ const path = require('path');
 const { execFile } = require('child_process');
 const estate = require('../estate.cjs');
 
-const STEPS = ['repo_log', 'merged_prs', 'releases', 'eval_bars', 'plan_left', 'pull_ff', 'eval_start', 'eval_wait'];
+const STEPS = ['repo_log', 'merged_prs', 'releases', 'eval_bars', 'plan_left', 'versions', 'pull_ff', 'eval_start', 'eval_wait'];
 const EVAL_MAX_HOURS = 8;
 const DAY_MS = 24 * 3600 * 1000;
 const MAX_SECTION = 4000;
@@ -204,6 +204,17 @@ const RUNNERS = {
   },
   async eval_bars(args, ctx) {
     return `## Steward's eval bars\n${evalBars(ctx.stewardDir, ctx.since)}`;
+  },
+  async versions(args, ctx) {
+    if (!ctx.versions) return "## The Estate's versions\n(not served here)";
+    const list = await ctx.versions();
+    const line = (v) =>
+      v.error
+        ? `- ${v.name}: ${v.error}`
+        : `- ${v.name}: ${v.branch} at ${v.head}; origin/main ${v.origin_main ?? 'unknown'}` +
+          (v.behind !== undefined ? `, ${v.behind} behind, ${v.ahead} ahead` : '') +
+          (v.clean === undefined ? '' : v.clean ? ', clean' : ', uncommitted changes');
+    return `## The Estate's versions (local refs)\n${(Array.isArray(list) ? list : []).map(line).join('\n') || '(none)'}`;
   },
   async plan_left(args, ctx) {
     return `## What is left (${PLAN_FILE})\n${ctx.ground ? readPlan(ctx.ground) : '(the ground was not found)'}`;
