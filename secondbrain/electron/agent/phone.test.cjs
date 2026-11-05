@@ -54,9 +54,27 @@ test('a Telegram turn reaches Steward from the phone and an Agent-tab turn from 
   await svc.ask({ text: 'hi from the tab', sessionId: 'pc1', source: 'app' });
   await svc.ask({ text: 'hi from my phone', sessionId: 'ph1', source: 'telegram' });
   await svc.ask({ text: 'improve: the tests', sessionId: 'pc2', source: 'app' });
-  assert.equal(sent[0], '[from the PC (Agent tab)]\nhi from the tab');
-  assert.equal(sent[1], '[from the phone (Telegram)]\nhi from my phone');
-  assert.match(sent[2], /^improve: the tests\n\n\[from the PC \(Agent tab\)\]$/, 'the improve word stays first');
+  assert.match(sent[0], /^\[from the PC \(Agent tab\) \| [^\]]+ local \(UTC[+-]\d\d:\d\d\) \| [^\]]*\d\d:\d\d UTC\]\nhi from the tab$/);
+  assert.match(sent[1], /^\[from the phone \(Telegram\) \| [^\]]+ local \(UTC[+-]\d\d:\d\d\) \| [^\]]*\d\d:\d\d UTC\]\nhi from my phone$/);
+  assert.match(sent[2], /^improve: the tests\n\n\[from the PC \(Agent tab\) \| [^\]]+ local \(UTC[+-]\d\d:\d\d\) \| [^\]]*\d\d:\d\d UTC\]$/, 'the improve word stays first');
   assert.deepEqual(svc.list().map((s) => s.id).sort(), ['pc1', 'pc2'], 'phone conversations are not on the Agent tab');
   assert.equal(svc.open('ph1').messages[0].content, 'hi from my phone', 'the session keeps the text as typed');
+});
+
+test('every source line carries the time from this machine: local with its offset, and UTC', () => {
+  const { withSource, clockStamp } = require('./service.cjs');
+  const now = new Date();
+  const stamp = clockStamp(now);
+  assert.match(stamp, /^(Sun|Mon|Tue|Wed|Thu|Fri|Sat) \d{4}-\d\d-\d\d \d\d:\d\d local \(UTC[+-]\d\d:\d\d\) \| ((Sun|Mon|Tue|Wed|Thu|Fri|Sat) \d{4}-\d\d-\d\d )?\d\d:\d\d UTC$/);
+  const utc = `${String(now.getUTCHours()).padStart(2, '0')}:${String(now.getUTCMinutes()).padStart(2, '0')} UTC`;
+  assert.ok(stamp.endsWith(utc), `${stamp} ends with ${utc}`);
+  const off = -now.getTimezoneOffset();
+  assert.ok(stamp.includes(`(UTC${off < 0 ? '-' : '+'}${String(Math.floor(Math.abs(off) / 60)).padStart(2, '0')}:${String(Math.abs(off) % 60).padStart(2, '0')})`));
+  for (const [source, where] of [['app', 'from the PC (Agent tab)'], ['telegram', 'from the phone (Telegram)'], ['whatsapp', 'from the phone (WhatsApp)'], ['discord', 'from the phone (Discord)'], ['automation', 'from an automation (Startup)']]) {
+    const sent = withSource('hi', source, 'Startup', now);
+    assert.ok(sent.startsWith(`[${where}`), sent);
+    assert.ok(sent.includes(` | ${stamp}]\nhi`), `${source}: the stamp is on the line`);
+  }
+  assert.equal(withSource('hi', 'schedule', undefined, now), 'hi', 'a local schedule (and anything not from a person or an automation) is unstamped');
+  assert.equal(withSource('improve: x', 'app', undefined, now), `improve: x\n\n[from the PC (Agent tab) | ${stamp}]`);
 });

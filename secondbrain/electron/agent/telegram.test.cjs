@@ -303,7 +303,7 @@ test("the phone's exchange is kept for the Phone view (text, reply, card and its
     await until(() => log.read('telegram', '42').some((e) => e.kind === 'reply'));
     assert.deepEqual(log.read('telegram', '42').map((e) => e.kind).reverse(), ['user', 'card', 'answer', 'reply']);
     assert.equal(log.list()[0].label, 'Telegram · Kyle');
-    assert.match(seen[0].text, /^\[from the phone \(Telegram\)\]\nnote this$/);
+    assert.match(seen[0].text, /^\[from the phone \(Telegram\) \| [^\]]+ local \(UTC[+-]\d\d:\d\d\) \| [^\]]*\d\d:\d\d UTC\]\nnote this$/);
     const sid = phone.chatSessions(sessionsFile, 'telegram').get('42');
     assert.ok(sid, 'the chat map is on disk');
     // a restart: a new bot over the same file continues the same session

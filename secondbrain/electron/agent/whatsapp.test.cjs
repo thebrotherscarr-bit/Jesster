@@ -207,7 +207,7 @@ test("WhatsApp with Steward as the agent: the source line, chat and research onl
     wa.open();
     wa.message(ME, 'hi', { fromMe: true });
     await until(() => texts().includes('steward: hi'));
-    assert.equal(seen[0].text, '[from the phone (WhatsApp) — chat and research only, no changes]\nhi');
+    assert.match(seen[0].text, /^\[from the phone \(WhatsApp\) — chat and research only, no changes \| [^\]]+ local \(UTC[+-]\d\d:\d\d\) \| [^\]]*\d\d:\d\d UTC\]\nhi$/);
     // an approval he asks during a WhatsApp turn: answered No at once, no card in the window or the chat
     wa.message(ME, 'do one', { fromMe: true });
     await until(() => texts().includes('not written\n\nThat needs approval — ask from the PC or Telegram.'));

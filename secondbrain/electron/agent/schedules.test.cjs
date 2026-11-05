@@ -108,7 +108,7 @@ test('a Steward schedule sends its prompt to Steward as an automation turn; its 
   assert.equal(asked[0].source, 'automation');
   assert.equal(asked[0].automation, 'Overnight evals');
   assert.equal(asked[0].approve, undefined, 'an automation is never handed an approver of its own');
-  assert.match(sent[0], /^\[from an automation \(Overnight evals\)\]\nStart the overnight evals/);
+  assert.match(sent[0], /^\[from an automation \(Overnight evals\) \| [^\]]+ local \(UTC[+-]\d\d:\d\d\) \| [^\]]*\d\d:\d\d UTC\]\nStart the overnight evals/);
   assert.equal(cards.length, 1, 'the card is the window\'s (and so the Approvals shelf\'s)');
   assert.match(cards[0].summary, /^\[from an automation \(Overnight evals\)\]\nrestart steward/);
   assert.deepEqual(phone.map((c) => c.id), [cards[0].id], 'and Telegram\'s');

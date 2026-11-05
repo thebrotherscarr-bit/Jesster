@@ -30,10 +30,31 @@ function sourceLine(source, automation) {
   return SOURCES[source];
 }
 
-/** The text Steward is sent: a short line naming where it came from, then the message (an improve: word stays first). */
-function withSource(text, source, automation) {
-  const line = sourceLine(source, automation);
-  if (!line) return text;
+const DAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const two = (n) => String(n).padStart(2, '0');
+
+/**
+ * The time now, read from this machine's clock and zone (no time service), local with its offset and UTC (the
+ * operator, 2026-11-05: "knowing UTC and local would be good, a system time check from jesster"), e.g.
+ * "Thu 2026-11-05 09:12 local (UTC-07:00) | 16:12 UTC"; the UTC side names its day when that differs.
+ */
+function clockStamp(now = new Date()) {
+  const off = -now.getTimezoneOffset();
+  const zone = `UTC${off < 0 ? '-' : '+'}${two(Math.floor(Math.abs(off) / 60))}:${two(Math.abs(off) % 60)}`;
+  const local = `${DAYS[now.getDay()]} ${now.getFullYear()}-${two(now.getMonth() + 1)}-${two(now.getDate())} ${two(now.getHours())}:${two(now.getMinutes())}`;
+  const sameDay = now.getUTCDate() === now.getDate();
+  const utcDay = sameDay ? '' : `${DAYS[now.getUTCDay()]} ${now.getUTCFullYear()}-${two(now.getUTCMonth() + 1)}-${two(now.getUTCDate())} `;
+  return `${local} local (${zone}) | ${utcDay}${two(now.getUTCHours())}:${two(now.getUTCMinutes())} UTC`;
+}
+
+/**
+ * The text Steward is sent: a short line naming where it came from and the time it was sent (clockStamp, read fresh
+ * each message), then the message (an improve: word stays first).
+ */
+function withSource(text, source, automation, now = new Date()) {
+  const where = sourceLine(source, automation);
+  if (!where) return text;
+  const line = `${where} | ${clockStamp(now)}`;
   return /^\s*improve:/i.test(text) ? `${text}\n\n[${line}]` : `[${line}]\n${text}`;
 }
 
@@ -419,4 +440,4 @@ class AgentService {
   }
 }
 
-module.exports = { AgentService, withSource, sourceLine, AUTOMATION, SOURCES, PHONE, READ_ONLY, NEEDS_APPROVAL, OUTSIDE, CARD_TIMEOUT_MS };
+module.exports = { AgentService, withSource, sourceLine, clockStamp, AUTOMATION, SOURCES, PHONE, READ_ONLY, NEEDS_APPROVAL, OUTSIDE, CARD_TIMEOUT_MS };
