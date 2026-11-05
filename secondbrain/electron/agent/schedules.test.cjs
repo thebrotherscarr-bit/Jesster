@@ -150,6 +150,37 @@ test("main.cjs hands the scheduler Telegram's cards and the Estate Steward's eva
   assert.match(main, /evals: stewardEvals\(\),/);
   assert.match(main, /const stewardRecipes = workflows\.stewardRecipes\(\{ url: `http:\/\/127\.0\.0\.1:\$\{steward\.MCP_PORT\}\/mcp` \}\)/);
   assert.ok(main.includes('    steward: stewardRecipes,'), 'the scheduler hands workflows to Steward')
+  // the Flows shelf's Set up and Run now (2026-11-05): a change goes through edit, busy is the agent's
+  assert.match(main, /ipcMain\.handle\('schedules:edit', \(event, id, spec\) => \{\s+guard\(event\);\s+getSchedules\(\)\.edit\(id, spec \|\| \{\}\);/);
+  assert.match(main, /ipcMain\.handle\('schedules:busy', \(event\) => \{\s+guard\(event\);\s+return getAgent\(\)\.busy\(\);/);
+  const preload = fs.readFileSync(path.join(__dirname, '..', 'preload.cjs'), 'utf8');
+  assert.match(preload, /edit: \(id, spec\) => ipcRenderer\.invoke\('schedules:edit', id, spec\)/);
+  assert.match(preload, /busy: \(\) => ipcRenderer\.invoke\('schedules:busy'\)/);
+});
+
+test('an automation changed from the Flows shelf: each field checked as add checks it, nothing written on a refusal', () => {
+  const vault = new Vault(fs.mkdtempSync(path.join(os.tmpdir(), 'sched-edit-')));
+  const schedules = new Schedules(() => vault);
+  const t0 = at('2026-11-05T12:00:00');
+  const s = schedules.add({ name: 'Startup', prompt: 'Review the work', when: 'weekdays 06:00', deliver: ['note', 'telegram'] }, t0);
+  const before = JSON.stringify(schedules.all());
+  assert.throws(() => schedules.edit(s.id, { when: 'sometimes' }), /must look like/);
+  assert.throws(() => schedules.edit(s.id, { steps: ['run_shell'] }), /no workflow step "run_shell"/);
+  assert.throws(() => schedules.edit(s.id, { name: ' ' }), /needs a name/);
+  assert.throws(() => schedules.edit(s.id, { prompt: '' }), /needs a name and a prompt/);
+  assert.throws(() => schedules.edit('nope', { name: 'x' }), /no schedule "nope"/);
+  assert.equal(JSON.stringify(schedules.all()), before, 'a refused change writes nothing');
+  // a new time: parsed, its label and next run with it; the rest untouched
+  const t = schedules.edit(s.id, { when: 'daily 07:15' }, t0);
+  assert.deepEqual([t.whenText, t.when, t.next], ['daily 07:15', { type: 'daily', time: '07:15' }, at('2026-11-06T07:15:00')]);
+  assert.deepEqual([t.name, t.prompt, t.deliver, t.id, t.enabled], ['Startup', 'Review the work', ['note', 'telegram'], s.id, true]);
+  // made a recipe, then a prompt again: steps and summarize come and go
+  const r = schedules.edit(s.id, { steps: ['repo_log', 'versions'], summarize: 'Write it up', backend: 'steward' });
+  assert.deepEqual([r.steps, r.summarize, r.backend], [['repo_log', 'versions'], 'Write it up', 'steward']);
+  const p = schedules.edit(s.id, { steps: [], summarize: '', prompt: 'Just say hi', deliver: ['note'] });
+  assert.equal('steps' in p || 'summarize' in p, false);
+  assert.deepEqual([p.prompt, p.deliver], ['Just say hi', ['note']]);
+  assert.equal(schedules.all().length, 1);
 });
 // ---- workflows (agent/workflows.cjs): a recipe is data; Steward runs it as a MAF workflow --------------------------
 

@@ -1,133 +1,175 @@
 import React, { useEffect, useState } from 'react';
-import { CalendarClock, Play, Trash2, Plus } from 'lucide-react';
-import { ScheduleView } from '../../types/desktop.ts';
+import { CalendarClock, Trash2, Plus, Save } from 'lucide-react';
+import type { ScheduleView, SchedulesBridge } from '../../types/desktop.ts';
+import { DAYS, FlowForm, RECIPE_STEPS, WHEN_KINDS, blankForm, cleanError, formOf, removeFlow, saveFlow, setFlowEnabled } from '../../utils/flowSetup.ts';
 
-/** Scheduled automations: the agent runs a prompt on a schedule and files the answer as a note. */
-export const AutomationsSection: React.FC = () => {
-  const bridge = window.secondbrainDesktop?.schedules;
-  const [list, setList] = useState<ScheduleView[]>([]);
-  const [form, setForm] = useState({ name: '', prompt: '', when: 'weekdays 08:30', telegram: false, mode: 'local', sets: 'aider-py', runs: 1 });
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
+const input = 'rounded-lg bg-neutral-900 border border-neutral-800 px-2.5 py-1.5 text-xs text-white';
 
+export interface AutomationsSectionProps {
+  bridge: SchedulesBridge;
+  /** the flow open on the shelf: the one Set up changes, enables or deletes */
+  selected: ScheduleView | null;
+  /** the schedules as they stand after a save, a change or a delete */
+  onChange: (list: ScheduleView[]) => void;
+  /** start on a new automation rather than the open one (the test renders both) */
+  startNew?: boolean;
+  /** an error to show from the start (the test renders it) */
+  initialError?: string | null;
+}
+
+/**
+ * The automations, set up on the Flows shelf (moved here from the Agent tab's console, 2026-11-05): a new one, or the
+ * open flow changed, turned on or off, or deleted. The when is plain choices; what it does is a prompt to Steward, a
+ * recipe (steps from the fixed list, a summarize prompt, where it goes) or an eval workflow. What schedules.cjs and
+ * workflows.cjs refuse is shown under the form as they say it.
+ */
+export const AutomationsSection: React.FC<AutomationsSectionProps> = ({ bridge, selected, onChange, startNew = false, initialError = null }) => {
+  const [isNew, setIsNew] = useState(startNew || !selected);
+  const [form, setForm] = useState<FlowForm>(() => (!startNew && selected ? formOf(selected) : blankForm()));
+  const [error, setError] = useState<string | null>(initialError);
+  const [busy, setBusy] = useState(false);
+  const editing = !isNew && selected ? selected : null;
+
+  // the open flow changed on the shelf: show it, unless a new one is being written
   useEffect(() => {
-    bridge?.list().then(setList);
-  }, [bridge]);
+    if (isNew) return;
+    setForm(selected ? formOf(selected) : blankForm());
+    setError(null);
+    if (!selected) setIsNew(true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected?.id]);
 
-  if (!bridge) return null;
-
-  const act = async (key: string, fn: () => Promise<ScheduleView[]>) => {
-    setBusy(key);
+  const act = async (fn: () => Promise<ScheduleView[]>, after?: () => void) => {
+    setBusy(true);
     setError(null);
     try {
-      setList(await fn());
+      onChange(await fn());
+      after?.();
     } catch (e) {
-      setError(e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e));
+      setError(cleanError(e));
     } finally {
-      setBusy(null);
+      setBusy(false);
     }
   };
+  const set = (patch: Partial<FlowForm>) => setForm((f) => ({ ...f, ...patch }));
 
   return (
-    <section className="px-5 py-4 border-b border-neutral-900 space-y-3" aria-label="Automations">
-      <div className="flex items-center gap-2 text-white text-sm font-medium">
-        <CalendarClock className="w-4 h-4 text-sky-400" /> Automations
+    <section className="px-4 py-3 space-y-3" aria-label="Automations">
+      <div className="flex items-center gap-2 text-white text-sm font-medium min-w-0">
+        <CalendarClock className="w-4 h-4 text-sky-400 shrink-0" />
+        <span className="truncate">{editing ? `Change “${editing.name}”` : 'New automation'}</span>
+        <span className="flex-1" />
+        {editing && (
+          <>
+            <label className="flex items-center gap-1.5 text-xs text-neutral-400 font-normal">
+              <input type="checkbox" checked={editing.enabled} aria-label={`Enable ${editing.name}`} disabled={busy}
+                onChange={(e) => act(() => setFlowEnabled(bridge, editing.id, e.target.checked))} /> on
+            </label>
+            <button type="button" title="Delete" aria-label={`Delete ${editing.name}`} disabled={busy}
+              onClick={() => act(() => removeFlow(bridge, editing.id), () => (setIsNew(true), setForm(blankForm())))}
+              className="p-1 rounded text-neutral-500 hover:text-rose-400 hover:bg-neutral-800 disabled:opacity-40">
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </>
+        )}
+        {!isNew && (
+          <button type="button" onClick={() => (setIsNew(true), setForm(blankForm()), setError(null))}
+            className="flex items-center gap-1 px-2 py-1 rounded-md text-xs font-normal text-neutral-300 hover:text-white hover:bg-neutral-800">
+            <Plus className="w-3.5 h-3.5" /> New
+          </button>
+        )}
       </div>
-      <p className="text-xs text-neutral-400">
-        The agent runs a prompt on a schedule and files the answer as a note (tag <code>automation</code>). Runs missed
-        while the app was closed happen when it opens. Risky tools are refused when nobody is watching. With Steward,
-        the prompt goes to him as an automation's turn: his cards wait on you here and on Telegram, and are answered No
-        after 10 minutes. An eval workflow starts Steward's eval sets at its time (never while he is working on a
-        request), waits for “BAR DONE” and files the result. You can also ask the agent: “every weekday at 8:30,
-        summarize my todo list”.
+      <p className="text-[11px] text-neutral-400">
+        Each automation runs at its time and files its result as a note (tag <code>automation</code>), and on Telegram if
+        you tick it. Runs missed while the app was closed happen when it opens. A prompt goes to Steward as an
+        automation's turn: his cards wait on you, and are answered No after 10 minutes. An eval workflow waits until
+        Steward is not working on a request.
       </p>
-      {list.length > 0 && (
-        <ul className="space-y-2">
-          {list.map((s) => (
-            <li key={s.id} className="rounded-lg border border-neutral-800 p-2.5 text-xs">
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  checked={s.enabled}
-                  aria-label={`Enable ${s.name}`}
-                  onChange={(e) => act(s.id, () => bridge.update(s.id, { enabled: e.target.checked }))}
-                />
-                <span className="font-medium text-neutral-100">{s.name}</span>
-                <span className="text-neutral-500">· {s.whenLabel}{s.steps?.length ? ` · workflow: ${s.steps.map((x) => (typeof x === 'string' ? x : x.step)).join(', ')}` : s.backend === 'steward' ? ' · Steward' : ''}{s.deliver.includes('telegram') ? ' · → Telegram' : ''}</span>
-                <span className="flex-1" />
-                <button
-                  title="Run now"
-                  disabled={busy === s.id}
-                  onClick={() => act(s.id, async () => (await bridge.run(s.id)).schedules)}
-                  className="p-1 rounded text-neutral-400 hover:text-white hover:bg-neutral-800 disabled:opacity-40"
-                >
-                  <Play className={`w-3.5 h-3.5 ${busy === s.id ? 'animate-pulse' : ''}`} />
-                </button>
-                <button title="Delete" onClick={() => act(s.id, () => bridge.remove(s.id))} className="p-1 rounded text-neutral-500 hover:text-rose-400 hover:bg-neutral-800">
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </div>
-              <div className="mt-1 text-neutral-400 line-clamp-2">{s.prompt}</div>
-              <div className="mt-1 text-[11px] text-neutral-500">
-                {s.next ? `next ${new Date(s.next).toLocaleString()}` : 'not scheduled'}
-                {s.lastRun ? ` · last ${new Date(s.lastRun).toLocaleString()} (${s.lastResult === 'ok' ? 'ok' : s.lastResult})` : ''}
-                {s.pending ? ` · waiting on ${s.pending.tag}` : ''}
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
       <form
         className="grid gap-2 sm:grid-cols-2"
         onSubmit={(e) => {
           e.preventDefault();
-          act('new', async () => {
-            const sets = form.sets.split(',').map((x) => x.trim()).filter(Boolean);
-            const evals = form.mode === 'evals';
-            const r = await bridge.add({
-              name: form.name,
-              prompt: evals ? `eval_start ${sets.join(', ')}, ${form.runs} run(s) each; wait for BAR DONE` : form.prompt,
-              when: form.when,
-              deliver: form.telegram ? ['note', 'telegram'] : ['note'],
-              backend: form.mode === 'steward' ? 'steward' : 'local',
-              ...(evals ? { steps: [{ step: 'eval_start', sets, runs: form.runs }, 'eval_wait'] } : {}),
-            });
-            setForm({ ...form, name: '', prompt: '' });
-            return r;
+          act(() => saveFlow(bridge, form, editing ? editing.id : null), () => {
+            if (!editing) setForm(blankForm());
           });
         }}
       >
-        <input required value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Name (e.g. Morning digest)"
-          className="rounded-lg bg-neutral-900 border border-neutral-800 px-2.5 py-1.5 text-xs text-white" />
-        <input required value={form.when} onChange={(e) => setForm({ ...form, when: e.target.value })} placeholder="daily 08:30 · weekdays 08:30 · weekly mon 09:00 · every 3h"
-          aria-label="When" className="rounded-lg bg-neutral-900 border border-neutral-800 px-2.5 py-1.5 text-xs text-white" />
-        {form.mode === 'evals' ? (
+        <input required value={form.name} onChange={(e) => set({ name: e.target.value })} placeholder="Name (e.g. Morning digest)" aria-label="Name" className={input} />
+        <select value={form.type} onChange={(e) => set({ type: e.target.value as FlowForm['type'] })} aria-label="What it does" className={input}>
+          <option value="steward">Steward prompt</option>
+          <option value="recipe">Recipe (steps, then a summary)</option>
+          <option value="evals">Eval workflow</option>
+          {form.type === 'local' && <option value="local">Local agent prompt</option>}
+        </select>
+
+        <div className="sm:col-span-2 flex flex-wrap gap-2" role="group" aria-label="When">
+          <select value={form.whenKind} onChange={(e) => set({ whenKind: e.target.value as FlowForm['whenKind'] })} aria-label="How often" className={input}>
+            {WHEN_KINDS.map((k) => <option key={k.id} value={k.id}>{k.label}</option>)}
+          </select>
+          {form.whenKind === 'weekly' && (
+            <select value={form.day} onChange={(e) => set({ day: e.target.value })} aria-label="Day" className={input}>
+              {DAYS.map((d) => <option key={d} value={d}>{d}</option>)}
+            </select>
+          )}
+          {form.whenKind === 'once' && <input type="date" required value={form.date} onChange={(e) => set({ date: e.target.value })} aria-label="Date" className={input} />}
+          {form.whenKind === 'every' ? (
+            <>
+              <input type="number" min={1} value={form.every} onChange={(e) => set({ every: Number(e.target.value) })} aria-label="Every" className={`${input} w-20`} />
+              <select value={form.everyUnit} onChange={(e) => set({ everyUnit: e.target.value as 'h' | 'm' })} aria-label="Unit" className={input}>
+                <option value="h">hours</option>
+                <option value="m">minutes</option>
+              </select>
+            </>
+          ) : (
+            <input type="time" required value={form.time} onChange={(e) => set({ time: e.target.value })} aria-label="Time" className={input} />
+          )}
+        </div>
+
+        {form.type === 'evals' && (
           <div className="sm:col-span-2 flex gap-2">
-            <input required value={form.sets} onChange={(e) => setForm({ ...form, sets: e.target.value })} placeholder="Eval sets, e.g. aider-py or small, steps"
-              aria-label="Eval sets" className="flex-1 rounded-lg bg-neutral-900 border border-neutral-800 px-2.5 py-1.5 text-xs text-white" />
-            <select value={form.runs} onChange={(e) => setForm({ ...form, runs: Number(e.target.value) })} aria-label="Runs of each set"
-              className="rounded-lg bg-neutral-900 border border-neutral-800 px-2 py-1.5 text-xs text-white">
+            <input required value={form.sets} onChange={(e) => set({ sets: e.target.value })} placeholder="Eval sets, e.g. aider-py or small, steps" aria-label="Eval sets" className={`flex-1 ${input}`} />
+            <select value={form.runs} onChange={(e) => set({ runs: Number(e.target.value) })} aria-label="Runs of each set" className={input}>
               {[1, 2, 3].map((n) => <option key={n} value={n}>{n} run{n > 1 ? 's' : ''}</option>)}
             </select>
           </div>
-        ) : (
-        <textarea required value={form.prompt} onChange={(e) => setForm({ ...form, prompt: e.target.value })} rows={2}
-          placeholder="What the agent should do each time" className="sm:col-span-2 rounded-lg bg-neutral-900 border border-neutral-800 px-2.5 py-1.5 text-xs text-white" />
         )}
+        {form.type === 'recipe' && (
+          <>
+            <fieldset className="sm:col-span-2 flex flex-wrap gap-x-3 gap-y-1" aria-label="Steps">
+              <legend className="text-[11px] text-neutral-500 mb-1">Steps, in this order</legend>
+              {RECIPE_STEPS.map((s) => (
+                <label key={s} className="flex items-center gap-1.5 text-xs text-neutral-300">
+                  <input type="checkbox" checked={form.steps.includes(s)}
+                    onChange={(e) => set({ steps: e.target.checked ? RECIPE_STEPS.filter((x) => x === s || form.steps.includes(x)) : form.steps.filter((x) => x !== s) })} />
+                  {s}
+                </label>
+              ))}
+            </fieldset>
+            <textarea value={form.summarize} onChange={(e) => set({ summarize: e.target.value })} rows={2} aria-label="Summarize prompt"
+              placeholder="What Steward writes from what the steps gathered (optional)" className={`sm:col-span-2 ${input}`} />
+          </>
+        )}
+        {(form.type === 'steward' || form.type === 'local') && (
+          <textarea required value={form.prompt} onChange={(e) => set({ prompt: e.target.value })} rows={2} aria-label="Prompt"
+            placeholder="What Steward should do each time" className={`sm:col-span-2 ${input}`} />
+        )}
+
         <label className="flex items-center gap-2 text-xs text-neutral-400">
-          <input type="checkbox" checked={form.telegram} onChange={(e) => setForm({ ...form, telegram: e.target.checked })} /> also send to Telegram
+          <input type="checkbox" checked={form.telegram} onChange={(e) => set({ telegram: e.target.checked })} /> also send to Telegram
         </label>
-        <select value={form.mode} onChange={(e) => setForm({ ...form, mode: e.target.value })} aria-label="Runs on"
-          className="rounded-lg bg-neutral-900 border border-neutral-800 px-2 py-1.5 text-xs text-white">
-          <option value="local">the local agent</option>
-          <option value="steward">Steward</option>
-          <option value="evals">an eval workflow</option>
-        </select>
-        <button type="submit" disabled={busy === 'new'} className="justify-self-end flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-xs text-white disabled:opacity-50">
-          <Plus className="w-3.5 h-3.5" /> Add automation
-        </button>
+        <div className="justify-self-end flex gap-2">
+          {isNew && selected && (
+            <button type="button" onClick={() => (setIsNew(false), setForm(formOf(selected)), setError(null))}
+              className="px-3 py-1.5 rounded-lg border border-neutral-700 text-xs text-neutral-300 hover:bg-neutral-800">
+              Cancel
+            </button>
+          )}
+          <button type="submit" disabled={busy} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-xs text-white disabled:opacity-50">
+            {editing ? <Save className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />} {editing ? 'Save changes' : 'Add automation'}
+          </button>
+        </div>
       </form>
-      {error && <p role="alert" className="text-xs text-amber-400">{error}</p>}
+      {error && <p role="alert" className="text-xs text-amber-400 break-words">{error}</p>}
     </section>
   );
 };

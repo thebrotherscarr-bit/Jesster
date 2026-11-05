@@ -91,7 +91,7 @@ export interface ScheduleView {
   steps?: (string | { step: string; [arg: string]: unknown })[];
   summarize?: string;
   /** a workflow parked on eval_wait: the eval run it waits for */
-  pending?: { tag: string; until: number } | null;
+  pending?: { tag?: string; label?: string; until: number } | null;
   enabled: boolean;
   next: number | null;
   lastRun: number | null;
@@ -99,18 +99,25 @@ export interface ScheduleView {
   running?: boolean;
 }
 
+/** A new schedule, or (Partial) a change to one: the when is plain text, parsed by schedules.cjs parseWhen. */
+export interface ScheduleSpec {
+  name: string;
+  prompt: string;
+  when: string;
+  deliver?: string[];
+  backend?: 'local' | 'steward';
+  steps?: (string | { step: string; [arg: string]: unknown })[];
+  summarize?: string;
+}
+
 export interface SchedulesBridge {
   list: () => Promise<ScheduleView[]>;
-  add: (spec: {
-    name: string;
-    prompt: string;
-    when: string;
-    deliver?: string[];
-    backend?: 'local' | 'steward';
-    steps?: (string | { step: string; [arg: string]: unknown })[];
-    summarize?: string;
-  }) => Promise<ScheduleView[]>;
+  add: (spec: ScheduleSpec) => Promise<ScheduleView[]>;
   update: (id: string, patch: { enabled?: boolean }) => Promise<ScheduleView[]>;
+  /** a change from the Flows shelf's Set up panel: only the fields given, checked as add checks them */
+  edit?: (id: string, spec: Partial<ScheduleSpec>) => Promise<ScheduleView[]>;
+  /** whether any conversation is mid-turn now (Steward busy) */
+  busy?: () => Promise<boolean>;
   remove: (id: string) => Promise<ScheduleView[]>;
   run: (id: string) => Promise<{ note: string; ok: boolean; schedules: ScheduleView[] }>;
 }

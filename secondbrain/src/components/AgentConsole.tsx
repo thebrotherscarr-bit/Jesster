@@ -6,7 +6,6 @@ import { approvalWord } from '../utils/approvals.ts';
 import { ServersShelf } from './ServersShelf.tsx';
 import { ApprovalsShelf } from './ApprovalsShelf.tsx';
 import { AtlasSection } from './settings/AtlasSection.tsx';
-import { AutomationsSection } from './settings/AutomationsSection.tsx';
 import { McpSection } from './settings/McpSection.tsx';
 import { TerminalSection } from './settings/TerminalSection.tsx';
 import { CheckSection } from './settings/CheckSection.tsx';
@@ -380,8 +379,8 @@ const ToolsPane: React.FC = () => {
         <CheckSection />
         <TransportSection />
         <McpSection />
-        <AutomationsSection />
       </div>
+      <p className="text-[11px] text-neutral-500" data-pointer="automations">Automations live on the Flows shelf, under Set up.</p>
     </>
   );
 };

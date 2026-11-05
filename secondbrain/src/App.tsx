@@ -310,7 +310,7 @@ export default function App() {
           </div>
         )}
 
-        {/* the Flows shelf: the automations as block cards, read-only (Run now and Schedule come later) */}
+        {/* the Flows shelf: the automations as block cards, Run now, and their Set up */}
         {window.secondbrainDesktop?.schedules && activeTab === 'flows' && (
           <div className="flex flex-1 min-w-0 min-h-0">
             <FlowsShelf active />

@@ -2,9 +2,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { flowGraph, lastResultLine } from './flowGraph.ts';
+import { CARD, COLUMN, ROW, WRAP, flowGraph, flowRunState, lastResultLine } from './flowGraph.ts';
 import { FLOWS_STEWARD_OPEN_KEY, keepPanel, panelOpen } from './agentConsole.ts';
-import { FlowsShelfView } from '../components/FlowsShelf.tsx';
+import { FlowsShelfView, OPEN_VIEW, openViewport } from '../components/FlowsShelf.tsx';
 import type { ScheduleView } from '../types/desktop.ts';
 
 // The Flows shelf, piece 1 (the operator, 2026-11-05; plan-the-flows-shelf-ide-for-steward-s-f-04a93a): the flows
@@ -41,8 +41,9 @@ test('a recipe is its gather steps in a line, then summarize, then each delivery
   assert.equal(g.nodes[1].detail, 'repo: jesster', "a step's arguments are its detail");
   assert.equal(g.nodes[2].detail, 'Say what moved');
   assert.deepEqual(wires(g), ['step-0->step-1', 'step-1->summarize', 'summarize->deliver-note', 'summarize->deliver-telegram']);
-  // left to right, output to input
-  assert.ok(g.nodes[0].position.x < g.nodes[1].position.x && g.nodes[1].position.x < g.nodes[2].position.x);
+  // along a row the wire runs side to side; from one band to the next, bottom to top
+  assert.deepEqual([g.edges[0].sourceHandle, g.edges[0].targetHandle], ['right', 'left']);
+  assert.deepEqual([g.edges[1].sourceHandle, g.edges[1].targetHandle], ['bottom', 'top']);
   // a recipe with no summarize delivers from its last step
   assert.deepEqual(wires(flowGraph({ prompt: '', steps: ['versions'], deliver: ['note'] })), ['step-0->deliver-note']);
 });
@@ -53,6 +54,52 @@ test('a schedule with only a prompt is one turn, then the note', () => {
   assert.deepEqual(wires(g), ['turn->deliver-note']);
   assert.equal(flowGraph({ prompt: 'x', deliver: [] }).nodes.at(-1)?.label, 'note', 'no delivery named: the note');
   assert.match(flowGraph({ prompt: 'x', backend: 'local', deliver: ['note'] }).nodes[0].label, /^Agent: x/);
+});
+
+test('the layout is layered and wrapped: rows of readable cards on an even grid, never one endless line', () => {
+  // Startup's recipe: seven steps, summarize, two deliveries
+  const steps = ['pull_ff', 'versions', 'repo_log', 'merged_prs', 'releases', 'eval_bars', 'plan_left'];
+  const g = flowGraph({ prompt: '', steps, summarize: 'Write it up', deliver: ['note', 'telegram'] });
+  const pos = Object.fromEntries(g.nodes.map((n) => [n.id, n.position]));
+  // bounded across: at most WRAP cards wide, whatever the length
+  for (const n of g.nodes) assert.ok(n.position.x >= 0 && n.position.x <= (WRAP - 1) * COLUMN, `${n.id} within the band`);
+  // the steps wrap like text: rows of WRAP, each row below the last
+  const stepRows = [...new Set(steps.map((_, i) => pos[`step-${i}`].y))];
+  assert.deepEqual(stepRows, [0, ROW, 2 * ROW]);
+  assert.deepEqual([0, 1, 2].map((i) => pos[`step-${i}`].x), [0, COLUMN, 2 * COLUMN], 'the first row reads left to right');
+  // then the layers below: summarize, then the deliveries
+  assert.ok(pos.summarize.y > Math.max(...stepRows), 'summarize under the steps');
+  assert.ok(pos['deliver-note'].y > pos.summarize.y && pos['deliver-note'].y === pos['deliver-telegram'].y, 'deliveries share the band under it');
+  assert.equal(pos.summarize.x, COLUMN, 'a lone card is centred');
+  // on the grid (columns, half columns for centring; rows), and no two cards overlap at their fixed size
+  for (const n of g.nodes) {
+    assert.equal(n.position.x % (COLUMN / 2), 0, `${n.id} on the grid`);
+    assert.equal(n.position.y % ROW, 0, `${n.id} on a row`);
+  }
+  for (const a of g.nodes)
+    for (const b of g.nodes)
+      if (a !== b)
+        assert.ok(
+          Math.abs(a.position.x - b.position.x) >= CARD.width || Math.abs(a.position.y - b.position.y) >= CARD.height,
+          `${a.id} and ${b.id} do not overlap`,
+        );
+  // readable: cards are a fixed size with even gaps between them
+  assert.ok(CARD.width >= 220 && CARD.height >= 96, 'cards are big enough to read');
+  assert.ok(COLUMN - CARD.width >= 40 && ROW - CARD.height >= 40, 'even gaps for the wires');
+  // the canvas opens at a readable zoom on the first blocks, not shrunk to fit them all
+  const view = openViewport(g.nodes);
+  assert.deepEqual(view, { x: OPEN_VIEW.margin, y: OPEN_VIEW.margin, zoom: 1 });
+  const lone = flowGraph({ prompt: 'x', deliver: ['note'] });
+  assert.equal(openViewport(lone.nodes).zoom, 1);
+});
+
+test("a flow's run state is read off the schedule: running, done or failed", () => {
+  assert.equal(flowRunState(schedule({})), 'idle');
+  assert.equal(flowRunState(schedule({ running: true })), 'running');
+  assert.equal(flowRunState(schedule({ pending: { label: "Steward's run r1", until: 0 } })), 'running');
+  assert.equal(flowRunState(schedule({ lastRun: 1, lastResult: 'ok' })), 'done');
+  assert.equal(flowRunState(schedule({ lastRun: 1, lastResult: 'skipped: Steward busy' })), 'failed');
+  assert.equal(lastResultLine(schedule({ pending: { label: "Steward's run r1", until: 0 } })), "waiting on Steward's run r1");
 });
 
 test("the list says each flow's last result", () => {
@@ -88,7 +135,7 @@ test('the shelf renders the list and the open flow on the canvas, block by block
   assert.deepEqual(blocks, ['step', 'step', 'summarize', 'deliver'], 'one card per block of the open flow');
   assert.match(html, /Steward: summarize/);
   assert.ok(!html.includes('aria-label="Steward"'), "Steward's card is folded");
-  assert.ok(!/>\s*(Run now|Schedule)\s*</.test(html), 'no Run now or Schedule yet (piece 3)');
+  assert.ok(!html.includes('data-run='), 'no Run now without a run path');
 
   const open = renderToStaticMarkup(<FlowsShelfView flows={flows} selectedId="b" onSelect={() => {}} stewardOpen onStewardOpen={() => {}} />);
   assert.deepEqual([...open.matchAll(/data-block="([a-z]+)"/g)].map((m) => m[1]), ['turn', 'deliver']);

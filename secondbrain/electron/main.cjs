@@ -706,6 +706,17 @@ ipcMain.handle('schedules:update', (event, id, patch) => {
   getSchedules().update(id, allowed);
   return schedulesView();
 });
+// the Flows shelf's Set up panel: a change to one schedule, checked as add checks it (schedules.cjs edit)
+ipcMain.handle('schedules:edit', (event, id, spec) => {
+  guard(event);
+  getSchedules().edit(id, spec || {});
+  return schedulesView();
+});
+// whether any conversation is mid-turn now: the Flows shelf holds Run now while Steward is busy
+ipcMain.handle('schedules:busy', (event) => {
+  guard(event);
+  return getAgent().busy();
+});
 ipcMain.handle('schedules:remove', (event, id) => {
   guard(event);
   getSchedules().remove(id);

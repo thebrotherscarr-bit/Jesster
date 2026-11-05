@@ -86,6 +86,8 @@ contextBridge.exposeInMainWorld('secondbrainDesktop', {
     list: () => ipcRenderer.invoke('schedules:list'),
     add: (spec) => ipcRenderer.invoke('schedules:add', spec),
     update: (id, patch) => ipcRenderer.invoke('schedules:update', id, patch),
+    edit: (id, spec) => ipcRenderer.invoke('schedules:edit', id, spec),
+    busy: () => ipcRenderer.invoke('schedules:busy'),
     remove: (id) => ipcRenderer.invoke('schedules:remove', id),
     run: (id) => ipcRenderer.invoke('schedules:run', id),
   },
