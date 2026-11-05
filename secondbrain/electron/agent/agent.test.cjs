@@ -521,3 +521,43 @@ test('a message sent while a card waits answers it No, then goes to Steward next
   assert.deepEqual(asked, ['fix the test', 'no, only read it'], 'the message goes to Steward next');
   assert.equal(done.length, 1, 'the tab stays busy until the second turn ends');
 });
+
+test('Steward is reached over AG-UI by default; its host down, the turn falls back to Responses with one console line', async () => {
+  const { AgentService } = require('./service.cjs');
+  const { stewardTransport } = require('../settings.cjs');
+  assert.equal(stewardTransport({}), 'ag-ui');
+  assert.equal(stewardTransport({ transport: 'responses' }), 'ag-ui', 'the old default written back is not a choice');
+  assert.equal(stewardTransport({ transport: 'responses', transportChosen: true }), 'responses');
+  const vault = vaultWith([]);
+  const used = [];
+  const logged = [];
+  let down = false;
+  let model = { backend: 'steward' };
+  const service = new AgentService({
+    getVault: () => vault,
+    getModel: () => model,
+    log: (line) => logged.push(line),
+    steward: {
+      ensure: async () => 'http://responses',
+      turn: async () => (used.push('responses'), { answer: 'over Responses', previous: 'r1', calls: [] }),
+      agui: {
+        ensure: async () => {
+          if (down) throw new Error('did not answer on port 43122');
+          return 'http://agui/';
+        },
+        turn: async ({ url, text }) => (used.push(`ag-ui ${url}`), { answer: `over AG-UI: ${text.split('\n')[0].slice(0, 24)}`, calls: [] }),
+      },
+    },
+  });
+  assert.equal((await service.ask({ text: 'hi' })).answer, 'over AG-UI: [from the PC (Agent tab)');
+  assert.equal((await service.ask({ text: 'hi', source: 'telegram' })).answer.startsWith('over AG-UI'), true, 'the phone too');
+  assert.equal((await service.ask({ text: 'go', source: 'automation', automation: 'Startup', save: false })).answer.startsWith('over AG-UI'), true, 'and automations');
+  down = true;
+  assert.equal((await service.ask({ text: 'hi' })).answer, 'over Responses');
+  assert.equal(logged.length, 1);
+  assert.match(logged[0], /AG-UI host \(43122\) is down \(did not answer on port 43122\); this turn goes over Responses \(43120\)/);
+  model = { backend: 'steward', transport: 'responses', transportChosen: true };
+  down = false;
+  assert.equal((await service.ask({ text: 'hi' })).answer, 'over Responses', 'Responses when he chose it');
+  assert.deepEqual(used, ['ag-ui http://agui/', 'ag-ui http://agui/', 'ag-ui http://agui/', 'responses', 'responses']);
+});

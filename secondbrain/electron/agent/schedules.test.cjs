@@ -196,7 +196,8 @@ test('a workflow is data: steps from the fixed list only, each checked when save
   assert.throws(() => workflows.validateSteps([{ step: 'eval_start' }]), /needs sets/);
   assert.throws(() => workflows.validateSteps([{ step: 'eval_start', sets: ['x'], runs: 9 }]), /runs is 1 to 3/);
   assert.throws(() => workflows.validateSteps([{ step: 'eval_wait', hours: 30 }]), /at most 8/);
-  assert.deepEqual(workflows.validateSteps([{ step: 'eval_start', sets: ['aider-py'] }, 'eval_wait']), [{ step: 'eval_start', sets: ['aider-py'], runs: 1 }, { step: 'eval_wait', hours: 8 }]);
+  assert.deepEqual(workflows.validateSteps([{ step: 'eval_start', sets: ['aider-py'] }, 'eval_wait']), [{ step: 'eval_start', sets: ['aider-py'], runs: 1, transport: 'ag-ui' }, { step: 'eval_wait', hours: 8 }], 'over AG-UI by default');
+  assert.throws(() => workflows.validateSteps([{ step: 'eval_start', sets: ['x'], transport: 'carrier-pigeon' }]), /transport is one of/);
   const vault = new Vault(fs.mkdtempSync(path.join(os.tmpdir(), 'wf-')));
   const schedules = new Schedules(() => vault);
   assert.throws(() => schedules.add({ name: 'x', when: 'daily 08:00', steps: ['nope'] }), /no workflow step/);
@@ -286,7 +287,7 @@ test('the nightly eval workflow: skipped while Steward is busy; else eval_start,
 
   const t2 = at('2026-11-06T23:00:05');
   const parked = await runSchedule(schedules.due(t2)[0], { ...base, now: t2, busy: () => false });
-  assert.deepEqual(launched, [{ dir: stewardDir, sets: ['aider-py'], runs: 1, tag: 'aider-py-2026-11-06-2300' }]);
+  assert.deepEqual(launched, [{ dir: stewardDir, sets: ['aider-py'], runs: 1, tag: 'aider-py-2026-11-06-2300', transport: 'ag-ui' }], 'run-bar.ps1 -Transport ag-ui');
   assert.equal(parked.parked.tag, 'aider-py-2026-11-06-2300');
   assert.equal(schedules.all()[0].lastResult, 'waiting on aider-py-2026-11-06-2300');
   assert.deepEqual(await resumeSchedules({ ...base, now: t2 + 60000 }), [], 'no progress file yet: still waiting');
