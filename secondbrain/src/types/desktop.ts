@@ -353,6 +353,8 @@ export interface EvalRun {
   gitHead: string;
   exitCode: number | null;
   cases: { input: string; passed: boolean; failed: { name: string; reason: string }[] }[];
+  /** a steps run's CHECK and REPAIR progress lines, in order ("checking: pytest -q ...", "check failed", "repair attempt 1/3") */
+  progress: string[];
 }
 
 export interface EvalsView {

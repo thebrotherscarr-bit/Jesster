@@ -107,6 +107,8 @@ function parseEvals(text) {
         passed: Boolean(c && c.passed),
         failed: (Array.isArray(c && c.failed_checks) ? c.failed_checks : []).map((f) => ({ name: String((f && f.name) || ''), reason: String((f && f.reason) || '') })),
       })),
+      // a steps run's CHECK and REPAIR progress lines (Steward's StewardProgress events, in order)
+      progress: (Array.isArray(r.progress) ? r.progress : []).map((p) => String(p)),
     }))
     .sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0));
 }

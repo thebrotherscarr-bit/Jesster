@@ -79,6 +79,14 @@ test('the eval history parses newest first, with failed checks per case; the bas
   assert.equal(e.history[0].checksPassed, 8);
   assert.deepEqual(e.history[0].cases[0].failed, [{ name: 'edit_keeps_file_whole', reason: 'no .py write' }]);
   assert.deepEqual(e.baseline, { small: { checks: 10, of: 14 } });
+  assert.deepEqual(e.history[0].progress, [], 'a run with no progress has none');
+});
+
+test("a steps run's CHECK and REPAIR progress lines are read, in order", () => {
+  const { dir, put } = stewardDir();
+  const progress = ['checking: pytest -q harness/steward/working/sample-project', 'check failed', 'repair attempt 1/3', 'check passed'];
+  put('storage/evals/history.jsonl', JSON.stringify({ ts: '2026-11-05T00:00:00Z', set: 'steps', passed: 3, total: 3, cases: [], progress: [...progress, 7] }));
+  assert.deepEqual(c.readEvals(dir).history[0].progress, [...progress, '7']);
 });
 
 test('the traces tail is summarised by run: tools with arguments cut short, errors, pings only counted', () => {

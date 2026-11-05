@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
-import { CHATS_OPEN_KEY, CONSOLE_OPEN_KEY, CONSOLE_SHELVES, MOVED_TO_CONSOLE, TOP_BAR, historyRow, keepPanel, mcpServers, panelOpen, versusBaseline } from './agentConsole.ts';
+import { CHATS_OPEN_KEY, CONSOLE_OPEN_KEY, CONSOLE_SHELVES, MOVED_TO_CONSOLE, TOP_BAR, barStatus, historyRow, keepPanel, mcpServers, panelOpen, versusBaseline } from './agentConsole.ts';
 
 // The operator, 2026-11-04: "there is a lot of clutter in the top bar", and the rulings after it (Flows, Capture,
 // Import files, GitHub, Ask Brain, Services, Integrations and + New note leave the top bar; Steward's controls go to
@@ -119,4 +119,23 @@ test('the chats bar and the console fold from the header, each remembered', () =
   assert.equal((bar.match(/<button\b/g) || []).length, 2, 'New chat and the row button only');
   assert.match(bar, /New chat/);
   assert.match(bar, /truncate[^"]*`\}\s*title=\{s\.title/);
+});
+
+test("the bar is the small set whole on its two newest runs and the newest steps run passing; the Evals shelf shows it and a run's progress", () => {
+  const r = (set: string, passed: number, total: number, ts: string) => ({ set, passed, total, ts });
+  // newest first, as the shelf reads the history
+  const met = [r('steps', 3, 3, '6'), r('small', 3, 3, '5'), r('small', 3, 3, '4'), r('small', 1, 3, '3')];
+  assert.equal(barStatus(met).met, true);
+  assert.deepEqual(barStatus(met).small.map((s) => s.ts), ['5', '4']);
+  assert.equal(barStatus([r('steps', 3, 3, '6'), r('small', 3, 3, '5'), r('small', 2, 3, '4')]).met, false, 'one small short is not the bar');
+  assert.equal(barStatus([r('steps', 1, 3, '6'), r('small', 3, 3, '5'), r('small', 3, 3, '4')]).met, false, 'the steps run must pass');
+  assert.equal(barStatus([r('small', 3, 3, '5'), r('small', 3, 3, '4')]).met, false, 'no steps run yet');
+  assert.equal(barStatus([r('steps', 3, 3, '6'), r('small', 3, 3, '5')]).met, false, 'one small run is not two in a row');
+  assert.equal(barStatus([r('steps', 0, 0, '6'), r('small', 0, 0, '5'), r('small', 0, 0, '4')]).met, false, 'nothing scored is no pass');
+  assert.deepEqual(barStatus([]), { small: [], steps: null, met: false });
+
+  const pane = read('../components/AgentConsole.tsx');
+  assert.match(pane, /<BarLine history=\{value\.history\} \/>/, 'the Evals shelf shows the bar');
+  assert.match(pane, /data-eval-bar/);
+  assert.match(pane, /r\.progress\.map\(/, "each run shows its progress lines");
 });
