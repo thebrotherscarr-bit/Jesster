@@ -142,3 +142,48 @@ test('a taken port is said plainly', async () => {
     first.close();
   }
 });
+
+test('/rpc speaks 2026-07-28 with no initialize (server/discover, resultType, no ping) and the legacy handshake beside it', async () => {
+  const g = ground();
+  const { server, rpc } = await up(door.serve(() => g));
+  const _meta = { 'io.modelcontextprotocol/protocolVersion': '2026-07-28', 'io.modelcontextprotocol/clientCapabilities': {}, 'io.modelcontextprotocol/clientInfo': { name: 't', version: '0' } };
+  try {
+    const [disc, list, called, ping, bad] = await rpc(
+      [
+        { jsonrpc: '2.0', id: 1, method: 'server/discover', params: { _meta } },
+        { jsonrpc: '2.0', id: 2, method: 'tools/list', params: { _meta } },
+        { jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'remember', arguments: { text: 'modern' }, _meta } },
+        { jsonrpc: '2.0', id: 4, method: 'ping', params: { _meta } },
+        { jsonrpc: '2.0', id: 5, method: 'tools/list', params: { _meta: { ..._meta, 'io.modelcontextprotocol/protocolVersion': '1900-01-01' } } },
+      ],
+      WIRE
+    );
+    assert.equal(disc.result.resultType, 'complete');
+    assert.ok(disc.result.supportedVersions.includes('2026-07-28') && disc.result.supportedVersions.includes('2025-06-18'));
+    assert.equal(disc.result._meta['io.modelcontextprotocol/serverInfo'].name, 'secondbrain-door');
+    assert.match(disc.result.instructions, /You are a seat at the atlas household/);
+    assert.deepEqual(list.result.tools.map((t) => t.name), door.ORDER, 'the Go door\'s fixed order');
+    assert.equal(list.result.resultType, 'complete');
+    assert.equal(list.result.cacheScope, 'private');
+    assert.equal(typeof list.result.ttlMs, 'number');
+    assert.equal(called.result.resultType, 'complete');
+    assert.ok(!called.result.isError, called.result.content[0].text);
+    assert.equal(ping.error.code, -32601);
+    assert.equal(bad.error.code, -32022);
+    assert.ok(bad.error.data.supported.includes('2026-07-28'));
+    assert.equal(bad.error.data.requested, '1900-01-01');
+    const [init, lping, llist] = await rpc([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: '2025-06-18' } },
+      { jsonrpc: '2.0', method: 'notifications/initialized' },
+      { jsonrpc: '2.0', id: 2, method: 'ping' },
+      { jsonrpc: '2.0', id: 3, method: 'tools/list' },
+    ]);
+    assert.equal(init.result.protocolVersion, '2025-06-18');
+    assert.deepEqual(lping.result, {});
+    assert.equal(llist.result.resultType, undefined);
+    const stranger = (await rpc({ jsonrpc: '2.0', id: 9, method: 'tools/call', params: { name: 'get_in_line', arguments: {}, _meta } }))[0];
+    assert.equal(stranger.error.code, -32001, 'the gate holds in the modern era too');
+  } finally {
+    server.close();
+  }
+});

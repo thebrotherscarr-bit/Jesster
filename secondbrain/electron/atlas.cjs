@@ -13,6 +13,7 @@
  */
 const path = require('path');
 const estate = require('./estate.cjs');
+const mcpv = require('./mcpversion.cjs');
 
 // What the agent is offered from Atlas by default: the estate's records and
 // law, memory, chains, the steward and the engine, git as it stands, the
@@ -60,7 +61,7 @@ const WRITE_TOOLS = ['write_note', 'append_to_note', 'todo', 'memory', 'skill_sa
 // SecondBrain's browser window and computer use, for Steward too (Kyle, 2026-10-28: "allow clicking and
 // typing too", "computer use"). Served only while switched on in Settings, which is when they exist.
 const SCREEN_TOOLS = ['browser_open', 'browser_read', 'browser_click', 'browser_type', 'browser_press', 'browser_scroll', 'browser_back', 'computer_task', 'screen_look'];
-const PROTOCOL = '2025-06-18';
+const SERVER = { name: 'secondbrain', version: '1' };
 const SKILL_INDEX_URI = 'skill://index.json';
 
 // The Agent tab, typed into from outside (Kyle, 2026-10-28: "write an extension for secondbrain so
@@ -169,12 +170,50 @@ function useDoor(door) {
   installedDoor = door || null;
 }
 
+function instructionsFor(writes, door) {
+  return (
+    `The user's SecondBrain notes vault. ${writes ? 'Reading and writing are allowed.' : 'Read-only: the user has not allowed writes.'}` +
+    (door && door.list().length ? `\n\nThe Atlas door is served here too.\n${door.instructions}` : '')
+  );
+}
+
 /**
- * One JSON-RPC request → its response (or null for a notification). `registry`
- * holds the agent's tools; only the shared ones are served. `door` (the
- * installed one unless given) serves the Atlas door's tools beside them.
+ * One JSON-RPC request → its response (or null for a notification), in either MCP era
+ * (mcpversion.cjs): a request carrying the 2026-07-28 `_meta` envelope is served statelessly, with
+ * server/discover, resultType and the cache hints; `initialize`, and a request without the
+ * envelope, are served as before (2025-06-18 and earlier, ping included). `registry` holds the
+ * agent's tools; only the shared ones are served. `door` (the installed one unless given) serves
+ * the Atlas door's tools beside them. `headers` (Node's, lowercase) turns on the Streamable HTTP
+ * header checks for a modern request.
  */
-async function handleMcp(msg, { registry, ctx, writes = false, door = installedDoor }) {
+async function handleMcp(msg, opts) {
+  const era = mcpv.classify(msg, opts.headers);
+  if (era.era === 'legacy') return legacyMcp(msg, opts);
+  const { id, method } = msg;
+  if (id === undefined || id === null) return null; // a notification
+  if (era.error) return { jsonrpc: '2.0', id, error: era.error };
+  const writes = Boolean(opts.writes);
+  const door = 'door' in opts ? opts.door : installedDoor;
+  if (method === 'server/discover') {
+    const result = mcpv.discoverResult({ ...SERVER, capabilities: { tools: {}, resources: {} }, instructions: instructionsFor(writes, door) });
+    return mcpv.finishModern({ jsonrpc: '2.0', id, result }, method, SERVER);
+  }
+  if (mcpv.REMOVED.has(method)) return { jsonrpc: '2.0', id, error: { code: -32601, message: `method not found: ${method} (removed in ${mcpv.LATEST})` } };
+  const out = await legacyMcp(msg, opts);
+  // 2026-07-28 moved "resource not found" from -32002 to -32602 (Invalid Params)
+  if (out && out.error && out.error.code === -32002) out.error.code = mcpv.INVALID_PARAMS;
+  return mcpv.finishModern(out, method, SERVER);
+}
+
+/** POST /mcp (main.cjs): { status, body } for one request; body null is 202 Accepted. */
+async function serveMcpHttp(body, headers, opts) {
+  const out = await handleMcp(body, { ...opts, headers: headers || {} });
+  if (out === null) return { status: 202, body: null };
+  const modern = mcpv.classify(body).era === 'modern';
+  return { status: modern ? mcpv.httpStatus(out) : 200, body: out };
+}
+
+async function legacyMcp(msg, { registry, ctx, writes = false, door = installedDoor }) {
   const allowed = new Set([...READ_TOOLS, ...SCREEN_TOOLS, ...(writes ? WRITE_TOOLS : [])]);
   if (!msg || msg.jsonrpc !== '2.0' || typeof msg.method !== 'string') {
     return { jsonrpc: '2.0', id: msg?.id ?? null, error: { code: -32600, message: 'invalid request' } };
@@ -184,12 +223,10 @@ async function handleMcp(msg, { registry, ctx, writes = false, door = installedD
   const ok = (result) => ({ jsonrpc: '2.0', id, result });
   if (method === 'initialize') {
     return ok({
-      protocolVersion: params.protocolVersion || PROTOCOL,
+      protocolVersion: mcpv.negotiateLegacy(params.protocolVersion),
       capabilities: { tools: {}, resources: {} },
-      serverInfo: { name: 'secondbrain', version: '1' },
-      instructions:
-        `The user's SecondBrain notes vault. ${writes ? 'Reading and writing are allowed.' : 'Read-only: the user has not allowed writes.'}` +
-        (door && door.list().length ? `\n\nThe Atlas door is served here too.\n${door.instructions}` : ''),
+      serverInfo: SERVER,
+      instructions: instructionsFor(writes, door),
     });
   }
   if (method === 'ping') return ok({});
@@ -266,4 +303,4 @@ function keyOk(header, key) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-module.exports = { atlasServer, withAtlas, handleMcp, useDoor, keyOk, agentCall, approvalCall, APPROVAL_TOOL, DEFAULT_TOOLS, READ_TOOLS, WRITE_TOOLS, AGENT_TOOLS, SCREEN_TOOLS, ESTATE_READ_TOOLS, ESTATE_WRITE_TOOLS };
+module.exports = { atlasServer, withAtlas, handleMcp, serveMcpHttp, useDoor, keyOk, agentCall, approvalCall, APPROVAL_TOOL, DEFAULT_TOOLS, READ_TOOLS, WRITE_TOOLS, AGENT_TOOLS, SCREEN_TOOLS, ESTATE_READ_TOOLS, ESTATE_WRITE_TOOLS };
