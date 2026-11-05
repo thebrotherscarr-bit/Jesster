@@ -136,7 +136,7 @@ const ESTATE: { name: string; is: string }[] = [
   { name: 'Steward', is: 'The agent that runs the system: a MAF harness on Ollama. His service (43120) is what this tab talks to; his MCP (43121) offers him to other clients.' },
   { name: 'Jesster', is: "The console. It runs Steward's service, shows his cards, and serves him notes, the web, skills and the door's tools at /mcp (43110)." },
   { name: 'The door', is: "Aurora's tools, served by Jesster on 43111. A write from anyone but your own window waits as a card." },
-  { name: 'Aurora', is: 'The glass: the web app on 8091, opened by Open Aurora.' },
+  { name: 'Aurora', is: 'The glass: the web app on 8091.' },
   { name: 'Manjuel', is: 'The REPL and semantic microkernel: the record, the law, the seats and the rack of models.' },
   { name: 'Ollama', is: 'The local models, on 11434. One model at a time on this PC.' },
 ];

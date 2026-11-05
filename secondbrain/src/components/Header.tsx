@@ -2,10 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { OllamaConfig } from '../types/index.ts';
 import { KernelSync } from '../hooks/useKernelSync.ts';
 import { DesktopUpdate } from '../hooks/useDesktopUpdate.ts';
-import { AtlasButton } from './AtlasButton.tsx';
-import { Brain, Cpu, Link2, Download, Settings as SettingsIcon, Bot, Smartphone } from 'lucide-react';
+import { Brain, Cpu, Link2, Download, Settings as SettingsIcon, Bot, Smartphone, Workflow } from 'lucide-react';
 
-export type ActiveTab = 'notes' | 'agent' | 'phone';
+export type ActiveTab = 'notes' | 'agent' | 'phone' | 'flows';
 
 interface HeaderProps {
   activeTab: ActiveTab;
@@ -98,7 +97,7 @@ export const Header: React.FC<HeaderProps> = ({
         </span>
       </div>
 
-      {/* where you are: the tabs, and Aurora beside them */}
+      {/* where you are: the tabs */}
       <nav className="flex items-center gap-1 text-xs font-medium text-neutral-400 min-w-0">
         <button data-topbar="Notes" onClick={() => onSelectTab('notes')} title="Notes" className={tab(activeTab === 'notes')}>
           <Brain className="w-3.5 h-3.5" />
@@ -125,7 +124,14 @@ export const Header: React.FC<HeaderProps> = ({
           </button>
         )}
 
-        <AtlasButton />
+        {/* the Flows shelf: the flows, each drawn as its blocks, with Steward's card beside them. It took Open Aurora's
+            place (the operator, 2026-11-05: "for now"); AtlasButton.tsx is kept, unhooked */}
+        {window.secondbrainDesktop?.schedules && (
+          <button data-topbar="Flows" onClick={() => onSelectTab('flows')} title="Flows: the automations, each drawn as its blocks" className={tab(activeTab === 'flows')}>
+            <Workflow className="w-3.5 h-3.5" />
+            <span className="hidden md:inline">Flows</span>
+          </button>
+        )}
       </nav>
 
       {/* the app itself: where notes are kept, updates and Settings */}

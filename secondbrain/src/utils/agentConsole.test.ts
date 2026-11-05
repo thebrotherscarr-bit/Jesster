@@ -11,13 +11,19 @@ const marks = (text: string, attr: string) => [...text.matchAll(new RegExp(`${at
 
 test('the top bar carries the app-wide buttons and nothing else', () => {
   const header = read('../components/Header.tsx');
-  const atlas = read('../components/AtlasButton.tsx');
-  assert.deepEqual([...marks(header, 'data-topbar'), ...marks(atlas, 'data-topbar')].sort(), [...TOP_BAR].sort());
+  assert.deepEqual(marks(header, 'data-topbar').sort(), [...TOP_BAR].sort());
+  // Flows took Open Aurora's place (2026-11-05): the button is in the bar, Aurora's is unhooked (its file is kept)
+  assert.ok(TOP_BAR.includes('Flows') && !TOP_BAR.includes('Open Aurora'));
+  assert.match(header, /onSelectTab\('flows'\)/);
+  assert.ok(!/<AtlasButton|import \{ AtlasButton \}/.test(header), 'Open Aurora is not in the top bar');
+  assert.match(read('../App.tsx'), /<FlowsShelf /, 'the Flows tab renders the shelf');
   // every button in the bar is one of them: a new, unmarked button turns this red
   assert.equal((header.match(/<button\b/g) || []).length, marks(header, 'data-topbar').length);
-  for (const gone of ['StewardButton', 'ServicesButton', 'onOpenIntegrations', 'onOpenQuickCapture', 'onCreateNewNote', 'importFiles', "'flows'", "'github'", "'ask'", 'InboxSyncButton'])
+  for (const gone of ['StewardButton', 'ServicesButton', 'onOpenIntegrations', 'onOpenQuickCapture', 'onCreateNewNote', 'importFiles', "'github'", "'ask'", 'InboxSyncButton'])
     assert.ok(!header.includes(gone), `${gone} is no longer in the top bar`);
 });
+
+// "'flows'" left the gone list on 2026-11-05: the operator's call brought Flows back as the Flows shelf (FlowsShelf.tsx)
 
 test('every control that left the top bar stands in the console', () => {
   const view = read('../components/AgentView.tsx');
