@@ -49,6 +49,25 @@ export function versusBaseline(run: { set: string; checksPassed: number; checksT
   return run.checksPassed > b.checks ? 'above' : run.checksPassed === b.checks ? 'at' : 'below';
 }
 
+/**
+ * Steward's bar (the overnight plan, 2026-11-04): the small set 3/3 (every case) on its two newest runs in a row, and
+ * the newest steps run passing. History is newest first, as the Evals shelf reads it.
+ */
+export interface BarStatus {
+  small: { passed: number; total: number; ts: string }[];
+  steps: { passed: number; total: number; ts: string } | null;
+  met: boolean;
+}
+
+export function barStatus(history: { set: string; passed: number; total: number; ts: string }[]): BarStatus {
+  const pick = (r: { passed: number; total: number; ts: string }) => ({ passed: r.passed, total: r.total, ts: r.ts });
+  const whole = (r: { passed: number; total: number }) => r.total > 0 && r.passed === r.total;
+  const small = history.filter((r) => r.set === 'small').slice(0, 2).map(pick);
+  const last = history.find((r) => r.set === 'steps');
+  const steps = last ? pick(last) : null;
+  return { small, steps, met: small.length === 2 && small.every(whole) && !!steps && whole(steps) };
+}
+
 /** One answered card from approvals.history(), whatever its plane, as the shelf shows it. */
 export interface HistoryRow {
   key: string;

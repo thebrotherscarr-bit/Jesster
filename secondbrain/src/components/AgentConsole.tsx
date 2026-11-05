@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { X, Check, CircleAlert, RefreshCw } from 'lucide-react';
 import { EvalsView, MemoryFile, RunsView, SkillInfo, StewardStatus, StewardUses, ToolPolicy } from '../types/desktop.ts';
-import { CONSOLE_SHELVES, ConsoleShelf, mcpServers, shortTime, versusBaseline } from '../utils/agentConsole.ts';
+import { CONSOLE_SHELVES, ConsoleShelf, barStatus, mcpServers, shortTime, versusBaseline } from '../utils/agentConsole.ts';
 import { approvalWord } from '../utils/approvals.ts';
 import { ServersShelf } from './ServersShelf.tsx';
 import { ApprovalsShelf } from './ApprovalsShelf.tsx';
@@ -165,6 +165,19 @@ const ServersPane: React.FC = () => (
 
 // ---- Evals --------------------------------------------------------------------------------------------------------
 
+/** The bar: the small set whole on its two newest runs, and the newest steps run passing (barStatus). */
+const BarLine: React.FC<{ history: EvalsView['history'] }> = ({ history }) => {
+  const bar = barStatus(history);
+  const run = (r: { passed: number; total: number } | null) =>
+    r ? <span className={r.total > 0 && r.passed === r.total ? 'text-emerald-400' : 'text-amber-400'}>{r.passed}/{r.total}</span> : <span>none yet</span>;
+  return (
+    <div data-eval-bar className="text-[11px] text-neutral-400 tabular-nums">
+      Bar: <span className={bar.met ? 'text-emerald-400 font-semibold' : 'text-amber-400'}>{bar.met ? 'met' : 'not met'}</span> · small{' '}
+      {bar.small.length ? bar.small.map((r, i) => <React.Fragment key={r.ts}>{i ? ', ' : ''}{run(r)}</React.Fragment>) : <span>none yet</span>} · steps {run(bar.steps)}
+    </div>
+  );
+};
+
 const EvalsPane: React.FC = () => {
   const api = window.secondbrainDesktop?.stewardConsole;
   const { value, error, read } = useRead<EvalsView>(api?.evals);
@@ -183,6 +196,7 @@ const EvalsPane: React.FC = () => {
         </div>
       )}
       {value?.baselineError && <p className="text-xs text-amber-400">The baseline could not be read: {value.baselineError}</p>}
+      {value && value.history.length > 0 && <BarLine history={value.history} />}
       {value && !value.history.length && <Empty>No eval has run yet.</Empty>}
       {!value && !error && <Empty>Reading…</Empty>}
       {value?.history.map((r) => {
@@ -204,6 +218,15 @@ const EvalsPane: React.FC = () => {
                 {r.model && <>model {r.model} · </>}
                 {r.gitHead && <>at {r.gitHead}</>}
               </div>
+              {r.progress.length > 0 && (
+                <ol data-eval-progress className="pl-1 text-[11px] text-neutral-400 space-y-0.5">
+                  {r.progress.map((p, i) => (
+                    <li key={i} className={/failed/.test(p) ? 'text-amber-400' : /passed/.test(p) ? 'text-emerald-400' : ''}>
+                      {p}
+                    </li>
+                  ))}
+                </ol>
+              )}
               {r.cases.map((c, i) => (
                 <div key={i} className="space-y-0.5">
                   <div className={c.passed ? 'text-emerald-400' : 'text-amber-400'}>
