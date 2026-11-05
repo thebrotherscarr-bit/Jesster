@@ -2,6 +2,7 @@
   "name": "secondbrain-local",
   "productName": "SecondBrain",
   "private": true,
+  "license": "MIT",
   "version": "0.1.0",
   "type": "module",
   "main": "electron/main.cjs",

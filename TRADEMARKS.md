@@ -2,7 +2,7 @@
 
 This policy is the Estate's, the same as in
 [Neiro's TRADEMARKS.md](https://github.com/thebrotherscarr-bit/Neiro/blob/main/TRADEMARKS.md).
-The license in this repository (Apache-2.0) grants broad rights to the **work**. It grants no
+The license in this repository (MIT) grants broad rights to the **work**. It grants no
 rights to the **names**.
 
 The following names identify these projects and these projects only:
@@ -15,7 +15,7 @@ The following names identify these projects and these projects only:
 
 ## What this means
 
-You may fork, modify and redistribute this software under the Apache License 2.0. That is your
+You may fork, modify and redistribute this software under the MIT License. That is your
 right and it is welcome. But a modified copy is **not SecondBrain**, and must therefore:
 
 1. **Rename itself.** Do not call your derivative by any of the names above, and do not use them in

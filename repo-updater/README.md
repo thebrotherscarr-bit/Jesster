@@ -42,4 +42,4 @@ commit never carries a protected file, the fingerprint and `via` marker ride
 in the commit body, and the engine source is statically clean of
 force/hard-clean/`add -A`.
 
-Standard library only. Apache-2.0, same as this repository.
+Standard library only. MIT, same as this repository.
