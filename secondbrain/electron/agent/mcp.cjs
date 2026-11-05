@@ -14,14 +14,24 @@
  * stdio transport, JSON-RPC 2.0 one message per line. Each server's tools
  * appear as mcp__<server>__<tool>. Calls need the user's OK unless the
  * server is marked trusted: an outside server's tools can do anything.
+ *
+ * Both MCP eras (../mcpversion.cjs; spec 2026-07-28, transports/stdio "Backward Compatibility"):
+ * a server is probed with server/discover at 2026-07-28. If it answers with that version, every
+ * request carries the _meta envelope and there is no initialize. On any other error (a 2025
+ * server's "method not found", -32022 naming only 2025 versions) or no answer within the probe
+ * timeout, the client falls back to the 2025-06-18 initialize handshake, which it then keeps for
+ * that process.
  */
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
+const mcpv = require('../mcpversion.cjs');
 
-const PROTOCOL = '2025-06-18';
 const CALL_TIMEOUT = 120000;
 const START_TIMEOUT = 60000;
+// the Python SDK's probe waits 10 s (DISCOVER_TIMEOUT_SECONDS); a silent legacy server costs that once
+const PROBE_TIMEOUT = 10000;
+const CLIENT_INFO = { name: 'secondbrain', version: '1' };
 
 function toolName(server, tool) {
   return `mcp__${server}__${tool}`.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 64);
@@ -39,9 +49,18 @@ class McpServer {
     this.status = 'stopped';
     this.error = null;
     this.stderr = '';
+    this.era = null; // 'modern' or 'legacy', settled at start()
+    this.version = null;
+    this.probeTimeout = PROBE_TIMEOUT;
   }
 
+  /** One request; on a modern server its params carry the 2026-07-28 _meta envelope. */
   request(method, params, timeout = CALL_TIMEOUT) {
+    if (this.era === 'modern') params = { ...(params || {}), _meta: { ...mcpv.requestMeta(CLIENT_INFO, {}, this.version), ...((params && params._meta) || {}) } };
+    return this.raw(method, params, timeout);
+  }
+
+  raw(method, params, timeout) {
     const id = ++this.seq;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
@@ -91,7 +110,7 @@ class McpServer {
         if (w) {
           clearTimeout(w.timer);
           this.waiting.delete(msg.id);
-          if (msg.error) w.reject(new Error(`${this.name}: ${msg.error.message}`));
+          if (msg.error) w.reject(Object.assign(new Error(`${this.name}: ${msg.error.message}`), { code: msg.error.code, data: msg.error.data }));
           else w.resolve(msg.result);
         }
       }
@@ -117,11 +136,7 @@ class McpServer {
     });
     exited.catch(() => {});
     try {
-      await Promise.race([
-        this.request('initialize', { protocolVersion: PROTOCOL, capabilities: {}, clientInfo: { name: 'secondbrain', version: '1' } }, START_TIMEOUT),
-        exited,
-      ]);
-      this.send({ jsonrpc: '2.0', method: 'notifications/initialized' });
+      await Promise.race([this.negotiate(), exited]);
       const tools = [];
       let cursor;
       do {
@@ -139,6 +154,31 @@ class McpServer {
       throw e;
     }
     return this.tools;
+  }
+
+  /**
+   * Settle the era: server/discover at 2026-07-28, else the legacy handshake. A -32022 naming no
+   * version either era here speaks is a real incompatibility and is thrown.
+   */
+  async negotiate() {
+    let probe;
+    try {
+      probe = await this.raw('server/discover', { _meta: mcpv.requestMeta(CLIENT_INFO) }, Math.min(this.probeTimeout, START_TIMEOUT));
+    } catch (e) {
+      if (e.code === mcpv.UNSUPPORTED_PROTOCOL_VERSION && e.data && Array.isArray(e.data.supported)) {
+        if (!e.data.supported.some((v) => mcpv.SUPPORTED.includes(v))) throw new Error(`${this.name} speaks MCP ${e.data.supported.join(', ')}; SecondBrain speaks ${mcpv.SUPPORTED.join(', ')}`);
+      }
+      probe = null; // a legacy server: its "method not found", any other error, or silence
+    }
+    if (probe && Array.isArray(probe.supportedVersions) && probe.supportedVersions.includes(mcpv.LATEST)) {
+      this.era = 'modern';
+      this.version = mcpv.LATEST;
+      return;
+    }
+    const r = await this.raw('initialize', { protocolVersion: mcpv.LEGACY_DEFAULT, capabilities: {}, clientInfo: CLIENT_INFO }, START_TIMEOUT);
+    this.era = 'legacy';
+    this.version = (r && r.protocolVersion) || mcpv.LEGACY_DEFAULT;
+    this.send({ jsonrpc: '2.0', method: 'notifications/initialized' });
   }
 
   async call(tool, args) {
