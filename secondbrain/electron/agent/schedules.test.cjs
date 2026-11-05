@@ -278,18 +278,53 @@ test('the nightly eval recipe: skipped while Steward is busy; a failed or overlo
   assert.match(vault.load().find((n) => n.id === late.id).content, /had not ended 9 hours after it started/);
 });
 
-test("stewardRecipes speaks MCP's tools/call to his host: run_recipe with the recipe and its window, recipe_status by id; an error result throws", async () => {
+test("stewardRecipes speaks MCP 2026-07-28's tools/call to his host: run_recipe with the recipe and its window, recipe_status by id; an error result throws", async () => {
   const posted = [];
   const replies = [
     { jsonrpc: '2.0', id: 1, result: { content: [{ type: 'text', text: '{"run_id": "r1", "state": "running"}' }], isError: false } },
     { jsonrpc: '2.0', id: 2, result: { content: [{ type: 'text', text: '{"state": "done", "ok": true, "text": "t", "short": "s"}' }], isError: false } },
     { jsonrpc: '2.0', id: 3, result: { content: [{ type: 'text', text: 'no workflow step "run_shell"' }], isError: true } },
   ];
-  const s = workflows.stewardRecipes({ url: 'http://127.0.0.1:43121/mcp', post: async (url, body) => (posted.push([url, body]), replies.shift()) });
+  const s = workflows.stewardRecipes({ url: 'http://127.0.0.1:43121/mcp', post: async (url, body, headers) => (posted.push([url, body, headers]), replies.shift()) });
   assert.deepEqual(await s.runRecipe({ name: 'x', steps: ['plan_left'] }, 1.5), { run_id: 'r1', state: 'running' });
   assert.deepEqual(await s.recipeStatus('r1'), { state: 'done', ok: true, text: 't', short: 's' });
   await assert.rejects(s.runRecipe({ steps: ['run_shell'] }), /run_recipe: no workflow step "run_shell"/);
-  assert.deepEqual(posted[0], ['http://127.0.0.1:43121/mcp', { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'run_recipe', arguments: { recipe: { name: 'x', steps: ['plan_left'] }, since: 1.5 } } }]);
-  assert.deepEqual(posted[1][1].params, { name: 'recipe_status', arguments: { run_id: 'r1' } });
+  const meta = { 'io.modelcontextprotocol/protocolVersion': '2026-07-28', 'io.modelcontextprotocol/clientInfo': { name: 'secondbrain-workflows', version: '1' }, 'io.modelcontextprotocol/clientCapabilities': {} };
+  assert.deepEqual(posted[0], [
+    'http://127.0.0.1:43121/mcp',
+    { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'run_recipe', arguments: { recipe: { name: 'x', steps: ['plan_left'] }, since: 1.5 }, _meta: meta } },
+    { 'MCP-Protocol-Version': '2026-07-28', 'Mcp-Method': 'tools/call', 'Mcp-Name': 'run_recipe' },
+  ]);
+  assert.deepEqual(posted[1][1].params, { name: 'recipe_status', arguments: { run_id: 'r1' }, _meta: meta });
+  assert.equal(posted[1][2]['Mcp-Name'], 'recipe_status');
+});
+
+test('a recipe call reaches the host as one the 2026-07-28 server check (mcpversion.classify, with its headers) serves as modern', async () => {
+  const http = require('http');
+  const mcpv = require('../mcpversion.cjs');
+  let seen;
+  const host = http.createServer((req, res) => {
+    let text = '';
+    req.on('data', (c) => (text += c));
+    req.on('end', () => {
+      seen = [JSON.parse(text), req.headers];
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ jsonrpc: '2.0', id: 1, result: { content: [{ type: 'text', text: '{"state": "running"}' }] } }));
+    });
+  });
+  await new Promise((r) => host.listen(0, '127.0.0.1', r));
+  try {
+    const s = workflows.stewardRecipes({ url: `http://127.0.0.1:${host.address().port}/mcp` });
+    assert.deepEqual(await s.recipeStatus('r1'), { state: 'running' });
+  } finally {
+    host.close();
+  }
+  const era = mcpv.classify(seen[0], seen[1]);
+  assert.equal(era.error, undefined);
+  assert.equal(era.era, 'modern');
+  assert.equal(era.version, '2026-07-28');
+  assert.equal(seen[1]['mcp-name'], 'recipe_status');
+  assert.match(seen[1].accept, /application\/json/);
+  assert.match(seen[1].accept, /text\/event-stream/);
   assert.equal(workflows.STEWARD_MCP, 'http://127.0.0.1:43121/mcp');
 });

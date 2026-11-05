@@ -991,6 +991,8 @@ ipcMain.handle('voice:where', (event) => {
 // SecondBrain → Atlas: atlas-mcp in the MCP client. Atlas/Manjuel → SecondBrain:
 // POST /mcp on this app's loopback origin, with a bearer key.
 async function serveMcp(req, res) {
+  // streamable-http "Security & Endpoint": a present Origin that is not a loopback origin is 403 (DNS rebinding)
+  if (!atlas.originOk(req.headers.origin)) return res.status(403).json(atlas.FORBIDDEN_ORIGIN);
   const share = getSettings().get('share');
   if (!share.enabled) return res.status(404).json({ error: 'sharing is off (Jesster → Settings → Share with Aurora & Manjuel)' });
   const host = String(req.headers.host || '').split(':')[0];

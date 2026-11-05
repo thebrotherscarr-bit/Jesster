@@ -550,3 +550,12 @@ test("estate_status carries each repository's version from its local refs, cache
   const main = fs.readFileSync(path.join(__dirname, 'main.cjs'), 'utf8');
   assert.equal((main.match(/versions: estateVersions,/g) || []).length, 1, 'estate_status reads the cache');
 });
+
+test("POST /mcp checks Origin first (streamable-http 'Security & Endpoint'): none or a loopback origin is served, any other is 403", () => {
+  for (const o of [undefined, 'http://127.0.0.1:43110', 'http://localhost:5173', 'https://localhost', 'http://[::1]:8091']) assert.equal(atlas.originOk(o), true, String(o));
+  for (const o of ['https://evil.example', 'http://127.0.0.1.evil.example', 'http://localhost.evil.example:80', 'null', '', 'file://', 'http://10.0.0.2:43110']) assert.equal(atlas.originOk(o), false, o);
+  assert.equal(atlas.FORBIDDEN_ORIGIN.id, undefined, 'the error response has no id, as the spec says');
+  const main = fs.readFileSync(path.join(__dirname, 'main.cjs'), 'utf8');
+  const serve = main.slice(main.indexOf('async function serveMcp(req, res) {'));
+  assert.match(serve.split('\n').slice(1, 4).join('\n'), /if \(!atlas\.originOk\(req\.headers\.origin\)\) return res\.status\(403\)\.json\(atlas\.FORBIDDEN_ORIGIN\);/, 'before the share, host and key checks');
+});

@@ -113,6 +113,39 @@ function requestMeta(clientInfo, clientCapabilities = {}, version = LATEST) {
   return { [META.protocolVersion]: version, [META.clientInfo]: clientInfo, [META.clientCapabilities]: clientCapabilities };
 }
 
+/** A header value as streamable-http "Value Encoding" says: as it is when plain ASCII, else `=?base64?...?=`. */
+function encodeHeader(v) {
+  const s = String(v);
+  const plain = /^[\x21-\x7e]([\x20-\x7e]*[\x21-\x7e])?$/.test(s) && !/^=\?base64\?.*\?=$/.test(s);
+  return plain ? s : `=?base64?${Buffer.from(s, 'utf8').toString('base64')}?=`;
+}
+
+/**
+ * The headers a modern client sends with a request (streamable-http "Request Metadata"): MCP-Protocol-Version
+ * matching the body's _meta, Mcp-Method, and Mcp-Name for the methods that carry one.
+ */
+function requestHeaders(msg, version = LATEST) {
+  const headers = { 'MCP-Protocol-Version': version, 'Mcp-Method': msg.method };
+  const field = NAME_FIELD[msg.method];
+  const value = field && msg.params ? msg.params[field] : undefined;
+  if (value != null) headers['Mcp-Name'] = encodeHeader(value);
+  return headers;
+}
+
+/**
+ * Whether a request's Origin may be served (streamable-http "Security & Endpoint": "Servers MUST validate the
+ * Origin header on all incoming connections to prevent DNS rebinding attacks. If the Origin header is present and
+ * invalid, servers MUST respond with HTTP 403 Forbidden"). No Origin (a non-browser client) is served; a present one
+ * must be a loopback origin, http or https, any port.
+ */
+function originOk(origin) {
+  if (origin === undefined) return true;
+  return /^https?:\/\/(127\.0\.0\.1|localhost|\[::1\])(:\d{1,5})?$/i.test(String(origin));
+}
+
+/** The 403's body: a JSON-RPC error response with no id, as the spec allows. */
+const FORBIDDEN_ORIGIN = { jsonrpc: '2.0', error: { code: -32600, message: 'Forbidden: the Origin header is not a loopback origin' } };
+
 module.exports = {
   MODERN,
   LEGACY,
@@ -132,4 +165,8 @@ module.exports = {
   finishModern,
   httpStatus,
   requestMeta,
+  encodeHeader,
+  requestHeaders,
+  originOk,
+  FORBIDDEN_ORIGIN,
 };

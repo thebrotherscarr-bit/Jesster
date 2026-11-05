@@ -305,4 +305,4 @@ function keyOk(header, key) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-module.exports = { atlasServer, withAtlas, handleMcp, serveMcpHttp, useDoor, keyOk, agentCall, approvalCall, APPROVAL_TOOL, DEFAULT_TOOLS, READ_TOOLS, WRITE_TOOLS, AGENT_TOOLS, SCREEN_TOOLS, ESTATE_READ_TOOLS, ESTATE_WRITE_TOOLS };
+module.exports = { atlasServer, withAtlas, handleMcp, serveMcpHttp, useDoor, keyOk, originOk: mcpv.originOk, FORBIDDEN_ORIGIN: mcpv.FORBIDDEN_ORIGIN, agentCall, approvalCall, APPROVAL_TOOL, DEFAULT_TOOLS, READ_TOOLS, WRITE_TOOLS, AGENT_TOOLS, SCREEN_TOOLS, ESTATE_READ_TOOLS, ESTATE_WRITE_TOOLS };

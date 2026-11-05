@@ -187,3 +187,20 @@ test('/rpc speaks 2026-07-28 with no initialize (server/discover, resultType, no
     server.close();
   }
 });
+
+test('the door checks Origin on every request (MCP 2026-07-28 streamable-http): a non-loopback one is 403, loopback or none is served', async () => {
+  const g = ground();
+  const { server, base } = await up(door.serve(() => g));
+  try {
+    const at = (origin) => fetch(base + '/health', { headers: origin ? { Origin: origin } : {} });
+    assert.equal((await at()).status, 200);
+    assert.equal((await at('http://127.0.0.1:8091')).status, 200, 'the glass');
+    const evil = await at('https://evil.example');
+    assert.equal(evil.status, 403);
+    assert.equal((await evil.json()).error.message, 'Forbidden: the Origin header is not a loopback origin');
+    const rpc = await fetch(base + '/rpc', { method: 'POST', headers: { Origin: 'http://attacker.test', Authorization: 'Bearer ' + WIRE }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) });
+    assert.equal(rpc.status, 403, 'not even the wire is served from a foreign page');
+  } finally {
+    server.close();
+  }
+});
