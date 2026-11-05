@@ -30,6 +30,7 @@ export const SETTINGS: SettingPlace[] = [
   { control: 'BrowserSection', files: ['AgentConsole.tsx'], place: 'Agent tab → Console → Tools', clicks: 2 },
   { control: 'ComputerSection', files: ['AgentConsole.tsx'], place: 'Agent tab → Console → Tools', clicks: 2 },
   { control: 'CheckSection', files: ['AgentConsole.tsx'], place: 'Agent tab → Console → Tools', clicks: 2 },
+  { control: 'TransportSection', files: ['AgentConsole.tsx'], place: 'Agent tab → Console → Tools', clicks: 2 },
   { control: 'McpSection', files: ['AgentConsole.tsx'], place: 'Agent tab → Console → Tools', clicks: 2 },
   { control: 'AutomationsSection', files: ['AgentConsole.tsx'], place: 'Agent tab → Console → Tools', clicks: 2 },
 ];

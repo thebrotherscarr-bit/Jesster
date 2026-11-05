@@ -236,7 +236,7 @@ async function turn({ base, text, previous, approve, review, metadata, onEvent =
  * `held` until Start or Restart, so `keepUp` does not bring it back behind the user's back. `up()` says whether
  * something answers on the port now, starting nothing.
  */
-function service({ getConfig, vaultDir, answering, waitFor, startOwned, wait = 90000, script = SCRIPT, port: fixedPort = 0, log = 'steward.log', portOwner = () => null, killTree = () => {} }) {
+function service({ getConfig, vaultDir, answering, waitFor, startOwned, wait = 90000, script = SCRIPT, port: fixedPort = 0, log = 'steward.log', portEnv = 'STEWARD_PORT', portOwner = () => null, killTree = () => {} }) {
   let starting = null;
   let child = null;
   let held = false;
@@ -253,7 +253,8 @@ function service({ getConfig, vaultDir, answering, waitFor, startOwned, wait = 9
         if (!dir) throw new Error('Steward was not found: Jesster looks for worlds\\steward beside the notes folder, or the folder in Settings (agent.steward.dir).');
         const python = path.join(dir, ...PYTHON);
         if (!fs.existsSync(python)) throw new Error(`Steward's Python was not found at ${python}.`);
-        child = startOwned(python, [path.join(...script)], dir, { ...process.env, STEWARD_PORT: String(port) }, [log, log]);
+        // the port in the variable the script reads (ag_ui_app.py: STEWARD_AG_UI_PORT)
+        child = startOwned(python, [path.join(...script)], dir, { ...process.env, [portEnv]: String(port) }, [log, log]);
         startedAt = new Date().toISOString();
         if (!(await waitFor(port, wait))) throw new Error(`Steward's ${script[script.length - 1]} did not answer on port ${port}; its log is ${path.join(dir, log)}.`);
         return base;

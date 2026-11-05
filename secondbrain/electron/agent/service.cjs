@@ -301,13 +301,18 @@ class AgentService {
    * with `onCard`, to Telegram's buttons too: then the cards are always the window's own).
    */
   async askSteward(s, text, id, send, approve, onCard, source = 'app') {
-    const base = await this.steward.ensure();
     // his service runs his MAF workflow, which keeps the plan and execute modes itself: the plan
     // comes as an approval request (a card), and the tab sends only the text
     // a conversation that starts with "improve:" is an improvement round (step 6): every turn of it names the loop
     if (!s.stewardPrevious && /^\s*improve:/i.test(text)) s.improve = true;
     // a chat-and-research-only channel (READ_ONLY): his approvals and reviews are refused at once, no card raised
     const readOnly = Boolean(READ_ONLY[source]);
+    // Settings' agent.transport 'ag-ui': the turn goes to his AG-UI host (agui.cjs), with the same cards; an improve
+    // conversation stays on his service, whose review card has no AG-UI answer yet
+    if (this.steward.agui && (this.getModel() || {}).transport === 'ag-ui' && !s.improve) {
+      return this.askStewardAgui(s, text, id, send, readOnly ? this.refuseCards(s, source) : onCard ? this.approveInWindow(id, onCard) : approve || this.approveInWindow(id), source);
+    }
+    const base = await this.steward.ensure();
     const r = await this.steward.turn({
       base,
       text: withSource(text, source),
@@ -321,6 +326,21 @@ class AgentService {
     s.stewardPrevious = r.previous;
     this.threads?.set(id, { previous: s.stewardPrevious, ...(s.improve ? { improve: true } : {}) });
     // the session note shows his tool calls the way it shows the local loop's
+    if (r.calls.length) s.messages.push({ role: 'assistant', content: '', tool_calls: r.calls.map((c) => ({ function: { name: c.name, arguments: c.arguments } })) });
+    s.messages.push({ role: 'assistant', content: r.answer });
+    await this.checkTurn(s, { text, calls: r.calls, answer: r.answer }, send);
+    return r.answer;
+  }
+
+  /**
+   * One turn with Steward over AG-UI (agui.cjs): his AG-UI host is started if needed, the thread is this conversation's
+   * id and the history its own messages; his cards come to `approve` as askSteward's do, and the turn is kept in the
+   * session note the same way.
+   */
+  async askStewardAgui(s, text, id, send, approve, source) {
+    const { ensure, turn } = this.steward.agui;
+    const url = await ensure();
+    const r = await turn({ url, threadId: id, messages: s.messages.slice(0, -1), text: withSource(text, source), approve, onEvent: send, signal: s.abort.signal });
     if (r.calls.length) s.messages.push({ role: 'assistant', content: '', tool_calls: r.calls.map((c) => ({ function: { name: c.name, arguments: c.arguments } })) });
     s.messages.push({ role: 'assistant', content: r.answer });
     await this.checkTurn(s, { text, calls: r.calls, answer: r.answer }, send);
