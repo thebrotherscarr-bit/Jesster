@@ -208,8 +208,8 @@ async function runSchedule(s, deps) {
     }
     if (r.parked) {
       // eval_wait: the tick reads it on (resumeSchedules); the run log says what it waits for
-      schedules.update(s.id, { running: false, pending: r.parked, lastRun: now, lastResult: `waiting on ${r.parked.tag}` });
-      return { id: null, answer: `waiting on ${r.parked.tag}`, ok: true, parked: r.parked };
+      schedules.update(s.id, { running: false, pending: r.parked, lastRun: now, lastResult: `waiting on ${r.parked.label}` });
+      return { id: null, answer: `waiting on ${r.parked.label}`, ok: true, parked: r.parked };
     }
     return finish(s, { ...deps, now }, r.done);
   }
@@ -247,7 +247,7 @@ async function resumeSchedules(deps) {
     }
     if (!r) continue;
     if (r.parked) {
-      deps.schedules.update(s.id, { pending: r.parked, lastResult: `waiting on ${r.parked.tag}` });
+      deps.schedules.update(s.id, { pending: r.parked, lastResult: `waiting on ${r.parked.label}` });
       continue;
     }
     out.push(await finish(s, { ...deps, now }, r.done));
