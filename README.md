@@ -11,7 +11,7 @@ tools (notes, web search and fetch, the Estate's controls) that Steward uses ove
 - **SecondBrain** (this repository) is his console and the hub.
 - **Manjuel** ([Manjuel](https://github.com/thebrotherscarr-bit/Manjuel)) is the ground and the
   record.
-- **Atlas** (Aurora) is parked until Steward has visible computer control.
+- **Atlas** (repository [Aurora](https://github.com/thebrotherscarr-bit/Aurora)) is parked until Steward has visible computer control.
 - **Neiro** has been retired as a gate.
 
 Everything runs on your own PC on local Ollama models. No hosted model is used by default.
