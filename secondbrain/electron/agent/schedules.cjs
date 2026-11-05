@@ -133,6 +133,41 @@ class Schedules {
     return s;
   }
 
+  /**
+   * Change a schedule from the Flows shelf's Set up panel: only the fields given, each checked the way add checks it
+   * (parseWhen, workflows.validateSteps), all before anything is written. An empty steps list makes it a prompt again.
+   */
+  edit(id, spec = {}, now = Date.now()) {
+    const list = this.all();
+    const s = list.find((x) => x.id === id);
+    if (!s) throw new Error(`no schedule "${id}"`);
+    const next = { ...s };
+    if ('name' in spec) {
+      if (!String(spec.name || '').trim()) throw new Error('a schedule needs a name');
+      next.name = String(spec.name).slice(0, 80);
+    }
+    if ('when' in spec) {
+      next.when = parseWhen(spec.when);
+      next.whenText = String(spec.when);
+      next.next = nextRun(next.when, now);
+    }
+    if ('prompt' in spec) next.prompt = String(spec.prompt || '');
+    if ('deliver' in spec) next.deliver = (Array.isArray(spec.deliver) ? spec.deliver : ['note']).filter((d) => ['note', 'telegram'].includes(d));
+    if ('backend' in spec) next.backend = BACKENDS.includes(spec.backend) ? spec.backend : 'local';
+    if ('steps' in spec) {
+      if (Array.isArray(spec.steps) && spec.steps.length) next.steps = workflows.validateSteps(spec.steps);
+      else delete next.steps;
+    }
+    if ('summarize' in spec) {
+      if (spec.summarize) next.summarize = String(spec.summarize);
+      else delete next.summarize;
+    }
+    if (!next.prompt && !workflows.isWorkflow(next)) throw new Error('a schedule needs a name and a prompt');
+    list[list.indexOf(s)] = next;
+    this.write(list);
+    return next;
+  }
+
   remove(id) {
     const list = this.all();
     const keep = list.filter((x) => x.id !== id && x.name.toLowerCase() !== String(id).toLowerCase());

@@ -32,7 +32,7 @@ export const SETTINGS: SettingPlace[] = [
   { control: 'CheckSection', files: ['AgentConsole.tsx'], place: 'Agent tab → Console → Tools', clicks: 2 },
   { control: 'TransportSection', files: ['AgentConsole.tsx'], place: 'Agent tab → Console → Tools', clicks: 2 },
   { control: 'McpSection', files: ['AgentConsole.tsx'], place: 'Agent tab → Console → Tools', clicks: 2 },
-  { control: 'AutomationsSection', files: ['AgentConsole.tsx'], place: 'Agent tab → Console → Tools', clicks: 2 },
+  { control: 'AutomationsSection', files: ['FlowsShelf.tsx'], place: 'Flows shelf → Set up', clicks: 2 },
 ];
 
 /** The speaker: flips voice.speakReplies, and turning it off stops what is being read now. Returns the new value. */

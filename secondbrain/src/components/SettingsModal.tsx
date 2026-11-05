@@ -21,7 +21,8 @@ interface SettingsModalProps {
 /**
  * The app's one Settings window, every section on it flat (the operator, 2026-11-04: "no buried settings that are
  * nested"): the notes folder, the inbox, the archive digger, Ollama, integrations and voice. Steward's own settings
- * (Aurora sharing, his tools, MCP servers, automations) are on the Agent tab's console, Telegram on the Phone view;
+ * (Aurora sharing, his tools, MCP servers) are on the Agent tab's console, the automations on the Flows shelf's Set up,
+ * Telegram on the Phone view;
  * utils/settingsMap.ts lists where each one is.
  */
 export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, ollamaConfig, onUpdateOllama, voice, onVoiceChange }) => {

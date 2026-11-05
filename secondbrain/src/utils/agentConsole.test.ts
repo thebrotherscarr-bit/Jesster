@@ -34,8 +34,11 @@ test('every control that left the top bar stands in the console', () => {
   }
   const panel = read('../components/AgentConsole.tsx');
   for (const shelf of ['ServersShelf', 'ApprovalsShelf']) assert.match(panel, new RegExp(`<${shelf} />`), `${shelf} is on the console, once`);
-  for (const section of ['AtlasSection', 'TerminalSection', 'BrowserSection', 'ComputerSection', 'CheckSection', 'McpSection', 'AutomationsSection'])
+  for (const section of ['AtlasSection', 'TerminalSection', 'BrowserSection', 'ComputerSection', 'CheckSection', 'McpSection'])
     assert.match(panel, new RegExp(`<${section} />`), `${section} moved from Settings to the console`);
+  // the automations moved on to the Flows shelf's Set up (2026-11-05): the console keeps one line pointing there
+  assert.ok(!/<AutomationsSection\b/.test(panel), 'the automations form is not on the console');
+  assert.match(panel, /Automations live on the Flows shelf/);
   const settings = read('../components/SettingsModal.tsx');
   for (const section of ['TelegramSection', 'AtlasSection', 'TerminalSection', 'McpSection']) assert.ok(!settings.includes(section), `${section} is not also in Settings`);
   // Telegram's setup is the Phone view's (2026-11-04)
