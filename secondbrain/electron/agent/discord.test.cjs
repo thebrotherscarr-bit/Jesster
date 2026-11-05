@@ -261,7 +261,7 @@ test("Discord with Steward as the agent: the source line, his cards as buttons (
     await until(() => bot.ready);
     dc.dm(42, 'hi', { name: 'Kyle' });
     await until(() => sends().some((s) => s.content === 'steward: hi'));
-    assert.match(seen[0].text, /^\[from the phone \(Discord\)\]\nhi$/);
+    assert.match(seen[0].text, /^\[from the phone \(Discord\) \| [^\]]+ local \(UTC[+-]\d\d:\d\d\) \| [^\]]*\d\d:\d\d UTC\]\nhi$/);
     // his card: the window's card and the DM's buttons; the button answers it
     dc.dm(42, 'do one', { name: 'Kyle' });
     await until(() => sends().some((s) => s.components && /Steward wants to use write_note/.test(s.content)));

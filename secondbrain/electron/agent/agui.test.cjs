@@ -175,7 +175,7 @@ test("with agent.transport 'ag-ui' the Agent tab's turn goes over AG-UI, its car
   assert.equal(r.answer, 'Done.');
   assert.deepEqual(responses, [], "his Responses service was not used");
   assert.equal(host.seen[0].threadId, 's1', 'the thread is the conversation');
-  assert.match(host.seen[0].messages.at(-1).content, /\[from the PC \(Agent tab\)\]\nWrite x\.py\./);
+  assert.match(host.seen[0].messages.at(-1).content, /\[from the PC \(Agent tab\) \| [^\]]+ local \(UTC[+-]\d\d:\d\d\) \| [^\]]*\d\d:\d\d UTC\]\nWrite x\.py\./);
   assert.deepEqual(service.open('s1').messages.map((m) => [m.role, m.content]), [['user', 'Write x.py.'], ['assistant', 'Done.']]);
   // off (the default 'responses'): the same conversation goes to his service
   transport = 'responses';
