@@ -744,9 +744,25 @@ ipcMain.handle('schedules:run', async (event, id) => {
   guard(event);
   const s = getSchedules().all().find((x) => x.id === id);
   if (!s) throw new Error('no such schedule');
-  const r = await sched.runSchedule(s, scheduleDeps());
+  const r = await sched.runSchedule(s, { ...scheduleDeps(), trigger: 'now' });
   if (mainWindow) mainWindow.webContents.send('vault:changed');
   return { note: r.id, ok: r.ok, schedules: schedulesView() };
+});
+// the Flows shelf (ADR-0008): a flow's graph as Steward builds it (MAF's to_dict), its runs, and one run's live steps;
+// all read from Steward's MCP host, and an error when it is down (the shelf then draws the flow locally)
+ipcMain.handle('schedules:graph', async (event, id) => {
+  guard(event);
+  const s = getSchedules().all().find((x) => x.id === id);
+  if (!s || !workflows.isWorkflow(s)) throw new Error('not a flow');
+  return stewardRecipes.recipeGraph(workflows.recipeOf(s));
+});
+ipcMain.handle('schedules:runs', async (event, id, limit) => {
+  guard(event);
+  return stewardRecipes.recipeRuns(String(id || ''), Math.max(1, Math.min(50, Number(limit) || 10)));
+});
+ipcMain.handle('schedules:runStatus', async (event, runId) => {
+  guard(event);
+  return stewardRecipes.recipeStatus(String(runId || ''));
 });
 
 // ---- MCP client: other tool servers' tools ---------------------------------

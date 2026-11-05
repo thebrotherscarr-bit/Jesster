@@ -90,6 +90,9 @@ contextBridge.exposeInMainWorld('secondbrainDesktop', {
     busy: () => ipcRenderer.invoke('schedules:busy'),
     remove: (id) => ipcRenderer.invoke('schedules:remove', id),
     run: (id) => ipcRenderer.invoke('schedules:run', id),
+    graph: (id) => ipcRenderer.invoke('schedules:graph', id),
+    runs: (id, limit) => ipcRenderer.invoke('schedules:runs', id, limit),
+    runStatus: (runId) => ipcRenderer.invoke('schedules:runStatus', runId),
   },
   mcp: {
     get: () => ipcRenderer.invoke('mcp:get'),

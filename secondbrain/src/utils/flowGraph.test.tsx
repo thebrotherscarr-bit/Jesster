@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { CARD, COLUMN, ROW, WRAP, flowGraph, flowRunState, lastResultLine } from './flowGraph.ts';
+import { CARD, COLUMN, LIVE_POLLS, ROW, WRAP, flowGraph, flowGraphFromMaf, flowRunState, keepPolling, lastResultLine, msLabel, runLine, stepFor } from './flowGraph.ts';
 import { FLOWS_STEWARD_OPEN_KEY, keepPanel, panelOpen } from './agentConsole.ts';
 import { FlowsShelfView, OPEN_VIEW, openViewport } from '../components/FlowsShelf.tsx';
-import type { ScheduleView } from '../types/desktop.ts';
+import type { FlowRun, MafWorkflowDict, ScheduleView } from '../types/desktop.ts';
 
 // The Flows shelf, piece 1 (the operator, 2026-11-05; plan-the-flows-shelf-ide-for-steward-s-f-04a93a): the flows
 // listed, the open one drawn as block cards wired output to input, from flowGraph (the seam piece 2 moves to MAF).
@@ -140,4 +140,135 @@ test('the shelf renders the list and the open flow on the canvas, block by block
   const open = renderToStaticMarkup(<FlowsShelfView flows={flows} selectedId="b" onSelect={() => {}} stewardOpen onStewardOpen={() => {}} />);
   assert.deepEqual([...open.matchAll(/data-block="([a-z]+)"/g)].map((m) => m[1]), ['turn', 'deliver']);
   assert.match(open, /aria-label="Steward"/, "opened, Steward's card is there");
+});
+
+// ---- piece 2 (ADR-0008, 2026-11-05): the graph from Steward's MAF workflow, and the run history ------------------------
+
+/** Steward's recipe_graph for { steps: ['repo_log', { step: 'eval_start', ... }], summarize }, as MAF's to_dict() gave it. */
+const TO_DICT: MafWorkflowDict = {
+  name: 'recipe_night',
+  start_executor_id: 'begin',
+  edge_groups: [
+    { id: 'InternalEdgeGroup/1', type: 'InternalEdgeGroup', edges: [{ source_id: 'internal:begin', target_id: 'begin' }] },
+    { id: 'InternalEdgeGroup/2', type: 'InternalEdgeGroup', edges: [{ source_id: 'internal:1_repo_log', target_id: '1_repo_log' }] },
+    { id: 'SingleEdgeGroup/3', type: 'SingleEdgeGroup', edges: [{ source_id: 'begin', target_id: '1_repo_log' }] },
+    { id: 'SingleEdgeGroup/4', type: 'SingleEdgeGroup', edges: [{ source_id: '1_repo_log', target_id: '2_eval_start' }] },
+    { id: 'SingleEdgeGroup/5', type: 'SingleEdgeGroup', edges: [{ source_id: '2_eval_start', target_id: 'summarize' }] },
+    { id: 'SingleEdgeGroup/6', type: 'SingleEdgeGroup', edges: [{ source_id: 'summarize', target_id: 'deliver' }] },
+  ],
+  // MAF's own order is not the run's: the canvas follows the edges from start_executor_id
+  executors: {
+    deliver: { id: 'deliver', type: 'Deliver' },
+    begin: { id: 'begin', type: 'Begin' },
+    '2_eval_start': { id: '2_eval_start', type: 'GatherStep' },
+    '1_repo_log': { id: '1_repo_log', type: 'GatherStep' },
+    summarize: { id: 'summarize', type: 'Summarize' },
+  },
+  output_executors: ['deliver'],
+};
+const NIGHT = { prompt: '', steps: ['repo_log', { step: 'eval_start', sets: ['aider-py'] }], summarize: 'Say how the bar did', deliver: ['note', 'telegram'] };
+
+/** Steward's recipe_runs for that flow (step_states over each run's MAF event log). */
+const RUNS: FlowRun[] = [
+  {
+    run_id: 'r2', flow: 'n', trigger: 'now', state: 'done', ok: false, short: 'Failed: An eval is running now', started: '2026-11-05T22:00:00+00:00', ended: '2026-11-05T22:00:02+00:00',
+    steps: [
+      { id: 'begin', step: 'begin', state: 'done', ms: 2, ok: true },
+      { id: '1_repo_log', step: 'repo_log', state: 'done', ms: 840, ok: true },
+      { id: '2_eval_start', step: 'eval_start', state: 'failed', ms: 1250, ok: false, error: 'An eval is running now' },
+      { id: 'summarize', step: 'summarize', state: 'skipped', ms: null, ok: false },
+      { id: 'deliver', step: 'deliver', state: 'done', ms: 3, ok: true },
+    ],
+  },
+  { run_id: 'r1', flow: 'n', trigger: 'schedule', state: 'done', ok: true, started: '2026-11-04T23:00:00+00:00', ended: '2026-11-04T23:40:00+00:00', steps: [] },
+];
+
+const blocksOf = (html: string) => [...html.matchAll(/data-block="([a-z]+)" data-state="([a-z]+)"/g)].map((m) => [m[1], m[2]]);
+
+test("the canvas is drawn from Steward's MAF workflow: one card per executor in run order, MAF's wires, the recipe's words", () => {
+  const g = flowGraphFromMaf(TO_DICT, NIGHT);
+  assert.deepEqual(
+    g.nodes.map((n) => [n.id, n.kind, n.label]),
+    [
+      ['begin', 'begin', 'begin'],
+      ['1_repo_log', 'step', 'repo_log'],
+      ['2_eval_start', 'step', 'eval_start'],
+      ['summarize', 'summarize', 'Steward: summarize'],
+      ['deliver', 'deliver', 'note, telegram'],
+    ],
+  );
+  assert.equal(g.nodes[2].detail, 'sets: ["aider-py"]', "a gather step's arguments, from the recipe");
+  assert.equal(g.nodes[3].detail, 'Say how the bar did');
+  assert.deepEqual(wires(g), ['begin->1_repo_log', '1_repo_log->2_eval_start', '2_eval_start->summarize', 'summarize->deliver'], 'internal edges are left out');
+  // the same grid as the local drawing: bands of one kind, side to side along a row, bottom to top between rows
+  const pos = Object.fromEntries(g.nodes.map((n) => [n.id, n.position]));
+  assert.deepEqual([pos.begin.y, pos['1_repo_log'].y, pos['2_eval_start'].y, pos.summarize.y, pos.deliver.y], [0, ROW, ROW, 2 * ROW, 3 * ROW]);
+  assert.deepEqual([g.edges[1].sourceHandle, g.edges[1].targetHandle], ['right', 'left']);
+  assert.deepEqual([g.edges[0].sourceHandle, g.edges[0].targetHandle], ['bottom', 'top']);
+  for (const n of g.nodes) assert.ok(n.position.x % (COLUMN / 2) === 0 && n.position.x >= 0 && n.position.x <= (WRAP - 1) * COLUMN, `${n.id} on the grid`);
+  // seven gather steps wrap at WRAP as the local drawing does
+  const seven = ['pull_ff', 'versions', 'repo_log', 'merged_prs', 'releases', 'eval_bars', 'plan_left'];
+  const wide: MafWorkflowDict = {
+    start_executor_id: 'begin',
+    executors: Object.fromEntries([['begin', 'Begin'], ...seven.map((s, i) => [`${i + 1}_${s}`, 'GatherStep']), ['deliver', 'Deliver']].map(([id, type]) => [id, { id, type }])),
+    edge_groups: [['begin', '1_pull_ff'], ...seven.slice(1).map((s, i) => [`${i + 1}_${seven[i]}`, `${i + 2}_${s}`]), ['7_plan_left', 'deliver']].map(([a, b]) => ({ type: 'SingleEdgeGroup', edges: [{ source_id: a, target_id: b }] })),
+  };
+  assert.deepEqual([...new Set(flowGraphFromMaf(wide, { prompt: '', steps: seven, deliver: ['note'] }).nodes.filter((n) => n.kind === 'step').map((n) => n.position.y))], [ROW, 2 * ROW, 3 * ROW]);
+});
+
+test("the shelf draws the open flow from MAF when Steward answers, and locally, saying so, when his host is down", () => {
+  const flows = [schedule({ id: 'n', name: 'Night', ...NIGHT })];
+  const props = { flows, selectedId: 'n', onSelect: () => {}, stewardOpen: false, onStewardOpen: () => {} };
+  const maf = renderToStaticMarkup(<FlowsShelfView {...props} graph={{ workflow: TO_DICT }} />);
+  assert.match(maf, /data-graph="maf"/);
+  assert.deepEqual([...maf.matchAll(/data-block="([a-z]+)"/g)].map((m) => m[1]), ['begin', 'step', 'step', 'summarize', 'deliver']);
+  assert.ok(!maf.includes('offline: drawn locally'));
+  const down = renderToStaticMarkup(<FlowsShelfView {...props} graph="offline" />);
+  assert.match(down, /data-graph="local"/);
+  assert.match(down, /offline: drawn locally/);
+  assert.deepEqual([...down.matchAll(/data-block="([a-z]+)"/g)].map((m) => m[1]), ['step', 'step', 'summarize', 'deliver', 'deliver'], "the recipe's own shape");
+  // a legacy prompt-only schedule has no MAF workflow: drawn locally, with no note
+  const legacy = renderToStaticMarkup(<FlowsShelfView {...props} flows={[schedule({ id: 'n', prompt: 'hi', backend: 'steward' })]} graph="offline" />);
+  assert.ok(!legacy.includes('offline: drawn locally'));
+});
+
+test("the open flow's runs are listed under it; a click lights each block with that run's step: done, failed, skipped, ms", () => {
+  const flows = [schedule({ id: 'n', name: 'Night', ...NIGHT })];
+  const props = { flows, selectedId: 'n', onSelect: () => {}, stewardOpen: false, onStewardOpen: () => {}, graph: { workflow: TO_DICT }, runs: RUNS };
+  const list = renderToStaticMarkup(<FlowsShelfView {...props} />);
+  assert.deepEqual([...list.matchAll(/data-run-id="([^"]+)" data-run-state="([a-z]+)"/g)].map((m) => [m[1], m[2]]), [['r2', 'failed'], ['r1', 'done']], 'newest first');
+  assert.match(list, /not ok · Run now · .* · 2\.0 s/);
+  assert.match(list, /ok · scheduled · .* · 40 min/);
+  assert.ok(blocksOf(list).every(([, s]) => s === 'idle'), 'no run picked: the flow as the schedule carries it');
+
+  const lit = renderToStaticMarkup(<FlowsShelfView {...props} selectedRun="r2" />);
+  assert.deepEqual(blocksOf(lit), [['begin', 'done'], ['step', 'done'], ['step', 'failed'], ['summarize', 'skipped'], ['deliver', 'done']]);
+  assert.match(lit, /failed · 1\.3 s/);
+  assert.match(lit, /done · 840 ms/);
+  assert.match(lit, /showing run: not ok · Run now/);
+
+  // the same run on the local drawing, his host down: each card finds its step by its place in the recipe
+  const local = renderToStaticMarkup(<FlowsShelfView {...props} graph="offline" selectedRun="r2" />);
+  assert.deepEqual(blocksOf(local), [['step', 'done'], ['step', 'failed'], ['summarize', 'skipped'], ['deliver', 'done'], ['deliver', 'done']]);
+  assert.equal(stepFor('step-1', RUNS[0].steps)?.id, '2_eval_start');
+  assert.equal(stepFor('deliver-telegram', RUNS[0].steps)?.id, 'deliver');
+
+  // live: the run going now lights the blocks until it is filed
+  const going: FlowRun = { run_id: 'r3', state: 'running', steps: [{ id: 'begin', step: 'begin', state: 'done', ms: 1, ok: true }, { id: '1_repo_log', step: 'repo_log', state: 'running', ms: null, ok: false }, { id: '2_eval_start', step: 'eval_start', state: 'waiting', ms: null, ok: false }] };
+  const live = renderToStaticMarkup(<FlowsShelfView {...props} liveRun={going} />);
+  assert.deepEqual(blocksOf(live).slice(0, 3), [['begin', 'done'], ['step', 'running'], ['step', 'waiting']]);
+  // the history when Steward's host is down
+  const err = renderToStaticMarkup(<FlowsShelfView {...props} runs={null} runsError="Runs: Steward's host did not answer." />);
+  assert.match(err, /Runs: Steward(&#x27;|')s host did not answer\./);
+});
+
+test('the live canvas is read while its run goes, and stops: when it ends, at its deadline, or after LIVE_POLLS reads', () => {
+  assert.equal(keepPolling({ state: 'running' }, 1, 10, 20), true);
+  assert.equal(keepPolling(null, 1, 10, 20), true, 'not read yet (or his host missed one): read again');
+  assert.equal(keepPolling({ state: 'done' }, 1, 10, 20), false);
+  assert.equal(keepPolling({ state: 'failed' }, 1, 10, 20), false);
+  assert.equal(keepPolling({ state: 'running' }, 1, 30, 20), false, 'past the deadline');
+  assert.equal(keepPolling({ state: 'running' }, LIVE_POLLS, 10), false, 'bounded');
+  assert.deepEqual([msLabel(840), msLabel(1250), msLabel(2400000), msLabel(null)], ['840 ms', '1.3 s', '40 min', '']);
+  assert.match(runLine({ run_id: 'x', state: 'failed', error: 'TimeoutError', steps: [] }), /^failed: TimeoutError/);
 });

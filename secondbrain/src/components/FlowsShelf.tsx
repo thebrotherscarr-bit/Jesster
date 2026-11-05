@@ -1,8 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ReactFlow, ReactFlowProvider, Background, Controls, Handle, Position, type Edge, type Node, type NodeProps } from '@xyflow/react';
 import { Workflow, Bot, Send, Boxes, PanelRight, X, Play, Settings2, Plus, PenLine, Copy, Trash2 } from 'lucide-react';
-import type { ScheduleSpec, ScheduleView, SchedulesBridge } from '../types/desktop.ts';
-import { CARD, FlowNodeKind, FlowRunState, flowGraph, flowRunState, lastResultLine } from '../utils/flowGraph.ts';
+import type { FlowRun, MafWorkflowDict, ScheduleSpec, ScheduleView, SchedulesBridge } from '../types/desktop.ts';
+import { CARD, FlowNodeKind, FlowRunState, flowGraph, flowGraphFromMaf, flowRunState, keepPolling, lastResultLine, msLabel, runLine, stepFor } from '../utils/flowGraph.ts';
 import { LEGACY_LABEL, cleanError, isLegacy, removeFlow, runBlocked, runFlow } from '../utils/flowSetup.ts';
 import { FLOWS_STEWARD_OPEN_KEY, keepPanel, panelOpen } from '../utils/agentConsole.ts';
 import { AutomationsSection } from './settings/AutomationsSection.tsx';
@@ -18,11 +18,16 @@ import { EdGraph, Recipe, recipeToGraph, saveSpec } from '../utils/flowEditor.ts
  * ADR-0009 (Steward docs/decisions, 2026-11-05): a flow is made only with + New flow and saved by itself; an automation
  * is a saved flow, when and on/off (Set up); any flow runs whenever the operator says, with no night badge or daytime
  * question ("run it whenever i say. day or night or whenever, its my system. same as any eval.").
+ * Piece 2 (ADR-0008, 2026-11-05): the canvas is drawn from Steward's MAF workflow (recipe_graph's to_dict()), or
+ * locally with "offline: drawn locally" when his host is down; under the open flow its last runs (recipe_runs), and a
+ * click on one lights each block with that run's step (done, failed, skipped, its ms); while a run goes, the blocks
+ * follow it (recipe_status, read every few seconds until it ends).
  */
-type BlockData = { label: string; detail?: string; first: boolean; last: boolean; state: FlowRunState };
+type BlockData = { label: string; detail?: string; first: boolean; last: boolean; state: FlowRunState; ms?: string };
 type RFNode = Node<BlockData, FlowNodeKind>;
 
 const KIND: Record<FlowNodeKind, { title: string; icon: React.ComponentType<{ className?: string }>; color: string }> = {
+  begin: { title: 'Begin', icon: Play, color: 'text-sky-400' },
   step: { title: 'Gather', icon: Boxes, color: 'text-emerald-400' },
   summarize: { title: 'Summarize', icon: Bot, color: 'text-amber-300' },
   turn: { title: 'Turn', icon: Bot, color: 'text-amber-300' },
@@ -34,6 +39,8 @@ const STATE: Record<FlowRunState, { border: string; word: string; color: string 
   running: { border: 'border-sky-500', word: 'running', color: 'text-sky-300' },
   done: { border: 'border-emerald-700', word: 'done', color: 'text-emerald-400' },
   failed: { border: 'border-rose-700', word: 'failed', color: 'text-rose-400' },
+  skipped: { border: 'border-neutral-800 border-dashed', word: 'skipped', color: 'text-neutral-500' },
+  waiting: { border: 'border-neutral-700', word: 'waiting', color: 'text-neutral-400' },
 };
 
 const handle = '!w-2.5 !h-2.5';
@@ -53,7 +60,12 @@ const BlockCard: React.FC<NodeProps<RFNode>> = ({ type, data }) => {
       )}
       <div className="flex items-center gap-1.5 px-2.5 py-1.5 border-b border-neutral-800 text-xs font-semibold text-white">
         <Icon className={`w-3.5 h-3.5 ${k.color}`} /> <span className="flex-1">{k.title}</span>
-        {st.word && <span className={`text-[10px] font-normal ${st.color} ${data.state === 'running' ? 'animate-pulse' : ''}`}>{st.word}</span>}
+        {st.word && (
+          <span className={`text-[10px] font-normal ${st.color} ${data.state === 'running' ? 'animate-pulse' : ''}`}>
+            {st.word}
+            {data.ms ? ` · ${data.ms}` : ''}
+          </span>
+        )}
       </div>
       <div className="p-2 space-y-1">
         <p className="text-xs text-neutral-100 break-words">{data.label}</p>
@@ -68,12 +80,16 @@ const BlockCard: React.FC<NodeProps<RFNode>> = ({ type, data }) => {
     </div>
   );
 };
-const nodeTypes = { step: BlockCard, summarize: BlockCard, turn: BlockCard, deliver: BlockCard };
+const nodeTypes = { begin: BlockCard, step: BlockCard, summarize: BlockCard, turn: BlockCard, deliver: BlockCard };
 
-/** A flow's blocks and wires as the canvas takes them, from flowGraph (the seam). */
-function canvasOf(flow: ScheduleView): { nodes: RFNode[]; edges: Edge[] } {
-  const g = flowGraph(flow);
-  const state = flowRunState(flow);
+/**
+ * A flow's blocks and wires as the canvas takes them: from Steward's MAF workflow when it was read (flowGraphFromMaf),
+ * else drawn locally (flowGraph). With a run (one clicked in the history, or the one going now), each block shows its
+ * own step's state and ms; without one, the flow's last state as the schedule carries it.
+ */
+export function canvasOf(flow: ScheduleView, maf?: MafWorkflowDict | null, run?: FlowRun | null): { nodes: RFNode[]; edges: Edge[] } {
+  const g = maf ? flowGraphFromMaf(maf, flow) : flowGraph(flow);
+  const whole: FlowRunState = run ? (run.state === 'running' ? 'running' : run.state === 'failed' ? 'failed' : 'done') : flowRunState(flow);
   const targets = new Set(g.edges.map((e) => e.target));
   const sources = new Set(g.edges.map((e) => e.source));
   const nodes: RFNode[] = g.nodes.map((n) => ({
@@ -83,7 +99,11 @@ function canvasOf(flow: ScheduleView): { nodes: RFNode[]; edges: Edge[] } {
     // the size is given so the canvas can draw before it measures (and on the server, in the test)
     width: CARD.width,
     height: CARD.height,
-    data: { label: n.label, detail: n.detail, first: !targets.has(n.id), last: !sources.has(n.id), state },
+    data: (() => {
+      const step = run ? stepFor(n.id, run.steps) : undefined;
+      const state: FlowRunState = run ? (step ? step.state : 'idle') : whole;
+      return { label: n.label, detail: n.detail, first: !targets.has(n.id), last: !sources.has(n.id), state, ...(step && step.ms !== null ? { ms: msLabel(step.ms) } : {}) };
+    })(),
   }));
   const edges: Edge[] = g.edges.map((e) => ({
     id: e.id,
@@ -92,7 +112,7 @@ function canvasOf(flow: ScheduleView): { nodes: RFNode[]; edges: Edge[] } {
     sourceHandle: e.sourceHandle,
     targetHandle: e.targetHandle,
     type: 'smoothstep',
-    animated: state === 'running',
+    animated: whole === 'running',
   }));
   return { nodes, edges };
 }
@@ -109,8 +129,8 @@ export function openViewport(nodes: { position: { x: number; y: number } }[]) {
 }
 
 /** The open flow on the canvas, read-only: nothing is dragged, wired or deleted here; it pans and zooms. */
-const FlowCanvas: React.FC<{ flow: ScheduleView }> = ({ flow }) => {
-  const { nodes, edges } = useMemo(() => canvasOf(flow), [flow]);
+const FlowCanvas: React.FC<{ flow: ScheduleView; maf?: MafWorkflowDict | null; run?: FlowRun | null }> = ({ flow, maf, run }) => {
+  const { nodes, edges } = useMemo(() => canvasOf(flow, maf, run), [flow, maf, run]);
   const view = useMemo(() => openViewport(nodes), [nodes]);
   return (
     <ReactFlowProvider key={flow.id} initialNodes={nodes} initialEdges={edges} initialWidth={800} initialHeight={400}>
@@ -178,6 +198,16 @@ export interface FlowsShelfViewProps {
   onEditorCancel?: () => void;
   /** Delete on the open flow (the flow itself; Set up's delete takes off only an automation) */
   onDelete?: (id: string) => void;
+  /** the open flow's graph from Steward (recipe_graph), or 'offline' when his host did not answer: drawn locally */
+  graph?: { workflow: MafWorkflowDict } | 'offline' | null;
+  /** the open flow's last runs, newest first (recipe_runs); null while unread */
+  runs?: FlowRun[] | null;
+  runsError?: string | null;
+  /** the run clicked in the history: the canvas shows its steps */
+  selectedRun?: string | null;
+  onSelectRun?: (runId: string | null) => void;
+  /** the open flow's run going now, read live (recipe_status) */
+  liveRun?: FlowRun | null;
 }
 
 /** What the editor is open on: a new flow, a copy (both saved as new) or a flow's own blocks. */
@@ -229,8 +259,18 @@ export const FlowsShelfView: React.FC<FlowsShelfViewProps> = ({
   onEditorSave,
   onEditorCancel,
   onDelete,
+  graph = null,
+  runs = null,
+  runsError = null,
+  selectedRun = null,
+  onSelectRun,
+  liveRun = null,
 }) => {
   const open = flows.find((f) => f.id === selectedId) || null;
+  const clicked = (runs || []).find((r) => r.run_id === selectedRun) || null;
+  // the canvas shows the run clicked; else the run going now (until the schedule files it); else the flow's last state
+  const shown = clicked || liveRun;
+  const maf = graph && graph !== 'offline' ? graph.workflow : null;
   const hold = runBlocked(open, stewardBusy);
   // any flow runs whenever the operator says (ADR-0009): no night badge, no daytime question
   const run = (id: string) => onRun?.(id);
@@ -279,6 +319,31 @@ export const FlowsShelfView: React.FC<FlowsShelfViewProps> = ({
                   {lastResultLine(f)}
                 </span>
               </button>
+              {f.id === selectedId && editable(f) && (runs || runsError) && (
+                <div aria-label="Runs" className="ml-2 mt-0.5 mb-1 border-l border-neutral-800 pl-2">
+                  {runsError && <p className="text-[11px] text-neutral-500 break-words">{runsError}</p>}
+                  {runs && runs.length === 0 && <p className="text-[11px] text-neutral-500">No runs kept yet.</p>}
+                  {runs && runs.length > 0 && (
+                    <ul className="space-y-0.5">
+                      {runs.map((r) => (
+                        <li key={r.run_id}>
+                          <button
+                            type="button"
+                            data-run-id={r.run_id}
+                            data-run-state={r.state === 'done' && !r.ok ? 'failed' : r.state}
+                            aria-pressed={r.run_id === selectedRun}
+                            onClick={() => onSelectRun?.(r.run_id === selectedRun ? null : r.run_id)}
+                            title={r.short || r.error || 'Show this run on the canvas'}
+                            className={`block w-full text-left px-1.5 py-0.5 rounded text-[11px] truncate ${r.run_id === selectedRun ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:bg-neutral-900'}`}
+                          >
+                            <span className={r.state === 'running' ? 'text-sky-300' : r.state === 'done' && r.ok ? 'text-emerald-400' : 'text-rose-400'}>●</span> {runLine(r)}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
             </li>
           ))}
         </ul>
@@ -344,8 +409,13 @@ export const FlowsShelfView: React.FC<FlowsShelfViewProps> = ({
         {open && (
           <div className="flex items-center gap-2 px-4 py-1 border-b border-neutral-900 text-[11px] text-neutral-500 min-w-0">
             <span className="truncate min-w-0" data-last-run title={open.lastResult || undefined}>
-              last run: {lastResultLine(open)}
+              {clicked ? `showing run: ${runLine(clicked)}` : `last run: ${lastResultLine(open)}`}
             </span>
+            {editable(open) && graph === 'offline' && (
+              <span data-graph-note className="shrink-0 text-amber-300/80" title="Steward's host did not answer, so the flow is drawn from its recipe here">
+                offline: drawn locally
+              </span>
+            )}
             {hold && onRun && <span className="ml-auto shrink-0 text-neutral-400">{hold}</span>}
           </div>
         )}
@@ -357,7 +427,9 @@ export const FlowsShelfView: React.FC<FlowsShelfViewProps> = ({
         )}
         <div className="flex-1 relative min-h-0" aria-label="Flow canvas">
           {open ? (
-            <FlowCanvas flow={open} />
+            <div className="absolute inset-0" data-graph={maf ? 'maf' : 'local'}>
+              <FlowCanvas flow={open} maf={maf} run={shown} />
+            </div>
           ) : (
             <div className="absolute inset-0 flex items-center justify-center">
               <p className="text-sm text-neutral-500 max-w-sm text-center">Pick a flow on the left to see its blocks.</p>
@@ -414,6 +486,75 @@ export const FlowsShelf: React.FC<{ active: boolean }> = ({ active }) => {
       clearInterval(timer);
     };
   }, [active, schedules, anyRunning]);
+  // piece 2 (ADR-0008): the open flow's graph from Steward's MAF workflow, its run history, and its run going now
+  const open = flows.find((f) => f.id === selectedId) || null;
+  const graphKey = open && editable(open) ? JSON.stringify([open.id, open.steps, open.summarize, open.deliver]) : null;
+  const liveId = open?.pending?.run_id || null;
+  const liveUntil = open?.pending?.until;
+  const [graph, setGraph] = useState<{ workflow: MafWorkflowDict } | 'offline' | null>(null);
+  const [runs, setRuns] = useState<FlowRun[] | null>(null);
+  const [runsError, setRunsError] = useState<string | null>(null);
+  const [selectedRun, setSelectedRun] = useState<string | null>(null);
+  const [liveRun, setLiveRun] = useState<FlowRun | null>(null);
+  useEffect(() => {
+    setGraph(null);
+    if (!active || !graphKey || !selectedId || !schedules?.graph) return;
+    let live = true;
+    // his host down (or slow): the flow is drawn locally, and the shelf says so
+    schedules
+      .graph(selectedId)
+      .then((g) => live && setGraph(g && g.workflow ? { workflow: g.workflow } : 'offline'))
+      .catch(() => live && setGraph('offline'));
+    return () => {
+      live = false;
+    };
+  }, [active, graphKey, selectedId, schedules]);
+  useEffect(() => {
+    setRuns(null);
+    setRunsError(null);
+    setSelectedRun(null);
+  }, [selectedId]);
+  const liveState = liveRun?.state;
+  const openLastRun = open?.lastRun;
+  useEffect(() => {
+    if (!active || !graphKey || !selectedId || !schedules?.runs) return;
+    let live = true;
+    schedules
+      .runs(selectedId, 10)
+      .then((list) => {
+        if (!live) return;
+        setRuns(Array.isArray(list) ? list : []);
+        setRunsError(null);
+      })
+      .catch(() => live && setRunsError("Runs: Steward's host did not answer."));
+    return () => {
+      live = false;
+    };
+  }, [active, graphKey, selectedId, schedules, liveId, liveState, openLastRun]);
+  useEffect(() => {
+    setLiveRun(null);
+    if (!active || !liveId || !schedules?.runStatus) return;
+    let live = true;
+    let polls = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    // read while it runs, bounded (keepPolling): it stops when the run ends, at its deadline, or after LIVE_POLLS reads
+    const tick = async () => {
+      let r: FlowRun | null = null;
+      try {
+        r = await schedules.runStatus!(liveId);
+        if (live) setLiveRun(r);
+      } catch {
+        /* his host did not answer this time: read again, within the bound */
+      }
+      polls += 1;
+      if (live && keepPolling(r, polls, Date.now(), liveUntil)) timer = setTimeout(tick, POLL_MS);
+    };
+    tick();
+    return () => {
+      live = false;
+      if (timer) clearTimeout(timer);
+    };
+  }, [active, liveId, liveUntil, schedules]);
   const onRun = async (id: string) => {
     if (!schedules) return;
     setRunError(null);
@@ -475,6 +616,12 @@ export const FlowsShelf: React.FC<{ active: boolean }> = ({ active }) => {
       editor={editor}
       onEditorSave={onEditorSave}
       onEditorCancel={() => setEditor(null)}
+      graph={graph}
+      runs={runs}
+      runsError={runsError}
+      selectedRun={selectedRun}
+      onSelectRun={setSelectedRun}
+      liveRun={liveRun}
       onDelete={async (id) => {
         const f = flows.find((x) => x.id === id);
         if (!schedules || !f || (typeof window !== 'undefined' && !window.confirm(`Delete the flow "${f.name}"? Its automation goes with it.`))) return;
