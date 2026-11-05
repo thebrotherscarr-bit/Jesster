@@ -27,3 +27,11 @@ dist/
 dist-desktop/
 node_modules/
 .aistudio/
+
+# keys, logs and runtime storage never go in the record; nor the Archive
+.env
+*.key
+*.log
+logs/
+storage/
+/Archive/
