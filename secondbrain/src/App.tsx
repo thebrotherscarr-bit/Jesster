@@ -16,6 +16,8 @@ import { defaultTab } from './utils/tabs.ts';
 import { SettingsModal } from './components/SettingsModal.tsx';
 import { AgentView } from './components/AgentView.tsx';
 import { PhoneView } from './components/PhoneView.tsx';
+import { FlowsShelf } from './components/FlowsShelf.tsx';
+import '@xyflow/react/dist/style.css';
 import { HoldsDock } from './components/HoldsDock.tsx';
 import { useVoiceSettings } from './voice/useVoice.ts';
 import { useKernelSync } from './hooks/useKernelSync.ts';
@@ -305,6 +307,13 @@ export default function App() {
         {window.secondbrainDesktop?.phone && (
           <div className={activeTab === 'phone' ? 'flex flex-1 min-w-0 min-h-0' : 'hidden'}>
             <PhoneView voice={voice} onVoiceChange={setVoice} />
+          </div>
+        )}
+
+        {/* the Flows shelf: the automations as block cards, read-only (Run now and Schedule come later) */}
+        {window.secondbrainDesktop?.schedules && activeTab === 'flows' && (
+          <div className="flex flex-1 min-w-0 min-h-0">
+            <FlowsShelf active />
           </div>
         )}
       </main>
