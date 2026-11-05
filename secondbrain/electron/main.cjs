@@ -653,10 +653,11 @@ const deliverers = {};
 let schedulerTimer = null;
 let schedulerBusy = false;
 
-// what a schedule runs with: a Steward schedule's cards go to Telegram too (phoneCard); a workflow (agent/workflows.cjs)
-// waits for any conversation mid-turn before an eval (busy), and reads the Estate's repositories from the ground
+// what a schedule runs with: a Steward schedule's cards go to Telegram too (phoneCard); a workflow's recipe is run by
+// Steward as a MAF workflow on his MCP host (agent/workflows.cjs stewardRecipes), and one that starts an eval waits for
+// any conversation mid-turn (busy)
+const stewardRecipes = workflows.stewardRecipes({ url: `http://127.0.0.1:${steward.MCP_PORT}/mcp` });
 function scheduleDeps() {
-  const ground = atlasGlass.findGround((getSettings().get('atlas') || {}).ground, vaultDir());
   return {
     schedules: getSchedules(),
     agent: getAgent(),
@@ -664,12 +665,7 @@ function scheduleDeps() {
     deliverers,
     onCard: phoneCard,
     busy: () => getAgent().busy(),
-    evals: stewardEvals(),
-    versions: estateVersions,
-    ground,
-    repos: workflows.estateRepos(ground),
-    sitting: () => (ground ? atlasGlass.openSitting(ground) : ''),
-    stewardDir: stewardDirNow(),
+    steward: stewardRecipes,
   };
 }
 

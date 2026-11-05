@@ -548,5 +548,5 @@ test("estate_status carries each repository's version from its local refs, cache
   const plain = JSON.parse((await atlas.handleMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'estate_status', arguments: {} } }, { registry, ctx: { ...ctx, estate } })).result.content[0].text);
   assert.equal(plain.repos, undefined);
   const main = fs.readFileSync(path.join(__dirname, 'main.cjs'), 'utf8');
-  assert.equal((main.match(/versions: estateVersions,/g) || []).length, 2, 'estate_status and the workflows read the same cache');
+  assert.equal((main.match(/versions: estateVersions,/g) || []).length, 1, 'estate_status reads the cache');
 });
