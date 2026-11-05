@@ -11,7 +11,9 @@ const DEFAULTS = {
   inbox: { clone: null, every: 5, reportOnUpdate: false, reportedBuild: 0 }, // minutes between pulls; report back after updates
   // backend 'steward': the Agent tab talks to Steward (agent/steward.cjs); 'ollama': the local loop
   // check: Claude checks each Steward turn in the Agent tab (agent/checker.cjs), on the Integrations key
-  agent: { host: 'http://localhost:11434', model: 'gpt-oss:20b', maxSteps: 12, backend: 'steward', steward: { dir: '', port: 43120 }, check: false },
+  // transport: how the Agent tab talks to Steward: 'responses' (his service, steward.cjs) or 'ag-ui' (his AG-UI host on
+  // 43122, agui.cjs; SecondBrain starts and keeps it up only while this is 'ag-ui')
+  agent: { host: 'http://localhost:11434', model: 'gpt-oss:20b', maxSteps: 12, backend: 'steward', transport: 'responses', steward: { dir: '', port: 43120 }, check: false },
   // off: turned off explicitly (set() keeps it with enabled); with the token from the ground's .env
   // (TELEGRAM_STEWARDBOT_KEY) Telegram runs unless off
   telegram: { token: '', allowedChats: [], enabled: false, off: false },

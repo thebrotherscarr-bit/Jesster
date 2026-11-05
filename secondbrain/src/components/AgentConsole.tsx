@@ -10,6 +10,7 @@ import { AutomationsSection } from './settings/AutomationsSection.tsx';
 import { McpSection } from './settings/McpSection.tsx';
 import { TerminalSection } from './settings/TerminalSection.tsx';
 import { CheckSection } from './settings/CheckSection.tsx';
+import { TransportSection } from './settings/TransportSection.tsx';
 import { BrowserSection } from './settings/BrowserSection.tsx';
 import { ComputerSection } from './settings/ComputerSection.tsx';
 
@@ -377,6 +378,7 @@ const ToolsPane: React.FC = () => {
         <BrowserSection />
         <ComputerSection />
         <CheckSection />
+        <TransportSection />
         <McpSection />
         <AutomationsSection />
       </div>

@@ -315,9 +315,9 @@ test("main.cjs keeps Steward's MCP door up from the main process", () => {
   assert.match(main, /steward\.keepUpEvery\(stewardMcp, steward\.MCP_PORT,/);
 });
 
-test("main.cjs hands Steward's two services to stopOnQuit", () => {
+test("main.cjs hands Steward's three services to stopOnQuit", () => {
   const main = fs.readFileSync(path.join(__dirname, '..', 'main.cjs'), 'utf8');
-  assert.match(main, /steward\.stopOnQuit\(app, \[stewardService, stewardMcp\]\)/);
+  assert.match(main, /steward\.stopOnQuit\(app, \[stewardService, stewardMcp, stewardAgui\]\)/);
 });
 
 test("a conversation keeps Steward's thread across a restart", async () => {

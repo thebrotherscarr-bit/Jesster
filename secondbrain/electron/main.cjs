@@ -19,6 +19,7 @@ const integrations = require('./integrations.cjs');
 const whisper = require('./whisper.cjs');
 const { AgentService } = require('./agent/service.cjs');
 const steward = require('./agent/steward.cjs');
+const agui = require('./agent/agui.cjs');
 const checker = require('./agent/checker.cjs');
 const memory = require('./agent/memory.cjs');
 const sched = require('./agent/schedules.cjs');
@@ -452,8 +453,24 @@ const stewardMcp = steward.service({
   port: steward.MCP_PORT,
   log: 'steward-mcp.log',
 });
-// both go down with SecondBrain, each with its whole process tree (not only the venv launcher)
-steward.stopOnQuit(app, [stewardService, stewardMcp]);
+// Steward's workflow over AG-UI (ag_ui_app.py on 127.0.0.1:43122, agent/agui.cjs): the Agent tab's path while
+// Settings' agent.transport is 'ag-ui', started and kept up only then; its own log, steward-ag-ui.log
+const stewardAgui = steward.service({
+  getConfig: () => ({ dir: (getSettings().get('agent').steward || {}).dir }),
+  vaultDir,
+  answering: atlasGlass.answering,
+  waitFor: atlasGlass.waitFor,
+  startOwned: atlasGlass.startOwned,
+  portOwner: atlasGlass.portOwner,
+  killTree,
+  script: agui.SCRIPT,
+  port: agui.PORT,
+  log: 'steward-ag-ui.log',
+  portEnv: 'STEWARD_AG_UI_PORT',
+});
+const aguiOn = () => getSettings().get('agent').backend === 'steward' && getSettings().get('agent').transport === 'ag-ui';
+// all go down with SecondBrain, each with its whole process tree (not only the venv launcher)
+steward.stopOnQuit(app, [stewardService, stewardMcp, stewardAgui]);
 // Claude's check of each Steward turn (agent/checker.cjs): on the Claude key and model in
 // Integrations, with Steward's Charter note, only while Settings → Claude's check is on
 function checkStewardTurn({ turn, signal }) {
@@ -480,7 +497,7 @@ function getAgent() {
       getModel: () => getSettings().get('agent'),
       emit: (channel, payload) => mainWindow && mainWindow.webContents.send(channel, payload),
       extras: (opts) => Promise.all(agentExtras.map((fn) => fn(opts))).then((xs) => xs.flat()),
-      steward: { ensure: stewardService.ensure, turn: steward.turn, up: stewardService.up },
+      steward: { ensure: stewardService.ensure, turn: steward.turn, up: stewardService.up, agui: { ensure: async () => `${await stewardAgui.ensure()}/`, turn: agui.turn } },
       checker: checkStewardTurn,
       threads: steward.threads(path.join(app.getPath('userData'), 'steward-threads.json')),
     });
@@ -1011,6 +1028,7 @@ const ollamaServer = services.ollamaServer({ getConfig: () => getSettings().get(
 const servers = services.registry([
   services.stewardEntry({ id: 'steward', label: "Steward's service", svc: stewardService, logPath: stewardLog('steward.log') }),
   services.stewardEntry({ id: 'steward-mcp', label: "Steward's MCP", svc: stewardMcp, logPath: stewardLog('steward-mcp.log') }),
+  services.stewardEntry({ id: 'steward-ag-ui', label: "Steward's AG-UI", svc: stewardAgui, logPath: stewardLog('steward-ag-ui.log') }),
   // SecondBrain itself serves the door: its process, since SecondBrain started
   { id: 'door', label: 'The door', port: atlasGlass.DOOR_PORT, kind: 'owned', pid: () => process.pid, started: () => APP_STARTED },
   {
@@ -1126,6 +1144,9 @@ if (!gotSingleInstanceLock) {
     if (getSettings().get('agent').backend === 'steward') stewardMcp.ensure().catch((e) => console.error('[SecondBrain] steward mcp:', e.message));
     // and kept up: found down and not stopped by the user, it is started again (Manjuel and the door reach it)
     steward.keepUpEvery(stewardMcp, steward.MCP_PORT, (p) => atlasGlass.answering(p), 10000, () => getSettings().get('agent').backend === 'steward');
+    // his AG-UI host, the same way, only while the Agent tab is on AG-UI (Settings: agent.transport)
+    if (aguiOn()) stewardAgui.ensure().catch((e) => console.error('[SecondBrain] steward ag-ui:', e.message));
+    steward.keepUpEvery(stewardAgui, agui.PORT, (p) => atlasGlass.answering(p), 10000, aguiOn);
     // and Ollama, when Settings (or SECONDBRAIN_RUNS_OLLAMA=1) has SecondBrain run it and nothing else already does
     // (else it is left alone); once started, services.cjs starts it again if it dies
     if (ollamaServer.settings().enabled) servers.control('ollama', 'start').then((r) => r.ok || console.error('[SecondBrain] ollama:', r.error));
