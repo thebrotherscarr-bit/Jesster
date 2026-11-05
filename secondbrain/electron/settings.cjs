@@ -11,9 +11,10 @@ const DEFAULTS = {
   inbox: { clone: null, every: 5, reportOnUpdate: false, reportedBuild: 0 }, // minutes between pulls; report back after updates
   // backend 'steward': the Agent tab talks to Steward (agent/steward.cjs); 'ollama': the local loop
   // check: Claude checks each Steward turn in the Agent tab (agent/checker.cjs), on the Integrations key
-  // transport: how the Agent tab talks to Steward: 'responses' (his service, steward.cjs) or 'ag-ui' (his AG-UI host on
-  // 43122, agui.cjs; SecondBrain starts and keeps it up only while this is 'ag-ui')
-  agent: { host: 'http://localhost:11434', model: 'gpt-oss:20b', maxSteps: 12, backend: 'steward', transport: 'responses', steward: { dir: '', port: 43120 }, check: false },
+  // transport: how the Agent tab, the phone and the automations talk to Steward: 'ag-ui' (his AG-UI host on 43122,
+  // agui.cjs; the default since 2026-11-05, the operator: "use it") or 'responses' (his service, steward.cjs), the latter
+  // only once chosen in Settings (transportChosen; see stewardTransport)
+  agent: { host: 'http://localhost:11434', model: 'gpt-oss:20b', maxSteps: 12, backend: 'steward', transport: 'ag-ui', steward: { dir: '', port: 43120 }, check: false },
   // off: turned off explicitly (set() keeps it with enabled); with the token from the ground's .env
   // (TELEGRAM_STEWARDBOT_KEY) Telegram runs unless off
   telegram: { token: '', allowedChats: [], enabled: false, off: false },
@@ -132,4 +133,14 @@ function telegramEffective(tg, envToken = '') {
   return { ...t, token: t.token || envToken || '', enabled, from };
 }
 
-module.exports = { Settings, DEFAULTS, merge, telegramEffective };
+/**
+ * The transport Steward is reached on: 'ag-ui' unless the operator chose Responses in Settings (transportChosen). A
+ * 'responses' saved before AG-UI became the default (2026-11-05) was the old default written back with the rest of
+ * the section, not a choice, so it reads as 'ag-ui'.
+ */
+function stewardTransport(agent) {
+  const a = agent || {};
+  return a.transport === 'responses' && a.transportChosen ? 'responses' : 'ag-ui';
+}
+
+module.exports = { Settings, DEFAULTS, merge, telegramEffective, stewardTransport };

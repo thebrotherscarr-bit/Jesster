@@ -6,6 +6,7 @@
 const crypto = require('crypto');
 const { Registry, core } = require('./tools.cjs');
 const { runTurn, newSessionId, saveSession, messagesFromNote } = require('./agent.cjs');
+const { stewardTransport } = require('../settings.cjs');
 
 // where a turn to Steward comes from, told to him on its first line (the operator, 2026-11-04: "this is the pc" and
 // "this is the phone"); the phone's channels are kept off the Agent tab's chat list (they are the Phone view's)
@@ -65,7 +66,9 @@ class AgentService {
    * (memory, skills index) added by later features; steward: { ensure, turn, up } (steward.cjs),
    * the agent of the Agent tab and of Telegram when getModel().backend is 'steward'.
    */
-  constructor({ getVault, getModel, emit = () => {}, extras = () => [], steward = null, checker = null, threads = null, history = null }) {
+  constructor({ getVault, getModel, emit = () => {}, extras = () => [], steward = null, checker = null, threads = null, history = null, log = (line) => console.warn(line) }) {
+    // one line in the console when a turn falls back from AG-UI to Responses
+    this.log = log;
     this.getVault = getVault;
     this.getModel = getModel;
     this.emit = emit;
@@ -364,8 +367,15 @@ class AgentService {
     const said = withSource(text, source, automation && automation.name);
     // Settings' agent.transport 'ag-ui': the turn goes to his AG-UI host (agui.cjs), with the same cards; an improve
     // conversation stays on his service, whose review card has no AG-UI answer yet
-    if (this.steward.agui && (this.getModel() || {}).transport === 'ag-ui' && !s.improve) {
-      return this.askStewardAgui(s, text, id, send, approver, said);
+    // AG-UI is the default (settings.cjs stewardTransport); its host down, the turn falls back to Responses, said once
+    if (this.steward.agui && stewardTransport(this.getModel()) === 'ag-ui' && !s.improve) {
+      let url = null;
+      try {
+        url = await this.steward.agui.ensure();
+      } catch (e) {
+        this.log(`[SecondBrain] steward: the AG-UI host (43122) is down (${e.message}); this turn goes over Responses (43120)`);
+      }
+      if (url) return this.askStewardAgui(s, text, id, send, approver, said, url);
     }
     const base = await this.steward.ensure();
     const r = await this.steward.turn({
@@ -392,9 +402,8 @@ class AgentService {
    * id and the history its own messages; his cards come to `approve` as askSteward's do, and the turn is kept in the
    * session note the same way.
    */
-  async askStewardAgui(s, text, id, send, approve, said) {
-    const { ensure, turn } = this.steward.agui;
-    const url = await ensure();
+  async askStewardAgui(s, text, id, send, approve, said, url) {
+    const { turn } = this.steward.agui;
     const r = await turn({ url, threadId: id, messages: s.messages.slice(0, -1), text: said, approve, onEvent: send, signal: s.abort.signal });
     if (r.calls.length) s.messages.push({ role: 'assistant', content: '', tool_calls: r.calls.map((c) => ({ function: { name: c.name, arguments: c.arguments } })) });
     s.messages.push({ role: 'assistant', content: r.answer });

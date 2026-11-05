@@ -6,7 +6,7 @@ const express = require('express');
 const updater = require('./updater.cjs');
 const fs = require('fs');
 const { Vault, importFile, SUPPORTED } = require('./vaultfs.cjs');
-const { Settings, telegramEffective } = require('./settings.cjs');
+const { Settings, telegramEffective, stewardTransport } = require('./settings.cjs');
 const inbox = require('./inbox.cjs');
 const report = require('./report.cjs');
 const atlas = require('./atlas.cjs');
@@ -472,7 +472,7 @@ const stewardAgui = steward.service({
   log: 'steward-ag-ui.log',
   portEnv: 'STEWARD_AG_UI_PORT',
 });
-const aguiOn = () => getSettings().get('agent').backend === 'steward' && getSettings().get('agent').transport === 'ag-ui';
+const aguiOn = () => getSettings().get('agent').backend === 'steward' && stewardTransport(getSettings().get('agent')) === 'ag-ui';
 // all go down with SecondBrain, each with its whole process tree (not only the venv launcher)
 steward.stopOnQuit(app, [stewardService, stewardMcp, stewardAgui]);
 // Claude's check of each Steward turn (agent/checker.cjs): on the Claude key and model in
