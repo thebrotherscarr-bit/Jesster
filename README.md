@@ -16,6 +16,11 @@ tools (notes, web search and fetch, the Estate's controls) that Steward uses ove
 
 Everything runs on your own PC on local Ollama models. No hosted model is used by default.
 
+The Estate's design (its parts, ports, protocols, data and plan) is in Steward's
+[`docs/ARCHITECTURE.md`](https://github.com/thebrotherscarr-bit/Steward/blob/main/docs/ARCHITECTURE.md), with its
+decision records in [`docs/decisions/`](https://github.com/thebrotherscarr-bit/Steward/tree/main/docs/decisions).
+How an agent works here is in [`AGENTS.md`](AGENTS.md).
+
 ## Install on another PC (Windows)
 
 1. Install [Ollama](https://ollama.com) and build Steward's model (`ollama pull gpt-oss:20b`, then
