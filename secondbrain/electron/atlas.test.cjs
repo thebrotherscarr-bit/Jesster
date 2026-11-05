@@ -502,3 +502,50 @@ test("the app's evals: run-bar.ps1 detached in its own minimized PowerShell wind
   assert.match(estateMod.RUNNING_QUERY, /run-bar\.ps1/);
   assert.equal(typeof estateMod.evalsApi({ stewardDir: () => null }).launch, 'function');
 });
+
+test("estate_status carries each repository's version from its local refs, cached for a minute; never git status or git diff", async () => {
+  const estateMod = require('./estate.cjs');
+  const calls = [];
+  const run = async (cmd, args, cwd) => {
+    calls.push([cmd, ...args, cwd]);
+    const repo = cwd;
+    if (args[0] === 'rev-parse' && args[1] === '--abbrev-ref') return repo === '/none' ? { code: 128, out: '', err: 'fatal: not a git repository' } : { code: 0, out: repo === '/s' ? 'fix-x' : 'main', err: '' };
+    if (args[0] === 'rev-parse' && args[2] === 'HEAD') return { code: 0, out: repo === '/s' ? 'bbb2222' : 'aaa1111', err: '' };
+    if (args[0] === 'rev-parse' && args[2] === 'origin/main') return { code: 0, out: repo === '/s' ? 'ccc3333' : 'aaa1111', err: '' };
+    if (args[0] === 'rev-list') return { code: 0, out: repo === '/s' ? '3\t1' : '0\t0', err: '' };
+    if (args[0] === 'diff-index') return { code: repo === '/s' ? 1 : repo === '/j' ? 128 : 0, out: '', err: '' };
+    return { code: 1, out: '', err: 'unexpected' };
+  };
+  let t = 1000;
+  const repos = () => [
+    { name: 'research', dir: '/g' },
+    { name: 'steward', dir: '/s' },
+    { name: 'jesster', dir: '/j' },
+    { name: 'atlas', dir: '/none' },
+    { name: 'neiro', dir: '/n' },
+  ];
+  const versions = estateMod.versionsApi({ repos, run, clock: () => t });
+  const { registry, ctx } = setup();
+  const { estate } = fakeEstate();
+  const st = JSON.parse((await atlas.handleMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'estate_status', arguments: {} } }, { registry, ctx: { ...ctx, estate: { ...estate, versions } } })).result.content[0].text);
+  assert.deepEqual(st.repos.map(({ dir, ...v }) => v), [
+    { name: 'research', branch: 'main', head: 'aaa1111', origin_main: 'aaa1111', behind: 0, ahead: 0, clean: true },
+    { name: 'steward', branch: 'fix-x', head: 'bbb2222', origin_main: 'ccc3333', behind: 3, ahead: 1, clean: false },
+    { name: 'jesster', branch: 'main', head: 'aaa1111', origin_main: 'aaa1111', behind: 0, ahead: 0 },
+    { name: 'atlas', error: 'fatal: not a git repository' },
+  ], 'Neiro is not a version gate any more; clean is left out where it cannot be read');
+  assert.ok(st.secondbrain.build && st.ollama.version, 'what it had stays');
+  assert.ok(calls.every((c) => c[0] === 'git' && !['status', 'diff', 'fetch', 'pull'].includes(c[1])), 'local refs only');
+  assert.ok(calls.some((c) => c.join(' ').includes('rev-list --left-right --count origin/main...HEAD')));
+  const n = calls.length;
+  t += estateMod.VERSIONS_TTL_MS - 1;
+  await versions();
+  assert.equal(calls.length, n, 'cached under a minute');
+  t += 2;
+  await versions();
+  assert.ok(calls.length > n, 'read again after a minute');
+  const plain = JSON.parse((await atlas.handleMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'estate_status', arguments: {} } }, { registry, ctx: { ...ctx, estate } })).result.content[0].text);
+  assert.equal(plain.repos, undefined);
+  const main = fs.readFileSync(path.join(__dirname, 'main.cjs'), 'utf8');
+  assert.equal((main.match(/versions: estateVersions,/g) || []).length, 2, 'estate_status and the workflows read the same cache');
+});

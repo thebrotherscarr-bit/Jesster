@@ -665,6 +665,7 @@ function scheduleDeps() {
     onCard: phoneCard,
     busy: () => getAgent().busy(),
     evals: stewardEvals(),
+    versions: estateVersions,
     ground,
     repos: workflows.estateRepos(ground),
     sitting: () => (ground ? atlasGlass.openSitting(ground) : ''),
@@ -1085,6 +1086,11 @@ ipcMain.handle('services:log', (event, id, lines) => {
   return servers.log(String(id), lines);
 });
 // ---- the Estate for Steward (estate.cjs): the same registry, updater and history, as MCP tools on /mcp ----------
+// the Estate's versions on estate_status and the workflows' versions step: the ground's repositories, cached 60 s
+const estateVersions = estate.versionsApi({
+  repos: () => workflows.estateRepos(atlasGlass.findGround((getSettings().get('atlas') || {}).ground, vaultDir())),
+  run: workflows.run,
+});
 const stewardDirNow = () => steward.findSteward((getSettings().get('agent').steward || {}).dir, vaultDir());
 // Steward's eval sets (eval_start, eval_status, a workflow's eval steps): run-bar.ps1 in his folder, its own window
 const stewardEvals = () => estate.evalsApi({ stewardDir: stewardDirNow });
@@ -1097,6 +1103,7 @@ function estateDeps() {
     history: getApprovalsHistory(),
     // Steward's eval sets (eval_start, eval_status): run-bar.ps1 in his folder, in its own minimized window
     evals: stewardEvals(),
+    versions: estateVersions,
     sitting: () => {
       const g = atlasGlass.findGround((getSettings().get('atlas') || {}).ground, vaultDir());
       return g ? atlasGlass.openSitting(g) : '';
