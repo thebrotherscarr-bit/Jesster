@@ -13,6 +13,7 @@ const atlas = require('./atlas.cjs');
 const atlasGlass = require('./atlasglass.cjs');
 const services = require('./services.cjs');
 const approvals = require('./approvals.cjs');
+const estate = require('./estate.cjs');
 const door = require('./door/index.cjs');
 const archive = require('./archive.cjs');
 const integrations = require('./integrations.cjs');
@@ -23,6 +24,7 @@ const agui = require('./agent/agui.cjs');
 const checker = require('./agent/checker.cjs');
 const memory = require('./agent/memory.cjs');
 const sched = require('./agent/schedules.cjs');
+const workflows = require('./agent/workflows.cjs');
 const { McpClient } = require('./agent/mcp.cjs');
 const { Telegram } = require('./agent/telegram.cjs');
 const { Discord } = require('./agent/discord.cjs');
@@ -646,17 +648,38 @@ let schedules = null;
 function getSchedules() {
   return schedules || (schedules = new sched.Schedules(getVault));
 }
-// other features register ways to deliver a result (Telegram)
+// other features register ways to deliver a result (Telegram); a Steward schedule's cards go to Telegram too (phoneCard)
 const deliverers = {};
 let schedulerTimer = null;
 let schedulerBusy = false;
+
+// what a schedule runs with: a Steward schedule's cards go to Telegram too (phoneCard); a workflow (agent/workflows.cjs)
+// waits for any conversation mid-turn before an eval (busy), and reads the Estate's repositories from the ground
+function scheduleDeps() {
+  const ground = atlasGlass.findGround((getSettings().get('atlas') || {}).ground, vaultDir());
+  return {
+    schedules: getSchedules(),
+    agent: getAgent(),
+    vault: getVault(),
+    deliverers,
+    onCard: phoneCard,
+    busy: () => getAgent().busy(),
+    evals: stewardEvals(),
+    ground,
+    repos: workflows.estateRepos(ground),
+    sitting: () => (ground ? atlasGlass.openSitting(ground) : ''),
+    stewardDir: stewardDirNow(),
+  };
+}
 
 async function schedulerTick() {
   if (schedulerBusy) return;
   schedulerBusy = true;
   try {
+    // a workflow parked on eval_wait is read on, and filed once its eval says BAR DONE
+    await sched.resumeSchedules(scheduleDeps());
     for (const s of getSchedules().due()) {
-      await sched.runSchedule(s, { schedules: getSchedules(), agent: getAgent(), vault: getVault(), deliverers });
+      await sched.runSchedule(s, scheduleDeps());
       if (mainWindow) mainWindow.webContents.send('vault:changed');
     }
   } catch (e) {
@@ -695,7 +718,7 @@ ipcMain.handle('schedules:run', async (event, id) => {
   guard(event);
   const s = getSchedules().all().find((x) => x.id === id);
   if (!s) throw new Error('no such schedule');
-  const r = await sched.runSchedule(s, { schedules: getSchedules(), agent: getAgent(), vault: getVault(), deliverers });
+  const r = await sched.runSchedule(s, scheduleDeps());
   if (mainWindow) mainWindow.webContents.send('vault:changed');
   return { note: r.id, ok: r.ok, schedules: schedulesView() };
 });
@@ -1062,6 +1085,9 @@ ipcMain.handle('services:log', (event, id, lines) => {
   return servers.log(String(id), lines);
 });
 // ---- the Estate for Steward (estate.cjs): the same registry, updater and history, as MCP tools on /mcp ----------
+const stewardDirNow = () => steward.findSteward((getSettings().get('agent').steward || {}).dir, vaultDir());
+// Steward's eval sets (eval_start, eval_status, a workflow's eval steps): run-bar.ps1 in his folder, its own window
+const stewardEvals = () => estate.evalsApi({ stewardDir: stewardDirNow });
 function estateDeps() {
   return {
     servers,
@@ -1069,6 +1095,8 @@ function estateDeps() {
     check: updater.check,
     apply: updater.apply,
     history: getApprovalsHistory(),
+    // Steward's eval sets (eval_start, eval_status): run-bar.ps1 in his folder, in its own minimized window
+    evals: stewardEvals(),
     sitting: () => {
       const g = atlasGlass.findGround((getSettings().get('atlas') || {}).ground, vaultDir());
       return g ? atlasGlass.openSitting(g) : '';

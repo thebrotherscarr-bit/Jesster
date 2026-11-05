@@ -19,10 +19,20 @@ const NEEDS_APPROVAL = 'That needs approval — ask from the PC or Telegram.';
 // a card raised from outside (askCard): Steward under his MCP host, for Manjuel and Aurora; answered No after 10 minutes
 const OUTSIDE = 'Manjuel / MCP';
 const CARD_TIMEOUT_MS = 600000;
+// a scheduled automation's turn to Steward (schedules.cjs runSchedule, a schedule with backend steward): nobody is
+// watching, so its cards go to the window, the Approvals shelf and Telegram like any other, and unanswered in
+// CARD_TIMEOUT_MS they are answered No. An automation never approves itself.
+const AUTOMATION = 'automation';
+
+/** The line naming where a turn came from; an automation's names its schedule (schedules.cjs, backend steward). */
+function sourceLine(source, automation) {
+  if (source === AUTOMATION) return `from an automation (${String(automation || '').trim() || 'unnamed'})`;
+  return SOURCES[source];
+}
 
 /** The text Steward is sent: a short line naming where it came from, then the message (an improve: word stays first). */
-function withSource(text, source) {
-  const line = SOURCES[source];
+function withSource(text, source, automation) {
+  const line = sourceLine(source, automation);
   if (!line) return text;
   return /^\s*improve:/i.test(text) ? `${text}\n\n[${line}]` : `[${line}]\n${text}`;
 }
@@ -75,16 +85,28 @@ class AgentService {
    * as well (Telegram shows it as Allow/Deny buttons); the card is the window's, so it is answered by
    * answerApproval from either place, and a message typed while it waits is handled the same way.
    */
-  approveInWindow(sessionId, onCard) {
+  approveInWindow(sessionId, onCard, { timeoutMs = 0, label = '' } = {}) {
     return (name, args, summary) => {
       const key = `${name}:${summary}`;
       if (this.alwaysAllow.has(key)) return Promise.resolve(true);
       const id = crypto.randomBytes(6).toString('hex');
-      this.emit('agent:approval', { id, sessionId, name, args, summary });
-      const answer = new Promise((resolve) => this.pending.set(id, { resolve, key, sessionId, name, args, summary, at: Date.now() }));
-      this.tellCard(onCard, { id, sessionId, name, args, summary });
+      // an automation's card (label) says so on its first line, as askCard's do, and the history keeps the label
+      const shown = label ? `[${label}]\n${summary}` : summary;
+      this.emit('agent:approval', { id, sessionId, name, args, summary: shown });
+      const answer = new Promise((resolve) => this.pending.set(id, { resolve, key, sessionId, name, args, summary: shown, at: Date.now(), ...(label ? { source: label } : {}) }));
+      this.timeOut(id, timeoutMs);
+      this.tellCard(onCard, { id, sessionId, name, args, summary: shown });
       return answer;
     };
+  }
+
+  /** A card nobody answers in `ms` is answered No (a timeout, kept in the history); 0 waits for ever, as the tab's. */
+  timeOut(id, ms) {
+    if (!ms) return;
+    const timer = setTimeout(() => this.answerApproval(id, false, false, undefined, { where: 'window', timeout: true }), ms);
+    timer.unref?.();
+    const p = this.pending.get(id);
+    if (p) p.timer = timer;
   }
 
   /**
@@ -135,7 +157,7 @@ class AgentService {
    * there"): Allow keeps the change, Deny drops it, and a message typed while it waits goes back to the fixer as
    * guidance. Resolves the reply text.
    */
-  reviewInWindow(sessionId, onCard) {
+  reviewInWindow(sessionId, onCard, { timeoutMs = 0 } = {}) {
     return (request) => {
       const id = crypto.randomBytes(6).toString('hex');
       const r = request || {};
@@ -146,6 +168,7 @@ class AgentService {
         String(r.output || '').slice(-1500);
       this.emit('agent:approval', { id, sessionId, name: 'review', kind: 'review', args: request || {}, summary });
       const answer = new Promise((resolve) => this.pending.set(id, { resolve, key: `review:${id}`, sessionId, kind: 'review', name: 'review', args: request || {}, summary, at: Date.now() }));
+      this.timeOut(id, timeoutMs);
       this.tellCard(onCard, { id, sessionId, name: 'review', kind: 'review', args: request || {}, summary });
       return answer;
     };
@@ -164,6 +187,7 @@ class AgentService {
     const p = this.pending.get(id);
     if (!p) return false;
     this.pending.delete(id);
+    if (p.timer) clearTimeout(p.timer);
     // the card is gone wherever it shows (the Agent tab, the Services window's Approvals)
     this.emit('agent:approval-done', { id, sessionId: p.sessionId });
     const guidance = typeof text === 'string' && text.trim() ? text.trim() : '';
@@ -220,7 +244,7 @@ class AgentService {
    * queued behind a card (it runs after the turn it interrupted, so ask() cannot return it).
    */
   async ask(request) {
-    const { text, sessionId, source = 'app', approve, only, onEvent, save = true, maxSteps, onCard } = request;
+    const { text, sessionId, source = 'app', approve, only, onEvent, save = true, maxSteps, onCard, automation, cardTimeoutMs = CARD_TIMEOUT_MS } = request;
     const id = sessionId || newSessionId();
     const s = this.session(id);
     if (s.busy) {
@@ -254,7 +278,12 @@ class AgentService {
     };
     send({ type: 'user', text, source });
     try {
-      // the Agent tab and the phone (Telegram, Discord, ...) talk to Steward; schedules and subagents keep the local loop for now
+      // the Agent tab and the phone (Telegram, Discord, ...) talk to Steward; so does a schedule with backend steward
+      // (source AUTOMATION), whatever the tab's backend; other schedules and subagents keep the local loop for now
+      if (source === AUTOMATION) {
+        if (!this.steward) throw new Error('Steward is not set up in this SecondBrain, so a Steward automation cannot run.');
+        return result(await this.askSteward(s, text, id, send, null, onCard, source, { name: automation, timeoutMs: cardTimeoutMs }));
+      }
       if (this.steward && backend === 'steward' && (source === 'app' || PHONE.includes(source))) {
         return result(await this.askSteward(s, text, id, send, approve, onCard, source));
       }
@@ -300,25 +329,30 @@ class AgentService {
    * this session's last response id, and his approval requests come to the window's cards (and,
    * with `onCard`, to Telegram's buttons too: then the cards are always the window's own).
    */
-  async askSteward(s, text, id, send, approve, onCard, source = 'app') {
+  async askSteward(s, text, id, send, approve, onCard, source = 'app', automation = null) {
     // his service runs his MAF workflow, which keeps the plan and execute modes itself: the plan
     // comes as an approval request (a card), and the tab sends only the text
     // a conversation that starts with "improve:" is an improvement round (step 6): every turn of it names the loop
     if (!s.stewardPrevious && /^\s*improve:/i.test(text)) s.improve = true;
     // a chat-and-research-only channel (READ_ONLY): his approvals and reviews are refused at once, no card raised
     const readOnly = Boolean(READ_ONLY[source]);
+    // an automation's turn (AUTOMATION): its cards are the window's, the shelf's and Telegram's, each saying it came
+    // from the automation, answered No when nobody answers in time; never one it answers itself (no `approve`)
+    const cards = automation ? { timeoutMs: automation.timeoutMs, label: sourceLine(source, automation.name) } : {};
+    const approver = readOnly ? this.refuseCards(s, source) : onCard ? this.approveInWindow(id, onCard, cards) : (!automation && approve) || this.approveInWindow(id, undefined, cards);
+    const said = withSource(text, source, automation && automation.name);
     // Settings' agent.transport 'ag-ui': the turn goes to his AG-UI host (agui.cjs), with the same cards; an improve
     // conversation stays on his service, whose review card has no AG-UI answer yet
     if (this.steward.agui && (this.getModel() || {}).transport === 'ag-ui' && !s.improve) {
-      return this.askStewardAgui(s, text, id, send, readOnly ? this.refuseCards(s, source) : onCard ? this.approveInWindow(id, onCard) : approve || this.approveInWindow(id), source);
+      return this.askStewardAgui(s, text, id, send, approver, said);
     }
     const base = await this.steward.ensure();
     const r = await this.steward.turn({
       base,
-      text: withSource(text, source),
+      text: said,
       previous: s.stewardPrevious,
-      approve: readOnly ? this.refuseCards(s, source) : onCard ? this.approveInWindow(id, onCard) : approve || this.approveInWindow(id),
-      review: readOnly ? this.refuseCards(s, source, true) : this.reviewInWindow(id, onCard),
+      approve: approver,
+      review: readOnly ? this.refuseCards(s, source, true) : this.reviewInWindow(id, onCard, cards),
       metadata: s.improve ? { steward_workflow: 'improve' } : undefined,
       onEvent: send,
       signal: s.abort.signal,
@@ -337,10 +371,10 @@ class AgentService {
    * id and the history its own messages; his cards come to `approve` as askSteward's do, and the turn is kept in the
    * session note the same way.
    */
-  async askStewardAgui(s, text, id, send, approve, source) {
+  async askStewardAgui(s, text, id, send, approve, said) {
     const { ensure, turn } = this.steward.agui;
     const url = await ensure();
-    const r = await turn({ url, threadId: id, messages: s.messages.slice(0, -1), text: withSource(text, source), approve, onEvent: send, signal: s.abort.signal });
+    const r = await turn({ url, threadId: id, messages: s.messages.slice(0, -1), text: said, approve, onEvent: send, signal: s.abort.signal });
     if (r.calls.length) s.messages.push({ role: 'assistant', content: '', tool_calls: r.calls.map((c) => ({ function: { name: c.name, arguments: c.arguments } })) });
     s.messages.push({ role: 'assistant', content: r.answer });
     await this.checkTurn(s, { text, calls: r.calls, answer: r.answer }, send);
@@ -358,6 +392,11 @@ class AgentService {
     } catch (e) {
       if (e.name !== 'AbortError') send({ type: 'check', text: `Claude's check could not run: ${e.message}` });
     }
+  }
+
+  /** Whether any conversation is mid-turn now (the Agent tab, the phone, an automation): an eval workflow waits for it. */
+  busy() {
+    return [...this.sessions.values()].some((s) => s.busy);
   }
 
   stop(sessionId) {
@@ -380,4 +419,4 @@ class AgentService {
   }
 }
 
-module.exports = { AgentService, withSource, SOURCES, PHONE, READ_ONLY, NEEDS_APPROVAL, OUTSIDE, CARD_TIMEOUT_MS };
+module.exports = { AgentService, withSource, sourceLine, AUTOMATION, SOURCES, PHONE, READ_ONLY, NEEDS_APPROVAL, OUTSIDE, CARD_TIMEOUT_MS };

@@ -85,6 +85,13 @@ export interface ScheduleView {
   whenText: string;
   whenLabel: string;
   deliver: string[];
+  /** 'steward': the prompt goes to Steward as an automation's turn; 'local' (or absent): the local agent loop */
+  backend?: 'local' | 'steward';
+  /** a workflow (electron/agent/workflows.cjs): its steps, from the fixed list, and the one Steward turn's prompt */
+  steps?: (string | { step: string; [arg: string]: unknown })[];
+  summarize?: string;
+  /** a workflow parked on eval_wait: the eval run it waits for */
+  pending?: { tag: string; until: number } | null;
   enabled: boolean;
   next: number | null;
   lastRun: number | null;
@@ -94,7 +101,15 @@ export interface ScheduleView {
 
 export interface SchedulesBridge {
   list: () => Promise<ScheduleView[]>;
-  add: (spec: { name: string; prompt: string; when: string; deliver?: string[] }) => Promise<ScheduleView[]>;
+  add: (spec: {
+    name: string;
+    prompt: string;
+    when: string;
+    deliver?: string[];
+    backend?: 'local' | 'steward';
+    steps?: (string | { step: string; [arg: string]: unknown })[];
+    summarize?: string;
+  }) => Promise<ScheduleView[]>;
   update: (id: string, patch: { enabled?: boolean }) => Promise<ScheduleView[]>;
   remove: (id: string) => Promise<ScheduleView[]>;
   run: (id: string) => Promise<{ note: string; ok: boolean; schedules: ScheduleView[] }>;

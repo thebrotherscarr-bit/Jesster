@@ -54,7 +54,9 @@ function withAtlas(configText, entry) {
 // long-term memory notes (agent-memory, user-profile) and skill saving, beside the notes.
 // The Estate's tools (estate.cjs): what SecondBrain runs, for Steward to see and work. app_update is listed with the
 // reads for its check; its apply is a write, refused while writes are off.
-const ESTATE_READ_TOOLS = ['estate_status', 'estate_logs', 'approvals_history', 'app_update'];
+// eval_start is an Estate action of the bounded kind, read-class here (served while writes are off, never on a card):
+// it only runs Steward's eval sets, which write only his eval history and throwaway working copies (estate.cjs).
+const ESTATE_READ_TOOLS = ['estate_status', 'estate_logs', 'approvals_history', 'app_update', 'eval_start', 'eval_status'];
 const ESTATE_WRITE_TOOLS = ['service_control', 'ollama_unload'];
 const READ_TOOLS = ['search_notes', 'read_note', 'list_notes', 'search_sessions', 'skills_list', 'skill_view', 'web_search', 'web_fetch', ...ESTATE_READ_TOOLS];
 const WRITE_TOOLS = ['write_note', 'append_to_note', 'todo', 'memory', 'skill_save', ...ESTATE_WRITE_TOOLS];
