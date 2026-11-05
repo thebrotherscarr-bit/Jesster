@@ -713,7 +713,8 @@ ipcMain.handle('schedules:list', (event) => {
 });
 ipcMain.handle('schedules:add', (event, spec) => {
   guard(event);
-  getSchedules().add(spec || {});
+  // only a flow (ADR-0009): there is no prompt type to add
+  getSchedules().addFlow(spec || {});
   return schedulesView();
 });
 ipcMain.handle('schedules:update', (event, id, patch) => {

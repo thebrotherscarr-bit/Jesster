@@ -195,7 +195,3 @@ export function saveSpec(name: string, recipe: Recipe, isNew: boolean): Partial<
   const base = { name: name.trim(), backend: 'steward' as const, steps: recipe.steps, summarize: recipe.summarize || '', deliver: recipe.deliver };
   return isNew ? { ...base, prompt: '', when: '' } : base;
 }
-
-/** The hours a Run now of a night flow is asked about first ("This takes hours; run now anyway?"). */
-export const DAY_HOURS = { from: 7, to: 22 };
-export const isDaytime = (now: Date) => now.getHours() >= DAY_HOURS.from && now.getHours() < DAY_HOURS.to;

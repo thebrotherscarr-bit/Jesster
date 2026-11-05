@@ -1,6 +1,9 @@
 /**
- * Scheduled automations: a prompt the agent runs on a schedule, with the
- * answer filed as a note (and, once Telegram is set up, sent there).
+ * Flows and automations (ADR-0009, Steward docs/decisions, 2026-11-05): a flow
+ * is an ordered chain of steps (workflows.cjs) saved by itself; an automation
+ * is a saved flow, a "when" and on/off, kept on the flow. There is no prompt
+ * type: a new schedule must be a flow (addFlow, the app's only way in). A
+ * prompt-only schedule saved before that is legacy and still runs as below.
  *
  * Kept in <vault>/.secondbrain/schedules.json so they travel with the notes.
  * "when" is plain text:
@@ -113,7 +116,13 @@ class Schedules {
     fs.writeFileSync(this.file(), JSON.stringify(list, null, 2));
   }
 
-  add({ name, prompt, when, deliver = ['note'], backend = 'local', steps, summarize, tags, night }, now = Date.now()) {
+  /** A new flow from the app (the Flows shelf's + New flow): steps are required, as there is no prompt type. */
+  addFlow(spec = {}, now = Date.now()) {
+    if (!Array.isArray(spec.steps) || !spec.steps.length) throw new Error('a new automation is a saved flow: make it with + New flow (ADR-0009)');
+    return this.add(spec, now);
+  }
+
+  add({ name, prompt, when, deliver = ['note'], backend = 'local', steps, summarize, tags }, now = Date.now()) {
     // a workflow (steps, workflows.cjs) needs no prompt of its own: its steps say what it does
     if (!name || (!prompt && !steps)) throw new Error('a schedule needs a name and a prompt');
     // no when: it runs only on Run now (the Flows shelf's canvas; scheduling is Set up's)
@@ -129,7 +138,6 @@ class Schedules {
       backend: BACKENDS.includes(backend) ? backend : 'local',
       ...flow,
       ...(tagsOf(tags).length ? { tags: tagsOf(tags) } : {}),
-      ...(night ? { night: true } : {}),
       enabled: true,
       created: now,
       lastRun: null,
@@ -153,7 +161,7 @@ class Schedules {
 
   /**
    * Change a schedule from the Flows shelf's Set up panel: only the fields given, each checked the way add checks it
-   * (parseWhen, workflows.validateSteps), all before anything is written. An empty steps list makes it a prompt again.
+   * (parseWhen, workflows.validateSteps), all before anything is written. A flow's steps cannot be emptied (no prompt type).
    */
   edit(id, spec = {}, now = Date.now()) {
     const list = this.all();
@@ -312,28 +320,9 @@ async function resumeSchedules(deps) {
   return out;
 }
 
+// No schedule_create: a prompt on a timer is not made any more (ADR-0009); flows are made on the Flows shelf.
 function tools(getSchedules) {
   return [
-    {
-      name: 'schedule_create',
-      description:
-        'Schedule a prompt for yourself to run automatically; the answer is filed as a note. when: "daily 08:30", "weekdays 08:30", "weekly mon 09:00", "every 3h", "every 30m" or "once 2026-10-23 09:00". deliver: ["note"] and/or "telegram". backend: "local" (this loop, risky tools refused) or "steward" (sent to Steward; his cards wait on the user, No after 10 minutes).',
-      parameters: {
-        type: 'object',
-        properties: {
-          name: { type: 'string' },
-          prompt: { type: 'string', description: 'what to do each time, written as an instruction to yourself' },
-          when: { type: 'string' },
-          deliver: { type: 'array', items: { type: 'string', enum: ['note', 'telegram'] } },
-          backend: { type: 'string', enum: BACKENDS },
-        },
-        required: ['name', 'prompt', 'when'],
-      },
-      run: (a) => {
-        const s = getSchedules().add(a);
-        return { created: s.name, id: s.id, when: describeWhen(s.when), backend: s.backend, next: new Date(s.next).toString() };
-      },
-    },
     {
       name: 'schedule_list',
       description: 'List scheduled automations.',

@@ -4,16 +4,31 @@ import { readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { RECIPE_STEPS, blankForm, cleanError, formOf, runBlocked, runFlow, saveFlow, removeFlow, setFlowEnabled, specOf, whenChoices, whenText } from './flowSetup.ts';
+import * as flowSetup from './flowSetup.ts';
+import {
+  LEGACY_LABEL,
+  automationFormOf,
+  automationsOf,
+  blankAutomation,
+  cleanError,
+  flowsOf,
+  removeAutomation,
+  removeFlow,
+  runBlocked,
+  runFlow,
+  saveAutomation,
+  setFlowEnabled,
+  whenChoices,
+  whenText,
+} from './flowSetup.ts';
 import { FlowsShelfView } from '../components/FlowsShelf.tsx';
 import { AutomationsSection } from '../components/settings/AutomationsSection.tsx';
 import type { ScheduleView, SchedulesBridge } from '../types/desktop.ts';
 
-// The Flows shelf's Run now and Set up (the operator, 2026-11-05: "need a way to actually run the things ... where do
-// i input the stuff that you asked me to set?"). The automations moved here from the Agent console; same IPC.
+// The Flows shelf's Run now and Set up. ADR-0009 (Steward docs/decisions, 2026-11-05): a flow is an ordered chain of
+// steps made only with + New flow; an automation is a saved flow, when and on/off; there is no prompt type.
 const require = createRequire(import.meta.url);
-const workflows = require('../../electron/agent/workflows.cjs');
-const { parseWhen } = require('../../electron/agent/schedules.cjs');
+const { parseWhen, Schedules, tools } = require('../../electron/agent/schedules.cjs');
 
 const schedule = (over: Partial<ScheduleView>): ScheduleView => ({
   id: 's1',
@@ -50,12 +65,12 @@ function fakeBridge(refuse?: string) {
   return { bridge, calls };
 }
 
-test("the recipe's steps are workflows.cjs STEPS less the eval workflow's two", () => {
-  assert.deepEqual([...RECIPE_STEPS].sort(), workflows.STEPS.filter((s: string) => !['eval_start', 'eval_wait'].includes(s)).sort());
-});
+const startup = schedule({ id: 'a', name: 'Startup', steps: ['pull_ff', 'versions', 'repo_log'], summarize: 'Daily' });
+const mine = schedule({ id: 'b', name: 'Mine', steps: ['versions'], whenText: '', whenLabel: 'only on Run now' });
+const legacy = schedule({ id: 'c', name: 'Old prompt', prompt: 'Say hi', backend: 'steward', whenText: 'daily 08:00', whenLabel: 'daily at 08:00' });
 
 test('the plain when choices are text parseWhen reads, and read back', () => {
-  const f = blankForm();
+  const f = blankAutomation();
   const cases = [
     { ...f, whenKind: 'daily' as const, time: '08:30' },
     { ...f, whenKind: 'weekdays' as const, time: '06:00' },
@@ -73,39 +88,73 @@ test('the plain when choices are text parseWhen reads, and read back', () => {
   assert.deepEqual(whenChoices('weekly Monday 9:00'), { ...whenChoices(''), whenKind: 'weekly', day: 'mon', time: '09:00' });
 });
 
-test('the form makes each kind of automation as add and edit take it', () => {
-  const f = { ...blankForm(), name: ' Morning ', prompt: 'Say what is left', telegram: true };
-  assert.deepEqual(specOf(f), { name: 'Morning', when: 'weekdays 08:30', deliver: ['note', 'telegram'], prompt: 'Say what is left', backend: 'steward', steps: [], summarize: '' });
-  const recipe = specOf({ ...f, type: 'recipe', steps: ['repo_log', 'versions'], summarize: 'Write it up' });
-  assert.deepEqual([recipe.steps, recipe.summarize, recipe.backend], [['repo_log', 'versions'], 'Write it up', 'steward']);
-  assert.deepEqual(workflows.validateSteps(recipe.steps), ['repo_log', 'versions']);
-  const evals = specOf({ ...f, type: 'evals', sets: 'aider-py, small', runs: 2 });
-  assert.deepEqual(evals.steps, [{ step: 'eval_start', sets: ['aider-py', 'small'], runs: 2 }, 'eval_wait']);
-  assert.doesNotThrow(() => workflows.validateSteps(evals.steps));
-  // a schedule read back into the form: his Startup recipe, an eval workflow, an old local prompt
-  const startup = formOf(schedule({ steps: ['pull_ff', 'versions'], summarize: 'Daily', deliver: ['note', 'telegram'], prompt: 'Review' }));
-  assert.deepEqual([startup.type, startup.steps, startup.summarize, startup.telegram, startup.whenKind, startup.time], ['recipe', ['pull_ff', 'versions'], 'Daily', true, 'weekdays', '06:00']);
-  const night = formOf(schedule({ steps: [{ step: 'eval_start', sets: ['aider-py'], runs: 2, transport: 'ag-ui' }, { step: 'eval_wait', hours: 8 }] }));
-  assert.deepEqual([night.type, night.sets, night.runs], ['evals', 'aider-py', 2]);
-  assert.equal(formOf(schedule({ prompt: 'x', backend: 'local' })).type, 'local');
-  assert.equal(formOf(schedule({ prompt: 'x', backend: 'steward' })).type, 'steward');
+test("ADR-0009: no prompt type, in the form, the helpers or the app's way in", () => {
+  // the form: a flow, when, on/off; no prompt, no type, no steps, no summarize, no Telegram
+  const { bridge } = fakeBridge();
+  const form = renderToStaticMarkup(<AutomationsSection bridge={bridge} flows={[startup, mine]} selected={mine} onChange={() => {}} startNew />);
+  assert.match(form, /aria-label="Flow"/);
+  assert.match(form, /aria-label="How often"/);
+  assert.match(form, /aria-label="On"/);
+  for (const gone of ['Steward prompt', 'Local agent prompt', 'aria-label="Prompt"', 'aria-label="What it does"', 'aria-label="Steps"', 'aria-label="Summarize prompt"', 'also send to Telegram'])
+    assert.ok(!form.includes(gone), `no ${gone}`);
+  assert.deepEqual(Object.keys(blankAutomation()).sort(), ['date', 'day', 'enabled', 'every', 'everyUnit', 'flowId', 'time', 'whenKind']);
+  for (const old of ['specOf', 'formOf', 'saveFlow', 'blankForm', 'RECIPE_STEPS']) assert.ok(!(old in flowSetup), `${old} is gone`);
+  // the app: schedules:add takes only a flow, and the local agent has no schedule_create
+  const sched = new Schedules(() => ({ dir: 'unused' }));
+  assert.throws(() => sched.addFlow({ name: 'x', prompt: 'do things', when: 'daily 08:00', backend: 'steward' }), /saved flow/);
+  assert.ok(!tools(() => sched).some((t: { name: string }) => t.name === 'schedule_create'));
+  assert.match(readFileSync(new URL('../../electron/main.cjs', import.meta.url), 'utf8'), /getSchedules\(\)\.addFlow\(spec \|\| \{\}\)/);
 });
 
-test('Set up saves, changes, turns on and off, and deletes through the same IPC; a refusal comes back in plain words', async () => {
+test('an automation is a saved flow plus when and on/off, through the same IPC; a refusal comes back in plain words', async () => {
   const { bridge, calls } = fakeBridge();
-  const f = { ...blankForm(), name: 'Morning', prompt: 'Say hi' };
-  await saveFlow(bridge, f, null);
-  assert.deepEqual(calls.at(-1), ['add', { name: 'Morning', when: 'weekdays 08:30', deliver: ['note'], prompt: 'Say hi', backend: 'steward' }], 'a new one is added, with no empty steps');
-  await saveFlow(bridge, f, 's1');
-  assert.equal(calls.at(-1)![0], 'edit');
-  assert.equal(calls.at(-1)![1], 's1', 'the open one is changed');
-  await setFlowEnabled(bridge, 's1', false);
-  assert.deepEqual(calls.at(-1), ['update', 's1', { enabled: false }]);
-  await removeFlow(bridge, 's1');
-  assert.deepEqual(calls.at(-1), ['remove', 's1']);
+  await saveAutomation(bridge, { ...blankAutomation('b'), whenKind: 'daily', time: '23:00' }, null);
+  assert.deepEqual(calls.splice(0), [['edit', 'b', { when: 'daily 23:00' }], ['update', 'b', { enabled: true }]]);
+  // moved to another flow: the when comes off the first (it stays, Run now only)
+  await saveAutomation(bridge, { ...blankAutomation('a'), enabled: false }, 'b');
+  assert.deepEqual(calls.splice(0), [['edit', 'b', { when: '' }], ['edit', 'a', { when: 'weekdays 08:30' }], ['update', 'a', { enabled: false }]]);
+  await assert.rejects(saveAutomation(bridge, blankAutomation(''), null), /Pick a saved flow/);
+  // deleting an automation keeps its flow; a legacy prompt is removed
+  await removeAutomation(bridge, startup);
+  assert.deepEqual(calls.splice(0), [['edit', 'a', { when: '' }]]);
+  await removeAutomation(bridge, legacy);
+  assert.deepEqual(calls.splice(0), [['remove', 'c']]);
+  await setFlowEnabled(bridge, 'a', false);
+  assert.deepEqual(calls.at(-1), ['update', 'a', { enabled: false }]);
+  await removeFlow(bridge, 'a');
+  assert.deepEqual(calls.at(-1), ['remove', 'a']);
+  assert.deepEqual(automationFormOf(startup), { ...blankAutomation('a'), whenKind: 'weekdays', time: '06:00' });
 
   const refused = fakeBridge('when must look like: "daily 08:30"').bridge;
-  await assert.rejects(saveFlow(refused, f, null), (e) => cleanError(e) === 'when must look like: "daily 08:30"');
+  await assert.rejects(saveAutomation(refused, blankAutomation('a'), null), (e) => cleanError(e) === 'when must look like: "daily 08:30"');
+});
+
+test('flows and automations: a flow has steps; an automation is a flow with a when, or a legacy prompt shown to convert', () => {
+  const list = [startup, mine, legacy];
+  assert.deepEqual(flowsOf(list).map((s) => s.id), ['a', 'b']);
+  assert.deepEqual(automationsOf(list).map((s) => s.id), ['a', 'c'], 'a flow with no when is not an automation');
+  const { bridge } = fakeBridge();
+  const html = renderToStaticMarkup(<AutomationsSection bridge={bridge} flows={list} selected={startup} onChange={() => {}} />);
+  assert.match(html, /data-automation="a"/);
+  assert.match(html, /data-automation="c"/);
+  assert.doesNotMatch(html, /data-automation="b"/);
+  assert.match(html, new RegExp(`data-legacy[^>]*>${LEGACY_LABEL}<`));
+  assert.match(html, /aria-label="Change Startup"/);
+  assert.doesNotMatch(html, /aria-label="Change Old prompt"/, 'a legacy prompt is not edited here');
+  assert.match(html, /aria-label="Delete Old prompt"/);
+  assert.match(html, /aria-label="Enable Startup"/);
+});
+
+test('one create button for flows: + New flow; Set up builds none', () => {
+  const { bridge } = fakeBridge();
+  const html = renderToStaticMarkup(
+    <FlowsShelfView flows={[startup, mine]} selectedId="a" onSelect={() => {}} stewardOpen={false} onStewardOpen={() => {}} onNew={() => {}}
+      onSetupOpen={() => {}} setupOpen bridge={bridge} onFlowsChange={() => {}} onDelete={() => {}} />,
+  );
+  assert.equal([...html.matchAll(/data-new-flow/g)].length, 1, 'one + New flow');
+  const setup = renderToStaticMarkup(<AutomationsSection bridge={bridge} flows={[startup, mine]} selected={startup} onChange={() => {}} startNew />);
+  assert.doesNotMatch(setup, /data-new-flow|data-palette|New flow</, 'no flow is built in Set up');
+  assert.match(html, /data-delete-flow="a"/, 'a flow is deleted on the shelf');
 });
 
 test('Run now calls the run path, and is held with the reason while it runs or Steward is busy', async () => {
@@ -143,26 +192,20 @@ test('the shelf shows Run now, the last run and the cards running, done or faile
   assert.match(view('a', true), /Steward is busy/);
 });
 
-test('Set up folds out on the shelf like the Phone view, holds the form, and shows what was refused', () => {
+test('Set up folds out on the shelf like the Phone view, holds the automations, and shows what was refused', () => {
   const { bridge } = fakeBridge();
-  const flows = [schedule({ id: 'a', name: 'Startup', steps: ['repo_log', 'versions'], summarize: 'Daily' })];
-  const props = { flows, selectedId: 'a', onSelect: () => {}, stewardOpen: false, onStewardOpen: () => {}, onSetupOpen: () => {}, bridge, onFlowsChange: () => {} };
+  const props = { flows: [startup], selectedId: 'a', onSelect: () => {}, stewardOpen: false, onStewardOpen: () => {}, onSetupOpen: () => {}, bridge, onFlowsChange: () => {} };
   const folded = renderToStaticMarkup(<FlowsShelfView {...props} />);
   assert.match(folded, /Set up/);
   assert.ok(!folded.includes('aria-label="Automations"'), 'folded until opened');
   const open = renderToStaticMarkup(<FlowsShelfView {...props} setupOpen />);
   assert.match(open, /aria-label="Automations"/);
-  assert.match(open, /Change “Startup”/, 'the open flow is the one changed');
-  assert.match(open, /Save changes/);
   assert.match(open, /aria-label="Delete Startup"/);
-  assert.match(open, /aria-label="Enable Startup"/);
-  for (const s of RECIPE_STEPS) assert.ok(open.includes(`>${s}</label>`) || open.includes(`/>${s}</label>`), `${s} can be picked`);
-  assert.match(open, /aria-label="Summarize prompt"/);
-  const fresh = renderToStaticMarkup(<AutomationsSection bridge={bridge} selected={null} onChange={() => {}} initialError={'bad time "25:00" (use HH:MM, 24-hour)'} />);
+  const fresh = renderToStaticMarkup(<AutomationsSection bridge={bridge} flows={[startup]} selected={null} onChange={() => {}} startNew initialError={'bad time "25:00" (use HH:MM, 24-hour)'} />);
   assert.match(fresh, /New automation/);
   assert.match(fresh, /Add automation/);
   assert.match(fresh, /role="alert"[^>]*>bad time &quot;25:00&quot;/, 'the check shows inline');
-  for (const t of ['Steward prompt', 'Recipe', 'Eval workflow', 'Every day', 'Weekdays', 'Once a week', 'Every few hours or minutes', 'Once']) assert.ok(fresh.includes(t), t);
+  for (const t of ['Every day', 'Weekdays', 'Once a week', 'Every few hours or minutes', 'Once']) assert.ok(fresh.includes(t), t);
 });
 
 test('the automations form is on the Flows shelf only: not in Settings, not on the console', () => {

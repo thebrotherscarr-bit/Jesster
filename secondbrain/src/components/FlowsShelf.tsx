@@ -1,13 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ReactFlow, ReactFlowProvider, Background, Controls, Handle, Position, type Edge, type Node, type NodeProps } from '@xyflow/react';
-import { Workflow, Bot, Send, Boxes, PanelRight, X, Play, Settings2, Plus, PenLine, Copy, Moon } from 'lucide-react';
+import { Workflow, Bot, Send, Boxes, PanelRight, X, Play, Settings2, Plus, PenLine, Copy, Trash2 } from 'lucide-react';
 import type { ScheduleSpec, ScheduleView, SchedulesBridge } from '../types/desktop.ts';
 import { CARD, FlowNodeKind, FlowRunState, flowGraph, flowRunState, lastResultLine } from '../utils/flowGraph.ts';
-import { cleanError, runBlocked, runFlow } from '../utils/flowSetup.ts';
+import { LEGACY_LABEL, cleanError, isLegacy, removeFlow, runBlocked, runFlow } from '../utils/flowSetup.ts';
 import { FLOWS_STEWARD_OPEN_KEY, keepPanel, panelOpen } from '../utils/agentConsole.ts';
 import { AutomationsSection } from './settings/AutomationsSection.tsx';
 import { FlowEditor } from './FlowEditor.tsx';
-import { EdGraph, Recipe, isDaytime, recipeToGraph, saveSpec } from '../utils/flowEditor.ts';
+import { EdGraph, Recipe, recipeToGraph, saveSpec } from '../utils/flowEditor.ts';
 
 /**
  * The Flows shelf (the operator, 2026-11-05; plan-the-flows-shelf-ide-for-steward-s-f-04a93a, piece 1): the flows on
@@ -15,6 +15,9 @@ import { EdGraph, Recipe, isDaytime, recipeToGraph, saveSpec } from '../utils/fl
  * here), and Steward's card folding out on the right as the Agent tab's console does. The flows are the app's
  * schedules for now; utils/flowGraph.ts turns one into its blocks and wires. Run now runs the open flow the way the
  * scheduler does, and Set up (the Phone view's Setup pattern) holds the automations, moved from the Agent console.
+ * ADR-0009 (Steward docs/decisions, 2026-11-05): a flow is made only with + New flow and saved by itself; an automation
+ * is a saved flow, when and on/off (Set up); any flow runs whenever the operator says, with no night badge or daytime
+ * question ("run it whenever i say. day or night or whenever, its my system. same as any eval.").
  */
 type BlockData = { label: string; detail?: string; first: boolean; last: boolean; state: FlowRunState };
 type RFNode = Node<BlockData, FlowNodeKind>;
@@ -173,10 +176,8 @@ export interface FlowsShelfViewProps {
   editor?: EditorOpen | null;
   onEditorSave?: (name: string, recipe: Recipe) => Promise<string | null>;
   onEditorCancel?: () => void;
-  /** whether it is daytime now: a night flow's Run now asks first by day (the test sets it) */
-  daytime?: boolean;
-  /** the night question shown from the start (the test renders it) */
-  initialAskNight?: boolean;
+  /** Delete on the open flow (the flow itself; Set up's delete takes off only an automation) */
+  onDelete?: (id: string) => void;
 }
 
 /** What the editor is open on: a new flow, a copy (both saved as new) or a flow's own blocks. */
@@ -195,10 +196,10 @@ export const knownSets = (flows: ScheduleView[]) =>
 /** A flow's steps can be opened on the editor (a prompt-only automation has no blocks to edit). */
 export const editable = (f: ScheduleView | null) => Boolean(f && Array.isArray(f.steps) && f.steps.length);
 
-const Badge: React.FC<{ kind: 'example' | 'night' }> = ({ kind }) =>
-  kind === 'night' ? (
-    <span data-badge="night" title="Takes hours: best run at night" className="inline-flex shrink-0 items-center gap-0.5 rounded px-1 text-[10px] bg-indigo-950 text-indigo-300">
-      <Moon className="w-2.5 h-2.5" /> night
+const Badge: React.FC<{ kind: 'example' | 'legacy' }> = ({ kind }) =>
+  kind === 'legacy' ? (
+    <span data-badge="legacy" title="A prompt-only automation from before flows: make it again as a flow with + New flow" className="shrink-0 rounded px-1 text-[10px] bg-amber-950 text-amber-300">
+      {LEGACY_LABEL}
     </span>
   ) : (
     <span data-badge="example" title="A built-in example: run it, duplicate it or change it" className="shrink-0 rounded px-1 text-[10px] bg-neutral-800 text-neutral-300">
@@ -227,19 +228,12 @@ export const FlowsShelfView: React.FC<FlowsShelfViewProps> = ({
   editor = null,
   onEditorSave,
   onEditorCancel,
-  daytime = true,
-  initialAskNight = false,
+  onDelete,
 }) => {
   const open = flows.find((f) => f.id === selectedId) || null;
   const hold = runBlocked(open, stewardBusy);
-  // a night flow's Run now by day asks first, inline (the operator, 2026-11-05)
-  const [askNight, setAskNight] = useState(initialAskNight);
-  useEffect(() => setAskNight(initialAskNight), [selectedId, initialAskNight]);
-  const run = (id: string) => {
-    if (open && open.night && daytime && !askNight) return setAskNight(true);
-    setAskNight(false);
-    onRun?.(id);
-  };
+  // any flow runs whenever the operator says (ADR-0009): no night badge, no daytime question
+  const run = (id: string) => onRun?.(id);
   // our blocks draw their own card: drop React Flow's default node box
   const style = <style>{'.sb-flows .react-flow__node{padding:0;border:none;background:transparent;width:auto;box-shadow:none;border-radius:0.75rem;text-align:left}'}</style>;
   if (editor && onEditorSave && onEditorCancel) {
@@ -275,7 +269,7 @@ export const FlowsShelfView: React.FC<FlowsShelfViewProps> = ({
                 <span className="flex items-center gap-1 min-w-0 text-xs">
                   <span className="truncate">{f.name}</span>
                   {f.tags?.includes('example') && <Badge kind="example" />}
-                  {f.night && <Badge kind="night" />}
+                  {isLegacy(f) && <Badge kind="legacy" />}
                 </span>
                 <span className="block text-[11px] text-neutral-500 truncate">
                   {f.whenLabel}
@@ -310,6 +304,12 @@ export const FlowsShelfView: React.FC<FlowsShelfViewProps> = ({
               <Copy className="w-3.5 h-3.5" /> Duplicate
             </button>
           )}
+          {open && onDelete && (
+            <button type="button" data-delete-flow={open.id} onClick={() => onDelete(open.id)} title="Delete this flow (and its automation)"
+              className="shrink-0 flex items-center gap-1.5 px-2 py-1 rounded-md text-neutral-400 hover:text-rose-400 hover:bg-neutral-900">
+              <Trash2 className="w-3.5 h-3.5" /> Delete
+            </button>
+          )}
           {open && onRun && (
             <button
               data-run={open.id}
@@ -325,7 +325,7 @@ export const FlowsShelfView: React.FC<FlowsShelfViewProps> = ({
             <button
               onClick={() => onSetupOpen(!setupOpen)}
               aria-pressed={setupOpen}
-              title="Make, change or delete automations"
+              title="Automations: run a saved flow at a time you pick"
               className={`shrink-0 flex items-center gap-1.5 px-2 py-1 rounded-md ${setupOpen ? 'bg-neutral-800 text-white' : 'text-neutral-400 hover:text-white hover:bg-neutral-900'}`}
             >
               <Settings2 className="w-3.5 h-3.5" /> Set up
@@ -349,17 +349,10 @@ export const FlowsShelfView: React.FC<FlowsShelfViewProps> = ({
             {hold && onRun && <span className="ml-auto shrink-0 text-neutral-400">{hold}</span>}
           </div>
         )}
-        {open && askNight && (
-          <div role="alert" data-ask-night className="flex items-center gap-2 px-4 py-1.5 text-[11px] text-indigo-200 bg-indigo-950/60 border-b border-neutral-900">
-            <Moon className="w-3.5 h-3.5 shrink-0" /> This takes hours; run now anyway?
-            <button type="button" onClick={() => run(open.id)} className="px-2 py-0.5 rounded-md bg-sky-600 text-white hover:bg-sky-500">Run now anyway</button>
-            <button type="button" onClick={() => setAskNight(false)} className="px-2 py-0.5 rounded-md text-neutral-300 hover:text-white hover:bg-neutral-800">Not now</button>
-          </div>
-        )}
         {runError && <p role="alert" className="px-4 py-1 text-[11px] text-amber-300 break-words border-b border-neutral-900">{runError}</p>}
         {setupOpen && bridge && onFlowsChange && (
           <div className="border-b border-neutral-800 max-h-[50%] overflow-y-auto" aria-label="Set up">
-            <AutomationsSection bridge={bridge} selected={open} onChange={onFlowsChange} />
+            <AutomationsSection bridge={bridge} flows={flows} selected={open} onChange={onFlowsChange} />
           </div>
         )}
         <div className="flex-1 relative min-h-0" aria-label="Flow canvas">
@@ -482,7 +475,15 @@ export const FlowsShelf: React.FC<{ active: boolean }> = ({ active }) => {
       editor={editor}
       onEditorSave={onEditorSave}
       onEditorCancel={() => setEditor(null)}
-      daytime={isDaytime(new Date())}
+      onDelete={async (id) => {
+        const f = flows.find((x) => x.id === id);
+        if (!schedules || !f || (typeof window !== 'undefined' && !window.confirm(`Delete the flow "${f.name}"? Its automation goes with it.`))) return;
+        try {
+          take(await removeFlow(schedules, id));
+        } catch (e) {
+          setRunError(cleanError(e));
+        }
+      }}
     />
   );
 };

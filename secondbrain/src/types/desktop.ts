@@ -94,8 +94,6 @@ export interface ScheduleView {
   pending?: { tag?: string; label?: string; until: number } | null;
   /** tags: "example" marks the Flows shelf's built-in examples (electron/agent/flowExamples.cjs) */
   tags?: string[];
-  /** it takes hours (an eval set like aider-py): Run now by day asks first */
-  night?: boolean;
   enabled: boolean;
   next: number | null;
   lastRun: number | null;

@@ -49,8 +49,8 @@ test('the eval examples are the yaml files\' sets: Eval: <set>, its tier, eval_s
   assert.deepEqual(small.steps, [{ step: 'eval_start', sets: ['small'], runs: 1 }, 'eval_wait', 'eval_bars']);
   assert.ok(small.summarize && small.deliver.join() === 'note');
   assert.deepEqual(small.tags, ['example', 'eval', 'T0']);
-  assert.equal(all.find((e) => e.name === 'Eval: aider-py').night, true, 'aider-py takes hours: night');
-  assert.equal(small.night, undefined);
+  // ADR-0009: evals run whenever the operator says; no example is marked for the night
+  assert.ok(all.every((e) => !('night' in e)), 'no night flag');
   assert.deepEqual(all.find((e) => e.name === 'Repo drift check').steps, ['versions', 'repo_log']);
   assert.deepEqual(all.find((e) => e.name === 'What shipped this week').steps, ['merged_prs', 'releases']);
   // every example is a recipe workflows.cjs takes
