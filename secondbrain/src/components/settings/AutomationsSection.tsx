@@ -6,7 +6,7 @@ import { ScheduleView } from '../../types/desktop.ts';
 export const AutomationsSection: React.FC = () => {
   const bridge = window.secondbrainDesktop?.schedules;
   const [list, setList] = useState<ScheduleView[]>([]);
-  const [form, setForm] = useState({ name: '', prompt: '', when: 'weekdays 08:30', telegram: false });
+  const [form, setForm] = useState({ name: '', prompt: '', when: 'weekdays 08:30', telegram: false, mode: 'local', sets: 'aider-py', runs: 1 });
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
 
@@ -35,8 +35,11 @@ export const AutomationsSection: React.FC = () => {
       </div>
       <p className="text-xs text-neutral-400">
         The agent runs a prompt on a schedule and files the answer as a note (tag <code>automation</code>). Runs missed
-        while the app was closed happen when it opens. Risky tools are refused when nobody is watching. You can also ask
-        the agent: “every weekday at 8:30, summarize my todo list”.
+        while the app was closed happen when it opens. Risky tools are refused when nobody is watching. With Steward,
+        the prompt goes to him as an automation's turn: his cards wait on you here and on Telegram, and are answered No
+        after 10 minutes. An eval workflow starts Steward's eval sets at its time (never while he is working on a
+        request), waits for “BAR DONE” and files the result. You can also ask the agent: “every weekday at 8:30,
+        summarize my todo list”.
       </p>
       {list.length > 0 && (
         <ul className="space-y-2">
@@ -50,7 +53,7 @@ export const AutomationsSection: React.FC = () => {
                   onChange={(e) => act(s.id, () => bridge.update(s.id, { enabled: e.target.checked }))}
                 />
                 <span className="font-medium text-neutral-100">{s.name}</span>
-                <span className="text-neutral-500">· {s.whenLabel}{s.deliver.includes('telegram') ? ' · → Telegram' : ''}</span>
+                <span className="text-neutral-500">· {s.whenLabel}{s.steps?.length ? ` · workflow: ${s.steps.map((x) => (typeof x === 'string' ? x : x.step)).join(', ')}` : s.backend === 'steward' ? ' · Steward' : ''}{s.deliver.includes('telegram') ? ' · → Telegram' : ''}</span>
                 <span className="flex-1" />
                 <button
                   title="Run now"
@@ -68,6 +71,7 @@ export const AutomationsSection: React.FC = () => {
               <div className="mt-1 text-[11px] text-neutral-500">
                 {s.next ? `next ${new Date(s.next).toLocaleString()}` : 'not scheduled'}
                 {s.lastRun ? ` · last ${new Date(s.lastRun).toLocaleString()} (${s.lastResult === 'ok' ? 'ok' : s.lastResult})` : ''}
+                {s.pending ? ` · waiting on ${s.pending.tag}` : ''}
               </div>
             </li>
           ))}
@@ -78,7 +82,16 @@ export const AutomationsSection: React.FC = () => {
         onSubmit={(e) => {
           e.preventDefault();
           act('new', async () => {
-            const r = await bridge.add({ name: form.name, prompt: form.prompt, when: form.when, deliver: form.telegram ? ['note', 'telegram'] : ['note'] });
+            const sets = form.sets.split(',').map((x) => x.trim()).filter(Boolean);
+            const evals = form.mode === 'evals';
+            const r = await bridge.add({
+              name: form.name,
+              prompt: evals ? `eval_start ${sets.join(', ')}, ${form.runs} run(s) each; wait for BAR DONE` : form.prompt,
+              when: form.when,
+              deliver: form.telegram ? ['note', 'telegram'] : ['note'],
+              backend: form.mode === 'steward' ? 'steward' : 'local',
+              ...(evals ? { steps: [{ step: 'eval_start', sets, runs: form.runs }, 'eval_wait'] } : {}),
+            });
             setForm({ ...form, name: '', prompt: '' });
             return r;
           });
@@ -88,11 +101,28 @@ export const AutomationsSection: React.FC = () => {
           className="rounded-lg bg-neutral-900 border border-neutral-800 px-2.5 py-1.5 text-xs text-white" />
         <input required value={form.when} onChange={(e) => setForm({ ...form, when: e.target.value })} placeholder="daily 08:30 · weekdays 08:30 · weekly mon 09:00 · every 3h"
           aria-label="When" className="rounded-lg bg-neutral-900 border border-neutral-800 px-2.5 py-1.5 text-xs text-white" />
+        {form.mode === 'evals' ? (
+          <div className="sm:col-span-2 flex gap-2">
+            <input required value={form.sets} onChange={(e) => setForm({ ...form, sets: e.target.value })} placeholder="Eval sets, e.g. aider-py or small, steps"
+              aria-label="Eval sets" className="flex-1 rounded-lg bg-neutral-900 border border-neutral-800 px-2.5 py-1.5 text-xs text-white" />
+            <select value={form.runs} onChange={(e) => setForm({ ...form, runs: Number(e.target.value) })} aria-label="Runs of each set"
+              className="rounded-lg bg-neutral-900 border border-neutral-800 px-2 py-1.5 text-xs text-white">
+              {[1, 2, 3].map((n) => <option key={n} value={n}>{n} run{n > 1 ? 's' : ''}</option>)}
+            </select>
+          </div>
+        ) : (
         <textarea required value={form.prompt} onChange={(e) => setForm({ ...form, prompt: e.target.value })} rows={2}
           placeholder="What the agent should do each time" className="sm:col-span-2 rounded-lg bg-neutral-900 border border-neutral-800 px-2.5 py-1.5 text-xs text-white" />
+        )}
         <label className="flex items-center gap-2 text-xs text-neutral-400">
           <input type="checkbox" checked={form.telegram} onChange={(e) => setForm({ ...form, telegram: e.target.checked })} /> also send to Telegram
         </label>
+        <select value={form.mode} onChange={(e) => setForm({ ...form, mode: e.target.value })} aria-label="Runs on"
+          className="rounded-lg bg-neutral-900 border border-neutral-800 px-2 py-1.5 text-xs text-white">
+          <option value="local">the local agent</option>
+          <option value="steward">Steward</option>
+          <option value="evals">an eval workflow</option>
+        </select>
         <button type="submit" disabled={busy === 'new'} className="justify-self-end flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-xs text-white disabled:opacity-50">
           <Plus className="w-3.5 h-3.5" /> Add automation
         </button>

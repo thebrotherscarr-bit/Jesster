@@ -9,14 +9,24 @@
  *   ollama_unload       write  one model out of memory (keep_alive 0)
  *   app_update          check is a read; apply is a write (it quits SecondBrain into the new build)
  *   approvals_history   read   the answered cards, newest first (at most 200)
+ *   eval_start          bounded  Steward's eval sets, by run-bar.ps1 in its own minimized window (served with the reads)
+ *   eval_status         read   one eval_start run's progress file
  *
  * A write is served only while the operator allows writes (Settings → Share), as WRITE_TOOLS are, and each says so
  * in its MCP annotations (readOnlyHint false), so Steward's side puts it on the operator's card.
+ *
+ * eval_start is the one bounded action (the operator, 2026-11-05: "Steward can automate on his own"): it starts only
+ * run-bar.ps1, only for set names that are set files in Steward's harness/steward/evals/, only while no eval is
+ * running, and an eval set writes only Steward's eval history and throwaway working copies. So it is served with the
+ * reads, never on a card, and a scheduled automation can start the overnight evals.
  *
  * Never: SecondBrain itself (it is the one serving this), the door while a Manjuel sitting is open (RULE 9), or a
  * log whose name starts with .env (RULE 7).
  */
 const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const { spawn, execFile } = require('child_process');
 
 const OLLAMA = { host: '127.0.0.1', port: 11434 };
 const MAX_LOG_LINES = 400;
@@ -26,6 +36,16 @@ const ACTIONS = ['start', 'stop', 'restart'];
 
 const read = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 const write = { readOnlyHint: false, destructiveHint: true, openWorldHint: false };
+// eval_start: it starts a process, so not a read; bounded (eval sets only), so served with the reads
+const bounded = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
+
+// Steward's eval sets, in his folder (steward.cjs findSteward): the set files, the runner, and each run's folder
+const EVALS_DIR = ['harness', 'steward', 'evals'];
+const RUN_BAR = [...EVALS_DIR, 'run-bar.ps1'];
+const RUNS_DIR = ['storage', 'evals', 'runs'];
+const TAG = /^[\w.-]+$/;
+const MAX_RUNS = 3;
+const MAX_STATUS_LINES = 200;
 
 const ESTATE_TOOLS = [
   {
@@ -71,6 +91,28 @@ const ESTATE_TOOLS = [
     inputSchema: { type: 'object', properties: { limit: { type: 'integer', minimum: 1, maximum: MAX_HISTORY, description: `at most ${MAX_HISTORY}; 50 when left out` } } },
     annotations: { title: 'Approvals history', ...read },
   },
+  {
+    name: 'eval_start',
+    description:
+      "Start Steward's eval sets: run-bar.ps1 in its own minimized window, each set run `runs` times, one after another. sets: set names from harness/steward/evals/ (e.g. small, steps, heldout, aider-py, bfcl); runs: 1 to 3 (1 when left out); tag: letters, digits, '.', '-' or '_', not used before (<sets>-<date> when left out). Refused while an eval is already running. A bounded Estate action, served with the reads and never on a card: it only runs eval sets, which write only Steward's eval history and throwaway working copies. Returns the tag and its progress file; read it with eval_status.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        sets: { type: 'array', items: { type: 'string' }, minItems: 1, description: 'set names, e.g. ["aider-py"]' },
+        runs: { type: 'integer', minimum: 1, maximum: MAX_RUNS, description: 'runs of each set; 1 when left out' },
+        tag: { type: 'string', description: "the run's name; <sets>-<date> when left out" },
+      },
+      required: ['sets'],
+    },
+    annotations: { title: 'Start eval sets', ...bounded },
+  },
+  {
+    name: 'eval_status',
+    description:
+      `One eval_start run's progress file (storage/evals/runs/<tag>/progress.txt in Steward's folder): its last lines (at most ${MAX_STATUS_LINES}), one as each run starts and ends with its counts, then each set's bar, and done once it says "BAR DONE". tag: the run's tag; the newest run when left out.`,
+    inputSchema: { type: 'object', properties: { tag: { type: 'string' } } },
+    annotations: { title: 'Eval progress', ...read },
+  },
 ];
 
 const NAMES = ESTATE_TOOLS.map((t) => t.name);
@@ -79,6 +121,112 @@ const NAMES = ESTATE_TOOLS.map((t) => t.name);
 function isWrite(name, args = {}) {
   if (name === 'app_update') return args.action === 'apply';
   return name === 'service_control' || name === 'ollama_unload';
+}
+
+/** The set names in Steward's harness/steward/evals/: each set file's `name:` line, sorted. */
+function evalSetNames(dir) {
+  const folder = path.join(dir, ...EVALS_DIR);
+  let files = [];
+  try {
+    files = fs.readdirSync(folder).filter((f) => f.endsWith('.yaml'));
+  } catch {
+    return [];
+  }
+  const names = [];
+  for (const f of files) {
+    let text = '';
+    try {
+      text = fs.readFileSync(path.join(folder, f), 'utf8');
+    } catch {
+      continue;
+    }
+    const m = /^name:[ \t]*["']?([\w.-]+)["']?[ \t]*\r?$/m.exec(text);
+    if (m) names.push(m[1]);
+  }
+  return [...new Set(names)].sort();
+}
+
+// an eval running now: an evals.py under Python, or run-bar.ps1 between its runs (not this query's own PowerShell)
+const RUNNING_QUERY =
+  "@(Get-CimInstance Win32_Process -Filter \"ProcessId <> $PID AND ((Name LIKE 'python%' AND CommandLine LIKE '%evals.py%') OR CommandLine LIKE '%run-bar.ps1%')\").Count";
+
+/**
+ * The eval tools' outside acts, as the app runs them (tests give fakes): `dir()` Steward's folder or null; `running()`
+ * whether an eval runs now (one Win32_Process query, the script on stdin); `launch({ dir, sets, runs, tag })` starts
+ * run-bar.ps1 detached in its own minimized PowerShell window and returns { pid }.
+ */
+function evalsApi({ stewardDir }) {
+  return {
+    dir: () => stewardDir(),
+    running: () =>
+      new Promise((resolve, reject) => {
+        const child = execFile('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', '-'], { timeout: 20000, windowsHide: true }, (err, stdout) => {
+          if (err) return reject(new Error(`could not tell whether an eval is running: ${err.message}`));
+          resolve((parseInt(String(stdout).trim(), 10) || 0) > 0);
+        });
+        child.stdin.end(`${RUNNING_QUERY}\r\n`);
+      }),
+    launch: ({ dir, sets, runs, tag }) => {
+      const args = ['-NoProfile', '-WindowStyle', 'Minimized', '-File', path.join(dir, ...RUN_BAR), '-Sets', sets.join(','), '-Runs', String(runs), '-Tag', tag];
+      const child = spawn('powershell.exe', args, { cwd: dir, detached: true, stdio: 'ignore', windowsHide: false });
+      child.unref();
+      return { pid: child.pid ?? null };
+    },
+  };
+}
+
+function today() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** eval_start: the sets checked against the set files, nothing while an eval runs, then run-bar.ps1. */
+async function evalStart(args, evals) {
+  const dir = evals.dir();
+  if (!dir) return { error: "Steward's folder was not found (Settings → Agent → Steward), so no eval can start." };
+  if (!fs.existsSync(path.join(dir, ...RUN_BAR))) return { error: `run-bar.ps1 was not found at ${path.join(dir, ...RUN_BAR)}.` };
+  const sets = Array.isArray(args.sets) ? [...new Set(args.sets.map((x) => String(x).trim()).filter(Boolean))] : [];
+  if (!sets.length) return { error: 'eval_start needs sets: one or more set names from harness/steward/evals/' };
+  const known = evalSetNames(dir);
+  const unknown = sets.filter((x) => !known.includes(x));
+  if (unknown.length) return { error: `No such eval set: ${unknown.join(', ')}. The sets are: ${known.join(', ')}.` };
+  const runs = args.runs === undefined || args.runs === null ? 1 : Number(args.runs);
+  if (!Number.isInteger(runs) || runs < 1 || runs > MAX_RUNS) return { error: `runs is 1 to ${MAX_RUNS}` };
+  const tag = args.tag === undefined || args.tag === null || args.tag === '' ? `${sets.join('_')}-${today()}` : String(args.tag);
+  if (!TAG.test(tag)) return { error: `tag "${tag}" must be letters, digits, '.', '-' or '_'` };
+  const folder = path.join(dir, ...RUNS_DIR, tag);
+  if (fs.existsSync(path.join(folder, 'progress.txt'))) return { error: `tag "${tag}" has a run already (${path.join(folder, 'progress.txt')}); give a new tag.` };
+  if (await evals.running()) return { error: 'An eval is running now; nothing was started. Read its progress with eval_status.' };
+  const { pid } = await evals.launch({ dir, sets, runs, tag });
+  return JSON.stringify({ started: true, tag, sets, runs, pid, progress: path.join(folder, 'progress.txt') });
+}
+
+/** eval_status: one run's progress file, the newest run's when no tag is given. */
+function evalStatus(args, evals) {
+  const dir = evals.dir();
+  if (!dir) return { error: "Steward's folder was not found (Settings → Agent → Steward)." };
+  const runsDir = path.join(dir, ...RUNS_DIR);
+  let tag = args.tag ? String(args.tag) : '';
+  if (tag && !TAG.test(tag)) return { error: `tag "${tag}" must be letters, digits, '.', '-' or '_'` };
+  if (!tag) {
+    let newest = null;
+    try {
+      for (const d of fs.readdirSync(runsDir)) {
+        const f = path.join(runsDir, d, 'progress.txt');
+        if (!fs.existsSync(f)) continue;
+        const t = fs.statSync(f).mtimeMs;
+        if (!newest || t > newest.t) newest = { d, t };
+      }
+    } catch {
+      /* no runs yet: said below */
+    }
+    if (!newest) return { error: 'No eval run has a progress file yet.' };
+    tag = newest.d;
+  }
+  const file = path.join(runsDir, tag, 'progress.txt');
+  if (!fs.existsSync(file)) return { error: `No progress file for tag "${tag}" (${file}): it has not started, or the tag is wrong.` };
+  const lines = fs.readFileSync(file, 'utf8').split(/\r?\n/).filter((l) => l.trim());
+  return JSON.stringify({ tag, file, done: lines.some((l) => /\bBAR DONE\s*$/.test(l)), lines: lines.slice(-MAX_STATUS_LINES) });
 }
 
 /** One JSON request to Ollama on loopback: the parsed answer, or an Error. */
@@ -177,10 +325,14 @@ async function estateCall(name, args, deps, { writes = false } = {}) {
       return { error: 'app_update action is check or apply' };
     }
     if (name === 'approvals_history') return JSON.stringify(deps.history.read(Math.min(MAX_HISTORY, Number(args.limit) || 50)));
+    if (name === 'eval_start' || name === 'eval_status') {
+      if (!deps.evals) return { error: "Steward's evals are not served here" };
+      return name === 'eval_start' ? await evalStart(args, deps.evals) : evalStatus(args, deps.evals);
+    }
   } catch (e) {
     return { error: e.message };
   }
   return { error: `no tool ${name}` };
 }
 
-module.exports = { ESTATE_TOOLS, NAMES, estateCall, isWrite, ollama, ollamaApi, status, MAX_LOG_LINES, MAX_HISTORY };
+module.exports = { ESTATE_TOOLS, NAMES, estateCall, isWrite, ollama, ollamaApi, status, evalsApi, evalSetNames, evalStart, evalStatus, RUNNING_QUERY, MAX_LOG_LINES, MAX_HISTORY, MAX_RUNS };

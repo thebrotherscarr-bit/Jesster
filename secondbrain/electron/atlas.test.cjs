@@ -413,3 +413,92 @@ test('POST /mcp over HTTP: the header rung, 400 for a version or header refusal,
   const note = await atlas.serveMcpHttp({ jsonrpc: '2.0', method: 'notifications/initialized' }, {}, { registry, ctx });
   assert.deepEqual(note, { status: 202, body: null });
 });
+
+/** Steward's folder with the eval set files and run-bar.ps1, and the eval tools' outside acts recorded instead of done. */
+function fakeEvals({ running = false } = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'steward-evals-'));
+  const evalsDir = path.join(dir, 'harness', 'steward', 'evals');
+  fs.mkdirSync(evalsDir, { recursive: true });
+  fs.writeFileSync(path.join(evalsDir, 'run-bar.ps1'), 'param()\r\n');
+  fs.writeFileSync(path.join(evalsDir, 't0-small.yaml'), '# T0\r\nname: small\r\ntier: T0\r\n');
+  fs.writeFileSync(path.join(evalsDir, 'ext-aider-py.yaml'), '# EXT\r\nname: aider-py\r\ntier: ext\r\n');
+  fs.writeFileSync(path.join(evalsDir, 'README.md'), 'name: notaset\n');
+  const seen = { launched: [], asked: 0 };
+  return {
+    dir,
+    seen,
+    evals: {
+      dir: () => dir,
+      running: async () => (seen.asked++, running),
+      launch: async (spec) => (seen.launched.push(spec), { pid: 4242 }),
+    },
+  };
+}
+
+test('eval_start starts run-bar.ps1 for known sets only, never while an eval runs, and never on a card; eval_status reads its progress', async () => {
+  const { registry, ctx } = setup();
+  const { estate } = fakeEstate();
+  const { dir, seen, evals } = fakeEvals();
+  const withEvals = { ...ctx, estate: { ...estate, evals } };
+  const call = (name, args) => atlas.handleMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }, { registry, ctx: withEvals });
+  const text = (r) => r.result.content[0].text;
+
+  // served while writes are off, as the Estate's reads are: an automation's turn never needs a card for it
+  const tools = (await atlas.handleMcp({ jsonrpc: '2.0', id: 1, method: 'tools/list' }, { registry, ctx: withEvals })).result.tools;
+  const byName = Object.fromEntries(tools.map((t) => [t.name, t]));
+  assert.ok(byName.eval_start && byName.eval_status, 'listed with the reads');
+  assert.ok(atlas.ESTATE_READ_TOOLS.includes('eval_start') && !atlas.WRITE_TOOLS.includes('eval_start'));
+  assert.match(byName.eval_start.description, /bounded Estate action/);
+  assert.equal(byName.eval_status.annotations.readOnlyHint, true);
+
+  for (const [args, why] of [
+    [{ sets: ['nope'] }, /No such eval set: nope\. The sets are: aider-py, small\./],
+    [{ sets: ['notaset'] }, /No such eval set/],
+    [{ sets: [] }, /needs sets/],
+    [{ sets: ['small'], runs: 4 }, /runs is 1 to 3/],
+    [{ sets: ['small'], tag: '../x' }, /must be letters/],
+  ]) {
+    const r = await call('eval_start', args);
+    assert.equal(r.result.isError, true, JSON.stringify(args));
+    assert.match(text(r), why);
+  }
+  assert.deepEqual(seen.launched, [], 'nothing started');
+
+  const ok = JSON.parse(text(await call('eval_start', { sets: ['aider-py'], tag: 'ext-aider-2026-11-05' })));
+  assert.deepEqual(seen.launched, [{ dir, sets: ['aider-py'], runs: 1, tag: 'ext-aider-2026-11-05' }]);
+  assert.equal(ok.tag, 'ext-aider-2026-11-05');
+  assert.equal(ok.progress, path.join(dir, 'storage', 'evals', 'runs', 'ext-aider-2026-11-05', 'progress.txt'));
+  const dated = JSON.parse(text(await call('eval_start', { sets: ['small', 'aider-py'], runs: 2 })));
+  assert.match(dated.tag, /^small_aider-py-\d{4}-\d\d-\d\d$/, 'a tag of the sets and the date when left out');
+
+  // eval_status: the run's progress file, and whether it ended
+  const folder = path.join(dir, 'storage', 'evals', 'runs', 'ext-aider-2026-11-05');
+  fs.mkdirSync(folder, { recursive: true });
+  fs.writeFileSync(path.join(folder, 'progress.txt'), '2026-11-05T23:00:01 bar ext-aider-2026-11-05 : sets aider-py\r\n2026-11-05T23:00:02 start aider-py run 1\r\n');
+  let st = JSON.parse(text(await call('eval_status', { tag: 'ext-aider-2026-11-05' })));
+  assert.deepEqual([st.done, st.lines.length], [false, 2]);
+  fs.appendFileSync(path.join(folder, 'progress.txt'), '2026-11-06T03:10:00 done  aider-py v1 (ext) run 1: 20/34 cases\r\n2026-11-06T03:10:05 BAR DONE\r\n');
+  st = JSON.parse(text(await call('eval_status', {})));
+  assert.deepEqual([st.tag, st.done], ['ext-aider-2026-11-05', true], 'the newest run when no tag is given');
+  assert.match(text(await call('eval_status', { tag: 'never-ran' })), /No progress file/);
+
+  // a used tag is refused, and so is any start while an eval runs
+  assert.match(text(await call('eval_start', { sets: ['aider-py'], tag: 'ext-aider-2026-11-05' })), /has a run already/);
+  const busy = fakeEvals({ running: true });
+  const r = await atlas.handleMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'eval_start', arguments: { sets: ['small'] } } }, { registry, ctx: { ...ctx, estate: { ...estate, evals: busy.evals } } });
+  assert.match(r.result.content[0].text, /An eval is running now; nothing was started/);
+  assert.deepEqual(busy.seen.launched, []);
+  // where the app hands no evals in, it says so
+  assert.match(text(await atlas.handleMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'eval_status', arguments: {} } }, { registry, ctx: { ...ctx, estate } })), /not served here/);
+});
+
+test("the app's evals: run-bar.ps1 detached in its own minimized PowerShell window; the running check skips its own query", () => {
+  const estateMod = require('./estate.cjs');
+  const src = fs.readFileSync(path.join(__dirname, 'estate.cjs'), 'utf8');
+  assert.match(src, /spawn\('powershell\.exe', args, \{ cwd: dir, detached: true, stdio: 'ignore', windowsHide: false \}\)/);
+  assert.match(src, /'-WindowStyle', 'Minimized', '-File', path\.join\(dir, \.\.\.RUN_BAR\)/);
+  assert.match(estateMod.RUNNING_QUERY, /ProcessId <> \$PID/);
+  assert.match(estateMod.RUNNING_QUERY, /evals\.py/);
+  assert.match(estateMod.RUNNING_QUERY, /run-bar\.ps1/);
+  assert.equal(typeof estateMod.evalsApi({ stewardDir: () => null }).launch, 'function');
+});

@@ -7,14 +7,21 @@
  *   daily 08:30          weekdays 08:30        weekly mon 09:00
  *   every 3h             every 30m             once 2026-10-23 09:00
  * A run missed while the app was closed happens once when it next opens.
- * Nobody is there to approve risky tools during a scheduled run, so they
- * are refused.
+ * backend "local" (the default) runs the prompt on the local agent loop, where
+ * nobody is there to approve risky tools, so they are refused. backend
+ * "steward" sends it to Steward as a turn tagged "[from an automation (<name>)]"
+ * (service.cjs AUTOMATION): his cards go to the window, the Approvals shelf and
+ * Telegram like any other, and unanswered in 10 minutes are answered No. An
+ * automation never approves itself.
  */
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
 
+const workflows = require('./workflows.cjs');
+
 const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
+const BACKENDS = ['local', 'steward'];
 
 /** Parse a "when" string; throws with the accepted forms on nonsense. */
 function parseWhen(text) {
@@ -91,16 +98,20 @@ class Schedules {
     fs.writeFileSync(this.file(), JSON.stringify(list, null, 2));
   }
 
-  add({ name, prompt, when, deliver = ['note'] }, now = Date.now()) {
-    if (!name || !prompt) throw new Error('a schedule needs a name and a prompt');
+  add({ name, prompt, when, deliver = ['note'], backend = 'local', steps, summarize }, now = Date.now()) {
+    // a workflow (steps, workflows.cjs) needs no prompt of its own: its steps say what it does
+    if (!name || (!prompt && !steps)) throw new Error('a schedule needs a name and a prompt');
     const w = parseWhen(when);
+    const flow = steps ? { steps: workflows.validateSteps(steps), ...(summarize ? { summarize: String(summarize) } : {}) } : {};
     const s = {
       id: crypto.randomBytes(4).toString('hex'),
       name: String(name).slice(0, 80),
-      prompt: String(prompt),
+      prompt: String(prompt || ''),
       when: w,
       whenText: String(when),
       deliver: deliver.filter((d) => ['note', 'telegram'].includes(d)),
+      backend: BACKENDS.includes(backend) ? backend : 'local',
+      ...flow,
       enabled: true,
       created: now,
       lastRun: null,
@@ -115,6 +126,7 @@ class Schedules {
     const list = this.all();
     const s = list.find((x) => x.id === id || x.name.toLowerCase() === String(id).toLowerCase());
     if (!s) throw new Error(`no schedule "${id}"`);
+    if (patch && patch.steps) patch = { ...patch, steps: workflows.validateSteps(patch.steps) };
     Object.assign(s, patch);
     if ('enabled' in patch && patch.enabled && !s.next) s.next = nextRun(s.when, Date.now());
     this.write(list);
@@ -134,33 +146,17 @@ class Schedules {
   }
 }
 
-/** Run one schedule through the agent and file the result. */
-async function runSchedule(s, { schedules, agent, vault, deliverers = {}, now = Date.now() }) {
-  // claim it first, so a slow run is not started twice
-  schedules.update(s.id, { next: nextRun(s.when, now), running: true });
-  let answer;
-  let ok = true;
-  try {
-    const r = await agent.ask({
-      text: s.prompt,
-      source: 'schedule',
-      approve: async () => false, // nobody is watching: risky tools are refused
-      save: false,
-    });
-    answer = r.answer;
-    ok = !r.error;
-  } catch (e) {
-    answer = `Failed: ${e.message}`;
-    ok = false;
-  }
+/** File one run's result: the note (when the schedule delivers one) and the other deliveries (Telegram's `short`). */
+async function fileResult(s, { vault, deliverers = {}, now, answer, short }) {
   const date = new Date(now);
   const stamp = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
   const id = `automation-${s.id}-${stamp}-${String(date.getHours()).padStart(2, '0')}${String(date.getMinutes()).padStart(2, '0')}`;
+  const how = workflows.isWorkflow(s) ? ', workflow' : s.backend === 'steward' ? ', Steward' : '';
   if (s.deliver.includes('note')) {
     vault.save({
       id,
       title: `${s.name} — ${date.toLocaleString()}`,
-      content: `> Automation **${s.name}** (${describeWhen(s.when)})\n> Prompt: ${s.prompt}\n\n${answer}`,
+      content: `> Automation **${s.name}** (${describeWhen(s.when)}${how})\n> Prompt: ${s.prompt}\n\n${answer}`,
       tags: ['automation'],
       category: 'inbox',
       isPinned: false,
@@ -171,15 +167,92 @@ async function runSchedule(s, { schedules, agent, vault, deliverers = {}, now = 
   for (const d of s.deliver) {
     if (d !== 'note' && deliverers[d]) {
       try {
-        await deliverers[d](`${s.name}\n\n${answer}`);
+        await deliverers[d](short !== undefined ? `${s.name}: ${short}` : `${s.name}\n\n${answer}`);
       } catch {
         /* a failed delivery is visible in lastResult below */
       }
     }
   }
-  schedules.update(s.id, { running: false, lastRun: now, lastResult: ok ? 'ok' : answer.slice(0, 200) });
+  return id;
+}
+
+/** A finished workflow run, or a plain one: filed, and the schedule's run log updated. */
+async function finish(s, { schedules, vault, deliverers, now }, { ok, answer, short }) {
+  const id = await fileResult(s, { vault, deliverers, now, answer, short });
+  schedules.update(s.id, { running: false, pending: null, lastRun: now, lastResult: ok ? 'ok' : String(answer).slice(0, 200) });
   if (s.when.type === 'once') schedules.update(s.id, { enabled: false, next: null });
   return { id, answer, ok };
+}
+
+/**
+ * Run one schedule and file the result. A workflow (steps: workflows.cjs) runs its steps; a Steward schedule's turn
+ * goes to Steward (source 'automation'), its cards told to `onCard` (Telegram's buttons) as well as the window's; any
+ * other runs on the local agent loop. deps: { schedules, agent, vault, deliverers, onCard, now } and, for workflows,
+ * { busy, evals, repos, run, sitting, ground, stewardDir }.
+ */
+async function runSchedule(s, deps) {
+  const { schedules, agent, onCard } = deps;
+  const now = deps.now ?? Date.now();
+  // claim it first, so a slow run is not started twice
+  schedules.update(s.id, { next: nextRun(s.when, now), running: true });
+  if (workflows.isWorkflow(s)) {
+    let r;
+    try {
+      r = await workflows.startWorkflow(s, { ...deps, now });
+    } catch (e) {
+      r = { done: { ok: false, answer: `Failed: ${e.message}`, short: `Failed: ${e.message}` } };
+    }
+    if (r.skipped) {
+      schedules.update(s.id, { running: false, lastRun: now, lastResult: r.skipped });
+      return { id: null, answer: r.skipped, ok: false, skipped: true };
+    }
+    if (r.parked) {
+      // eval_wait: the tick reads it on (resumeSchedules); the run log says what it waits for
+      schedules.update(s.id, { running: false, pending: r.parked, lastRun: now, lastResult: `waiting on ${r.parked.tag}` });
+      return { id: null, answer: `waiting on ${r.parked.tag}`, ok: true, parked: r.parked };
+    }
+    return finish(s, { ...deps, now }, r.done);
+  }
+  let answer;
+  let ok = true;
+  try {
+    const r =
+      s.backend === 'steward'
+        ? await agent.ask({ text: s.prompt, source: 'automation', automation: s.name, onCard, save: false })
+        : await agent.ask({
+            text: s.prompt,
+            source: 'schedule',
+            approve: async () => false, // nobody is watching: risky tools are refused
+            save: false,
+          });
+    answer = r.answer;
+    ok = !r.error;
+  } catch (e) {
+    answer = `Failed: ${e.message}`;
+    ok = false;
+  }
+  return finish(s, { ...deps, now }, { ok, answer });
+}
+
+/** Every parked workflow read once (each scheduler tick): a finished one runs its last steps and is filed. */
+async function resumeSchedules(deps) {
+  const now = deps.now ?? Date.now();
+  const out = [];
+  for (const s of deps.schedules.all().filter((x) => x.pending)) {
+    let r;
+    try {
+      r = await workflows.resumeWorkflow(s, { ...deps, now });
+    } catch (e) {
+      r = { done: { ok: false, answer: `Failed: ${e.message}`, short: `Failed: ${e.message}` } };
+    }
+    if (!r) continue;
+    if (r.parked) {
+      deps.schedules.update(s.id, { pending: r.parked, lastResult: `waiting on ${r.parked.tag}` });
+      continue;
+    }
+    out.push(await finish(s, { ...deps, now }, r.done));
+  }
+  return out;
 }
 
 function tools(getSchedules) {
@@ -187,7 +260,7 @@ function tools(getSchedules) {
     {
       name: 'schedule_create',
       description:
-        'Schedule a prompt for yourself to run automatically; the answer is filed as a note. when: "daily 08:30", "weekdays 08:30", "weekly mon 09:00", "every 3h", "every 30m" or "once 2026-10-23 09:00". deliver: ["note"] and/or "telegram".',
+        'Schedule a prompt for yourself to run automatically; the answer is filed as a note. when: "daily 08:30", "weekdays 08:30", "weekly mon 09:00", "every 3h", "every 30m" or "once 2026-10-23 09:00". deliver: ["note"] and/or "telegram". backend: "local" (this loop, risky tools refused) or "steward" (sent to Steward; his cards wait on the user, No after 10 minutes).',
       parameters: {
         type: 'object',
         properties: {
@@ -195,12 +268,13 @@ function tools(getSchedules) {
           prompt: { type: 'string', description: 'what to do each time, written as an instruction to yourself' },
           when: { type: 'string' },
           deliver: { type: 'array', items: { type: 'string', enum: ['note', 'telegram'] } },
+          backend: { type: 'string', enum: BACKENDS },
         },
         required: ['name', 'prompt', 'when'],
       },
       run: (a) => {
         const s = getSchedules().add(a);
-        return { created: s.name, id: s.id, when: describeWhen(s.when), next: new Date(s.next).toString() };
+        return { created: s.name, id: s.id, when: describeWhen(s.when), backend: s.backend, next: new Date(s.next).toString() };
       },
     },
     {
@@ -209,7 +283,7 @@ function tools(getSchedules) {
       parameters: { type: 'object', properties: {} },
       run: () =>
         getSchedules().all().map((s) => ({
-          id: s.id, name: s.name, when: describeWhen(s.when), enabled: s.enabled, prompt: s.prompt,
+          id: s.id, name: s.name, when: describeWhen(s.when), backend: s.backend || 'local', enabled: s.enabled, prompt: s.prompt,
           next: s.next ? new Date(s.next).toString() : null, lastRun: s.lastRun ? new Date(s.lastRun).toString() : null, lastResult: s.lastResult,
         })),
     },
@@ -234,4 +308,4 @@ function tools(getSchedules) {
   ];
 }
 
-module.exports = { Schedules, parseWhen, describeWhen, nextRun, runSchedule, tools };
+module.exports = { Schedules, parseWhen, describeWhen, nextRun, runSchedule, resumeSchedules, fileResult, tools, BACKENDS };
