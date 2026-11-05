@@ -1,6 +1,6 @@
 /**
- * The Agent tab over AG-UI (step 2 of moving it to AG-UI, beside the Responses path in steward.cjs; nothing switches
- * to it unless Settings' agent.transport is 'ag-ui').
+ * The Agent tab over AG-UI, the default transport since 2026-11-05 (Steward's ADR-0003): Settings' agent.transport is
+ * 'ag-ui' unless the operator chooses Responses (steward.cjs, 43120), which stays as the fallback.
  *
  * Steward serves his workflow over AG-UI on 127.0.0.1:43122 (worlds\steward, step 4's ag_ui_app.py, MAF's
  * agent_framework_ag_ui as it ships: Learn, "Workflows with AG-UI"). This is its client, in the main process, on the

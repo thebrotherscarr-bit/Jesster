@@ -202,6 +202,9 @@ function listen(door, { wire = '', port = DOOR_PORT, host = '127.0.0.1' } = {}) 
 
   const server = http.createServer(async (req, res) => {
     const where = req.url.split('?')[0];
+    // MCP 2026-07-28 streamable-http "Security & Endpoint": "Servers MUST validate the Origin header on all incoming
+    // connections"; a present Origin that is not a loopback origin is 403. No Origin (a non-browser client) is served.
+    if (!mcpv.originOk(req.headers.origin)) return json(res, 403, mcpv.FORBIDDEN_ORIGIN);
     try {
       if (req.method === 'POST' && where === '/rpc') return await rpc(req, res);
       if (req.method === 'GET' && where === '/tools') return json(res, 200, { tools: door.list() });

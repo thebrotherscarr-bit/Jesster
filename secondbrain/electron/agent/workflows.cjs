@@ -20,6 +20,7 @@ const http = require('http');
 const path = require('path');
 const { execFile } = require('child_process');
 const estate = require('../estate.cjs');
+const mcpv = require('../mcpversion.cjs');
 
 const STEPS = ['repo_log', 'merged_prs', 'releases', 'eval_bars', 'plan_left', 'versions', 'pull_ff', 'eval_start', 'eval_wait'];
 const EVAL_MAX_HOURS = 8;
@@ -27,6 +28,7 @@ const DAY_MS = 24 * 3600 * 1000;
 // a run that has not ended this long after it started is filed as such (the longest eval_wait, and an hour more)
 const RUN_MAX_MS = (EVAL_MAX_HOURS + 1) * 3600 * 1000;
 const STEWARD_MCP = 'http://127.0.0.1:43121/mcp';
+const CLIENT_INFO = { name: 'secondbrain-workflows', version: '1' };
 
 /** A step as { step, ...args }. */
 function stepOf(x) {
@@ -69,8 +71,8 @@ function recipeOf(s) {
 
 // ---- Steward's MCP host ------------------------------------------------------------------------------------------
 
-/** One JSON-RPC POST to `url`, at most `timeout` ms: the parsed reply, or an Error. */
-function postJson(url, body, timeout = 30000) {
+/** One JSON-RPC POST to `url` with `extra` headers, at most `timeout` ms: the parsed reply, or an Error. */
+function postJson(url, body, extra = {}, timeout = 30000) {
   return new Promise((resolve, reject) => {
     const payload = JSON.stringify(body);
     const req = http.request(
@@ -81,7 +83,7 @@ function postJson(url, body, timeout = 30000) {
         headers: {
           'Content-Type': 'application/json',
           Accept: 'application/json, text/event-stream',
-          'MCP-Protocol-Version': '2025-06-18',
+          ...extra,
           'Content-Length': Buffer.byteLength(payload),
         },
       },
@@ -105,13 +107,17 @@ function postJson(url, body, timeout = 30000) {
 }
 
 /**
- * Steward's recipe tools over his MCP host (stateless JSON-RPC, as the MCP SDK serves it): runRecipe(recipe, since)
- * → { run_id }, recipeStatus(run_id) → { state, ok, text, short, error }. `post` is the transport (tests give one).
+ * Steward's recipe tools over his MCP host, at MCP 2026-07-28 (no initialize, no session; the MCP SDK serves it):
+ * runRecipe(recipe, since) → { run_id }, recipeStatus(run_id) → { state, ok, text, short, error }. Every request
+ * carries the protocol version, client info and capabilities in params._meta (basic/versioning) and the
+ * MCP-Protocol-Version, Mcp-Method and Mcp-Name headers that mirror them (transports/streamable-http "Request
+ * Metadata"), as mcpversion.cjs builds them. `post(url, body, headers)` is the transport (tests give one).
  */
 function stewardRecipes({ url = STEWARD_MCP, post = postJson } = {}) {
   let n = 0;
   const call = async (name, args) => {
-    const reply = await post(url, { jsonrpc: '2.0', id: ++n, method: 'tools/call', params: { name, arguments: args } });
+    const msg = { jsonrpc: '2.0', id: ++n, method: 'tools/call', params: { name, arguments: args, _meta: mcpv.requestMeta(CLIENT_INFO) } };
+    const reply = await post(url, msg, mcpv.requestHeaders(msg));
     if (reply.error) throw new Error(`${name}: ${reply.error.message}`);
     const text = ((reply.result && reply.result.content) || []).find((c) => c.type === 'text')?.text || '';
     if (reply.result && reply.result.isError) throw new Error(`${name}: ${text}`);

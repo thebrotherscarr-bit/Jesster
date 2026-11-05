@@ -28,8 +28,9 @@ How an agent works here is in [`AGENTS.md`](AGENTS.md).
 2. Download `SecondBrain-win32-x64.zip` from the newest `secondbrain-b<N>`
    [release](https://github.com/thebrotherscarr-bit/Jesster/releases), unzip it anywhere and run
    `SecondBrain.exe`. Its **Update** button installs later releases.
-3. Clone Steward and start his service as his README says; SecondBrain's Agent tab talks to it on
-   127.0.0.1:43120.
+3. Clone Steward and start his service as his README says; SecondBrain's Agent tab talks to it over AG-UI on
+   127.0.0.1:43122 by default, with his Responses service on 127.0.0.1:43120 as the fallback (2026-11-05, Steward's
+   ADR-0003).
 
 ## The provenance chain
 
