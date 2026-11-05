@@ -1,10 +1,38 @@
-# Jesster — Manjuel-builder
+# Jesster: SecondBrain
 
-Jesster is the provenance chain of the Manjuel estate — the public, verifiable
+Jesster is the repository of **SecondBrain**, the Estate's console and hub: the desktop app where
+you work with Steward (its Agent tab, and his approval cards), keep your notes, and reach the local
+tools (notes, web search and fetch, the Estate's controls) that Steward uses over MCP.
+
+## Where it sits in the Estate
+
+- **Steward** ([Steward](https://github.com/thebrotherscarr-bit/Steward)) is the agent and runs
+  everything.
+- **SecondBrain** (this repository) is his console and the hub.
+- **Manjuel** ([Manjuel](https://github.com/thebrotherscarr-bit/Manjuel)) is the ground and the
+  record.
+- **Atlas** (Aurora) is parked until Steward has visible computer control.
+- **Neiro** has been retired as a gate.
+
+Everything runs on your own PC on local Ollama models. No hosted model is used by default.
+
+## Install on another PC (Windows)
+
+1. Install [Ollama](https://ollama.com) and build Steward's model (`ollama pull gpt-oss:20b`, then
+   `ollama create steward:1 -f steward.Modelfile` from a Steward clone).
+2. Download `SecondBrain-win32-x64.zip` from the newest `secondbrain-b<N>`
+   [release](https://github.com/thebrotherscarr-bit/Jesster/releases), unzip it anywhere and run
+   `SecondBrain.exe`. Its **Update** button installs later releases.
+3. Clone Steward and start his service as his README says; SecondBrain's Agent tab talks to it on
+   127.0.0.1:43120.
+
+## The provenance chain
+
+Jesster is also the provenance chain of the Manjuel estate: the public, verifiable
 record of what was deposited, by whom, and when. She signs; the estate's
 sealed ledger shares her exact recipe, without sharing her process.
 
-## The chain
+### The chain
 
 `chain/chain.jsonl` is an append-only, hash-chained record of links. Every
 link carries exactly five things:
@@ -77,6 +105,7 @@ Electron desktop app built as `secondbrain-b<N>` releases from `main`;
 the `secondbrain-app` branch was the release line until 2026-10-31). Served by `python notes/cli.py serve`, it keeps
 notes through the kernel. See [`secondbrain/README.md`](secondbrain/README.md).
 
-## License
+## License and names
 
-Apache-2.0.
+Apache-2.0 (`LICENSE`). See `TRADEMARKS.md` for the names policy and `SECURITY.md` to
+report a vulnerability.
