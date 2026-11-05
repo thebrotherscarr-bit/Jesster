@@ -20,9 +20,11 @@
 const http = require('http');
 const crypto = require('crypto');
 const auth = require('./auth.cjs');
+const mcpv = require('../mcpversion.cjs');
 
 const DOOR_PORT = 43111;
 const STREAMS = ['/chat/stream', '/run/stream', '/run/state', '/run/listen'];
+const SERVER = { name: 'secondbrain-door', version: '1' };
 
 function bearer(header) {
   const m = /^Bearer\s+(.+)$/i.exec(String(header || '').trim());
@@ -75,7 +77,13 @@ function gate(name, args, cred, reg) {
 const ok = (id, result) => ({ jsonrpc: '2.0', id, result });
 const fail = (id, code, message) => ({ jsonrpc: '2.0', id, error: { code, message } });
 
-/** One JSON-RPC line → its response, or null for a notification. */
+/**
+ * One JSON-RPC line → its response, or null for a notification, in either MCP era
+ * (mcpversion.cjs): a line carrying the 2026-07-28 `_meta` envelope is answered statelessly
+ * (server/discover, resultType, the cache hints; no ping); `initialize` and a line without the
+ * envelope are answered as before. /rpc is newline-delimited, not Streamable HTTP, so there is no
+ * header rung and every answer rides the one 200.
+ */
 async function answerLine(text, cred, door) {
   let msg;
   try {
@@ -83,6 +91,19 @@ async function answerLine(text, cred, door) {
   } catch {
     return fail(null, -32700, 'parse error');
   }
+  const era = mcpv.classify(msg);
+  if (era.era === 'legacy') return legacyLine(msg, cred, door);
+  const id = msg.id !== undefined ? msg.id : null;
+  if (id === null) return null; // a notification
+  if (era.error) return { jsonrpc: '2.0', id, error: era.error };
+  if (msg.method === 'server/discover') {
+    return mcpv.finishModern(ok(id, mcpv.discoverResult({ ...SERVER, capabilities: { tools: {} }, instructions: door.instructions })), msg.method, SERVER);
+  }
+  if (mcpv.REMOVED.has(msg.method)) return fail(id, -32601, `unknown method "${msg.method}" (removed in ${mcpv.LATEST})`);
+  return mcpv.finishModern(await legacyLine(msg, cred, door), msg.method, SERVER);
+}
+
+async function legacyLine(msg, cred, door) {
   const id = msg && msg.id !== undefined ? msg.id : null;
   const method = msg && msg.method;
   const params = (msg && msg.params) || {};
@@ -94,9 +115,9 @@ async function answerLine(text, cred, door) {
   switch (method) {
     case 'initialize':
       return ok(id, {
-        protocolVersion: '2025-06-18',
+        protocolVersion: mcpv.negotiateLegacy(params.protocolVersion),
         capabilities: { tools: {} },
-        serverInfo: { name: 'secondbrain-door', version: '1' },
+        serverInfo: SERVER,
         instructions: door.instructions,
       });
     case 'notifications/initialized':
