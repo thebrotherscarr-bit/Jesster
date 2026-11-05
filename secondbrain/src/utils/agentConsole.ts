@@ -15,8 +15,11 @@ export const CONSOLE_SHELVES: { id: ConsoleShelf; label: string }[] = [
   { id: 'skills', label: 'Skills & memory' },
 ];
 
-/** The top bar's buttons, each marked data-topbar in Header.tsx (and AtlasButton.tsx); nothing else stands there. */
-export const TOP_BAR = ['Notes', 'Agent', 'Phone', 'Open Aurora', 'Settings', 'Update', 'Update notes kernel', 'Ollama (web only)'];
+/**
+ * The top bar's buttons, each marked data-topbar in Header.tsx; nothing else stands there. Flows took Open Aurora's
+ * place (the operator, 2026-11-05: swap it "for now"); AtlasButton.tsx is kept, unhooked.
+ */
+export const TOP_BAR = ['Notes', 'Agent', 'Phone', 'Flows', 'Settings', 'Update', 'Update notes kernel', 'Ollama (web only)'];
 
 /**
  * The controls that left the top bar for the console, each marked data-console in AgentConsole.tsx (or the shelf
@@ -112,15 +115,21 @@ export function historyRow(x: unknown, i: number): HistoryRow {
  */
 export const CONSOLE_OPEN_KEY = 'secondbrain_console_open_v1';
 export const CHATS_OPEN_KEY = 'secondbrain_chats_open_v1';
+/** Steward's card on the Flows shelf (components/FlowsShelf.tsx), folded the same way; closed until opened. */
+export const FLOWS_STEWARD_OPEN_KEY = 'secondbrain_flows_steward_open_v1';
 
 type PanelStore = Pick<Storage, 'getItem' | 'setItem'> | undefined;
 
-/** A panel opens unless it was last closed ('0'); open the first time and when nothing can be read. */
-export function panelOpen(store: PanelStore, key: string): boolean {
+/**
+ * A panel opens unless it was last closed ('0'). The first time, and when nothing can be read, it takes `first`: open
+ * for the console and the chats, closed for the Flows shelf's Steward card.
+ */
+export function panelOpen(store: PanelStore, key: string, first = true): boolean {
   try {
-    return store?.getItem(key) !== '0';
+    const v = store?.getItem(key);
+    return v === null || v === undefined ? first : v !== '0';
   } catch {
-    return true;
+    return first;
   }
 }
 

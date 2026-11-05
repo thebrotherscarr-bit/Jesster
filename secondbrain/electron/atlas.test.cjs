@@ -465,7 +465,7 @@ test('eval_start starts run-bar.ps1 for known sets only, never while an eval run
   assert.deepEqual(seen.launched, [], 'nothing started');
 
   const ok = JSON.parse(text(await call('eval_start', { sets: ['aider-py'], tag: 'ext-aider-2026-11-05' })));
-  assert.deepEqual(seen.launched, [{ dir, sets: ['aider-py'], runs: 1, tag: 'ext-aider-2026-11-05' }]);
+  assert.deepEqual(seen.launched, [{ dir, sets: ['aider-py'], runs: 1, tag: 'ext-aider-2026-11-05', transport: 'in-process' }]);
   assert.equal(ok.tag, 'ext-aider-2026-11-05');
   assert.equal(ok.progress, path.join(dir, 'storage', 'evals', 'runs', 'ext-aider-2026-11-05', 'progress.txt'));
   const dated = JSON.parse(text(await call('eval_start', { sets: ['small', 'aider-py'], runs: 2 })));
@@ -497,6 +497,7 @@ test("the app's evals: run-bar.ps1 detached in its own minimized PowerShell wind
   const src = fs.readFileSync(path.join(__dirname, 'estate.cjs'), 'utf8');
   assert.match(src, /spawn\('powershell\.exe', args, \{ cwd: dir, detached: true, stdio: 'ignore', windowsHide: false \}\)/);
   assert.match(src, /'-WindowStyle', 'Minimized', '-File', path\.join\(dir, \.\.\.RUN_BAR\)/);
+  assert.match(src, /'-Tag', tag, '-Transport', transport\]/);
   assert.match(estateMod.RUNNING_QUERY, /ProcessId <> \$PID/);
   assert.match(estateMod.RUNNING_QUERY, /evals\.py/);
   assert.match(estateMod.RUNNING_QUERY, /run-bar\.ps1/);
@@ -547,5 +548,5 @@ test("estate_status carries each repository's version from its local refs, cache
   const plain = JSON.parse((await atlas.handleMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'estate_status', arguments: {} } }, { registry, ctx: { ...ctx, estate } })).result.content[0].text);
   assert.equal(plain.repos, undefined);
   const main = fs.readFileSync(path.join(__dirname, 'main.cjs'), 'utf8');
-  assert.equal((main.match(/versions: estateVersions,/g) || []).length, 2, 'estate_status and the workflows read the same cache');
+  assert.equal((main.match(/versions: estateVersions,/g) || []).length, 1, 'estate_status reads the cache');
 });

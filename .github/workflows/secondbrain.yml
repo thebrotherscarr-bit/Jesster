@@ -1,5 +1,12 @@
 name: secondbrain
 
+# `verify` is a required check on main, so it must report on EVERY pull
+# request: a paths filter on the trigger leaves a doc-only pull request
+# waiting forever for a check that never starts (Jesster #76, 2026-11-05).
+# The trigger therefore has no paths filter; the job itself looks at what the
+# pull request changed and runs the app's steps only when secondbrain/ or this
+# workflow moved. Otherwise it reports success without building.
+
 on:
   workflow_dispatch:
   push:
@@ -10,9 +17,6 @@ on:
       - secondbrain/**
       - .github/workflows/secondbrain.yml
   pull_request:
-    paths:
-      - secondbrain/**
-      - .github/workflows/secondbrain.yml
 
 jobs:
   verify:
@@ -21,12 +25,37 @@ jobs:
       run:
         working-directory: secondbrain
     steps:
+      # Depth 2: on a pull request HEAD is the merge commit and HEAD^1 the base
+      # it merges into, so their diff is exactly what the pull request changes.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          fetch-depth: 2
+      - name: what changed
+        id: changed
+        working-directory: .
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "app=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files="$(git diff --name-only HEAD^1 HEAD)"
+          echo "$files"
+          if echo "$files" | grep -qE '^(secondbrain/|\.github/workflows/secondbrain\.yml$)'; then
+            echo "app=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "app=false" >> "$GITHUB_OUTPUT"
+            echo "Nothing under secondbrain/ changed: verify passes without building."
+          fi
+      - if: steps.changed.outputs.app == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version-file: secondbrain/.nvmrc
       # vite@8 vs tsx's esbuild peer pin needs --legacy-peer-deps (see secondbrain/README.md)
-      - run: npm ci --legacy-peer-deps --ignore-scripts
-      - run: npm run lint
-      - run: npm test
-      - run: npm run build
+      - if: steps.changed.outputs.app == 'true'
+        run: npm ci --legacy-peer-deps --ignore-scripts
+      - if: steps.changed.outputs.app == 'true'
+        run: npm run lint
+      - if: steps.changed.outputs.app == 'true'
+        run: npm test
+      - if: steps.changed.outputs.app == 'true'
+        run: npm run build

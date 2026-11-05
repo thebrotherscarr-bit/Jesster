@@ -46,6 +46,8 @@ const RUN_BAR = [...EVALS_DIR, 'run-bar.ps1'];
 const RUNS_DIR = ['storage', 'evals', 'runs'];
 const TAG = /^[\w.-]+$/;
 const MAX_RUNS = 3;
+// run-bar.ps1 -Transport: in-process (the tool's default), or the running Responses or AG-UI host
+const TRANSPORTS = ['in-process', 'responses', 'ag-ui'];
 const MAX_STATUS_LINES = 200;
 
 const ESTATE_TOOLS = [
@@ -102,6 +104,7 @@ const ESTATE_TOOLS = [
         sets: { type: 'array', items: { type: 'string' }, minItems: 1, description: 'set names, e.g. ["aider-py"]' },
         runs: { type: 'integer', minimum: 1, maximum: MAX_RUNS, description: 'runs of each set; 1 when left out' },
         tag: { type: 'string', description: "the run's name; <sets>-<date> when left out" },
+        transport: { type: 'string', enum: TRANSPORTS, description: 'in-process when left out; ag-ui or responses send each case to that running host' },
       },
       required: ['sets'],
     },
@@ -167,8 +170,8 @@ function evalsApi({ stewardDir }) {
         });
         child.stdin.end(`${RUNNING_QUERY}\r\n`);
       }),
-    launch: ({ dir, sets, runs, tag }) => {
-      const args = ['-NoProfile', '-WindowStyle', 'Minimized', '-File', path.join(dir, ...RUN_BAR), '-Sets', sets.join(','), '-Runs', String(runs), '-Tag', tag];
+    launch: ({ dir, sets, runs, tag, transport = 'in-process' }) => {
+      const args = ['-NoProfile', '-WindowStyle', 'Minimized', '-File', path.join(dir, ...RUN_BAR), '-Sets', sets.join(','), '-Runs', String(runs), '-Tag', tag, '-Transport', transport];
       const child = spawn('powershell.exe', args, { cwd: dir, detached: true, stdio: 'ignore', windowsHide: false });
       child.unref();
       return { pid: child.pid ?? null };
@@ -198,8 +201,10 @@ async function evalStart(args, evals) {
   const folder = path.join(dir, ...RUNS_DIR, tag);
   if (fs.existsSync(path.join(folder, 'progress.txt'))) return { error: `tag "${tag}" has a run already (${path.join(folder, 'progress.txt')}); give a new tag.` };
   if (await evals.running()) return { error: 'An eval is running now; nothing was started. Read its progress with eval_status.' };
-  const { pid } = await evals.launch({ dir, sets, runs, tag });
-  return JSON.stringify({ started: true, tag, sets, runs, pid, progress: path.join(folder, 'progress.txt') });
+  const transport = args.transport === undefined || args.transport === null || args.transport === '' ? 'in-process' : String(args.transport);
+  if (!TRANSPORTS.includes(transport)) return { error: `transport is one of ${TRANSPORTS.join(', ')}` };
+  const { pid } = await evals.launch({ dir, sets, runs, tag, transport });
+  return JSON.stringify({ started: true, tag, sets, runs, transport, pid, progress: path.join(folder, 'progress.txt') });
 }
 
 /** eval_status: one run's progress file, the newest run's when no tag is given. */
@@ -386,4 +391,4 @@ async function estateCall(name, args, deps, { writes = false } = {}) {
   return { error: `no tool ${name}` };
 }
 
-module.exports = { ESTATE_TOOLS, NAMES, estateCall, isWrite, ollama, ollamaApi, status, versionsApi, repoVersion, VERSIONS_TTL_MS, evalsApi, evalSetNames, evalStart, evalStatus, RUNNING_QUERY, MAX_LOG_LINES, MAX_HISTORY, MAX_RUNS };
+module.exports = { ESTATE_TOOLS, NAMES, estateCall, isWrite, ollama, ollamaApi, status, versionsApi, repoVersion, VERSIONS_TTL_MS, evalsApi, evalSetNames, TRANSPORTS, evalStart, evalStatus, RUNNING_QUERY, MAX_LOG_LINES, MAX_HISTORY, MAX_RUNS };

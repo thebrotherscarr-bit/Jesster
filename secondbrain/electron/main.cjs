@@ -6,7 +6,7 @@ const express = require('express');
 const updater = require('./updater.cjs');
 const fs = require('fs');
 const { Vault, importFile, SUPPORTED } = require('./vaultfs.cjs');
-const { Settings, telegramEffective } = require('./settings.cjs');
+const { Settings, telegramEffective, stewardTransport } = require('./settings.cjs');
 const inbox = require('./inbox.cjs');
 const report = require('./report.cjs');
 const atlas = require('./atlas.cjs');
@@ -472,7 +472,7 @@ const stewardAgui = steward.service({
   log: 'steward-ag-ui.log',
   portEnv: 'STEWARD_AG_UI_PORT',
 });
-const aguiOn = () => getSettings().get('agent').backend === 'steward' && getSettings().get('agent').transport === 'ag-ui';
+const aguiOn = () => getSettings().get('agent').backend === 'steward' && stewardTransport(getSettings().get('agent')) === 'ag-ui';
 // all go down with SecondBrain, each with its whole process tree (not only the venv launcher)
 steward.stopOnQuit(app, [stewardService, stewardMcp, stewardAgui]);
 // Claude's check of each Steward turn (agent/checker.cjs): on the Claude key and model in
@@ -653,10 +653,11 @@ const deliverers = {};
 let schedulerTimer = null;
 let schedulerBusy = false;
 
-// what a schedule runs with: a Steward schedule's cards go to Telegram too (phoneCard); a workflow (agent/workflows.cjs)
-// waits for any conversation mid-turn before an eval (busy), and reads the Estate's repositories from the ground
+// what a schedule runs with: a Steward schedule's cards go to Telegram too (phoneCard); a workflow's recipe is run by
+// Steward as a MAF workflow on his MCP host (agent/workflows.cjs stewardRecipes), and one that starts an eval waits for
+// any conversation mid-turn (busy)
+const stewardRecipes = workflows.stewardRecipes({ url: `http://127.0.0.1:${steward.MCP_PORT}/mcp` });
 function scheduleDeps() {
-  const ground = atlasGlass.findGround((getSettings().get('atlas') || {}).ground, vaultDir());
   return {
     schedules: getSchedules(),
     agent: getAgent(),
@@ -664,12 +665,7 @@ function scheduleDeps() {
     deliverers,
     onCard: phoneCard,
     busy: () => getAgent().busy(),
-    evals: stewardEvals(),
-    versions: estateVersions,
-    ground,
-    repos: workflows.estateRepos(ground),
-    sitting: () => (ground ? atlasGlass.openSitting(ground) : ''),
-    stewardDir: stewardDirNow(),
+    steward: stewardRecipes,
   };
 }
 

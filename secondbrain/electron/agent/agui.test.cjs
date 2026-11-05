@@ -158,7 +158,7 @@ test("with agent.transport 'ag-ui' the Agent tab's turn goes over AG-UI, its car
   const cards = [];
   const service = new AgentService({
     getVault: () => vault,
-    getModel: () => ({ backend: 'steward', transport }),
+    getModel: () => ({ backend: 'steward', transport, transportChosen: transport === 'responses' }),
     steward: {
       ensure: async () => responses.push('ensure') && 'http://responses',
       turn: async () => (responses.push('turn'), { answer: 'over Responses', previous: 'r1', calls: [] }),
@@ -177,7 +177,7 @@ test("with agent.transport 'ag-ui' the Agent tab's turn goes over AG-UI, its car
   assert.equal(host.seen[0].threadId, 's1', 'the thread is the conversation');
   assert.match(host.seen[0].messages.at(-1).content, /\[from the PC \(Agent tab\) \| [^\]]+ local \(UTC[+-]\d\d:\d\d\) \| [^\]]*\d\d:\d\d UTC\]\nWrite x\.py\./);
   assert.deepEqual(service.open('s1').messages.map((m) => [m.role, m.content]), [['user', 'Write x.py.'], ['assistant', 'Done.']]);
-  // off (the default 'responses'): the same conversation goes to his service
+  // Responses chosen in Settings: the same conversation goes to his service
   transport = 'responses';
   assert.equal((await service.ask({ text: 'and now?', sessionId: 's1' })).answer, 'over Responses');
   assert.deepEqual(responses, ['ensure', 'turn']);
@@ -206,8 +206,8 @@ test('the AG-UI host is started like his other two: its script, its port in STEW
   assert.deepEqual(started, [{ args: [path.join(...agui.SCRIPT)], port: '43122', logs: ['steward-ag-ui.log', 'steward-ag-ui.log'] }]);
   // main.cjs wires it: the service, the shelf entry, the stop on quit and the keep-up behind the setting
   const main = fs.readFileSync(path.join(__dirname, '..', 'main.cjs'), 'utf8');
-  for (const wire of ["portEnv: 'STEWARD_AG_UI_PORT'", "id: 'steward-ag-ui'", 'stopOnQuit(app, [stewardService, stewardMcp, stewardAgui])', 'keepUpEvery(stewardAgui, agui.PORT', 'agui: { ensure:', "transport === 'ag-ui'"]) {
+  for (const wire of ["portEnv: 'STEWARD_AG_UI_PORT'", "id: 'steward-ag-ui'", 'stopOnQuit(app, [stewardService, stewardMcp, stewardAgui])', 'keepUpEvery(stewardAgui, agui.PORT', 'agui: { ensure:', "stewardTransport(getSettings().get('agent')) === 'ag-ui'"]) {
     assert.ok(main.includes(wire), `main.cjs: ${wire}`);
   }
-  assert.equal(require('../settings.cjs').DEFAULTS.agent.transport, 'responses', 'nothing switched by default');
+  assert.equal(require('../settings.cjs').DEFAULTS.agent.transport, 'ag-ui', 'AG-UI by default (2026-11-05)');
 });
