@@ -310,6 +310,74 @@ test('keepUpEvery brings a service back when its port is down, never one the use
   clearInterval(timer);
 });
 
+test('keepUpEvery never starts a second copy while the first is still starting; a crashed or hung start is retried', async () => {
+  const steward = require('./steward.cjs');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'steward-'));
+  for (const f of [['.venv', 'Scripts', 'python.exe'], steward.MCP_SCRIPT]) {
+    fs.mkdirSync(path.join(dir, ...f.slice(0, -1)), { recursive: true });
+    fs.writeFileSync(path.join(dir, ...f), '');
+  }
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const make = (start, extra = {}) => {
+    const st = { up: false, spawned: 0, killed: [] };
+    const svc = steward.service({
+      getConfig: () => ({ dir }),
+      vaultDir: () => null,
+      answering: async () => st.up,
+      waitFor: async (port, ms) => {
+        const end = Date.now() + ms;
+        while (Date.now() < end) {
+          if (st.up) return true;
+          await sleep(2);
+        }
+        return st.up;
+      },
+      startOwned: () => {
+        st.spawned++;
+        return start(st);
+      },
+      killTree: (pid) => st.killed.push(pid),
+      script: steward.MCP_SCRIPT,
+      port: steward.MCP_PORT,
+      wait: 15,
+      ...extra,
+    });
+    const timer = steward.keepUpEvery(svc, steward.MCP_PORT, async () => st.up, 5);
+    return { st, timer };
+  };
+  const quiet = console.error;
+  console.error = () => {};
+  try {
+    // mcp_app.py loading its tools: the port comes up after several intervals and past the first wait
+    const slow = make((st) => {
+      setTimeout(() => (st.up = true), 80);
+      return { pid: 1, exitCode: null };
+    }, { startLimit: 1000 });
+    await sleep(150);
+    clearInterval(slow.timer);
+    assert.strictEqual(slow.st.up, true);
+    assert.strictEqual(slow.st.spawned, 1, 'one start, waited for; no second copy on the port');
+    assert.deepEqual(slow.st.killed, []);
+    // a start that crashed (its child exited) is tried again
+    const crash = make(() => {
+      const c = { pid: 2, exitCode: null };
+      setTimeout(() => (c.exitCode = 1), 3);
+      return c;
+    });
+    await sleep(120);
+    clearInterval(crash.timer);
+    assert.ok(crash.st.spawned >= 2, `a crashed start is retried (${crash.st.spawned})`);
+    // one alive but still not answering past the start limit is ended, then started again
+    const hung = make(() => ({ pid: 3, exitCode: null }), { startLimit: 40 });
+    await sleep(150);
+    clearInterval(hung.timer);
+    assert.ok(hung.st.spawned >= 2, `a hung start is retried (${hung.st.spawned})`);
+    assert.ok(hung.st.killed.includes(3), 'the hung one is ended first');
+  } finally {
+    console.error = quiet;
+  }
+});
+
 test("main.cjs keeps Steward's MCP door up from the main process", () => {
   const main = fs.readFileSync(path.join(__dirname, '..', 'main.cjs'), 'utf8');
   assert.match(main, /steward\.keepUpEvery\(stewardMcp, steward\.MCP_PORT,/);

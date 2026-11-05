@@ -236,11 +236,12 @@ async function turn({ base, text, previous, approve, review, metadata, onEvent =
  * `held` until Start or Restart, so `keepUp` does not bring it back behind the user's back. `up()` says whether
  * something answers on the port now, starting nothing.
  */
-function service({ getConfig, vaultDir, answering, waitFor, startOwned, wait = 90000, script = SCRIPT, port: fixedPort = 0, log = 'steward.log', portEnv = 'STEWARD_PORT', portOwner = () => null, killTree = () => {} }) {
+function service({ getConfig, vaultDir, answering, waitFor, startOwned, wait = 90000, startLimit = 180000, script = SCRIPT, port: fixedPort = 0, log = 'steward.log', portEnv = 'STEWARD_PORT', portOwner = () => null, killTree = () => {} }) {
   let starting = null;
   let child = null;
   let held = false;
   let startedAt = null; // when SecondBrain started the child it holds, for estate_status
+  let startedMs = 0;
   const portOf = () => fixedPort || Number((getConfig() || {}).port) || PORT;
   async function ensure() {
     const cfg = getConfig() || {};
@@ -249,6 +250,15 @@ function service({ getConfig, vaultDir, answering, waitFor, startOwned, wait = 9
     if (await answering(port)) return base;
     if (!starting) {
       starting = (async () => {
+        // A child it started that has not exited is still starting (mcp_app.py loads its tools for about two
+        // minutes before it binds, 2026-11-05): wait for it, up to `startLimit` from its start, and never start a
+        // second copy beside it (that one failed with OSError 10048 on the port). Past the limit it is ended first.
+        if (alive()) {
+          const left = startLimit - (Date.now() - startedMs);
+          if (left > 0 && (await waitFor(port, left))) return base;
+          if (alive()) killTree(child.pid);
+          child = null;
+        }
         const dir = findSteward(cfg.dir, vaultDir(), script);
         if (!dir) throw new Error('Steward was not found: Jesster looks for worlds\\steward beside the notes folder, or the folder in Settings (agent.steward.dir).');
         const python = path.join(dir, ...PYTHON);
@@ -256,6 +266,7 @@ function service({ getConfig, vaultDir, answering, waitFor, startOwned, wait = 9
         // the port in the variable the script reads (ag_ui_app.py: STEWARD_AG_UI_PORT)
         child = startOwned(python, [path.join(...script)], dir, { ...process.env, [portEnv]: String(port) }, [log, log]);
         startedAt = new Date().toISOString();
+        startedMs = Date.now();
         if (!(await waitFor(port, wait))) throw new Error(`Steward's ${script[script.length - 1]} did not answer on port ${port}; its log is ${path.join(dir, log)}.`);
         return base;
       })().finally(() => {
