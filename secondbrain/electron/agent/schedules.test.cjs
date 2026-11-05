@@ -155,7 +155,7 @@ test("main.cjs hands the scheduler Telegram's cards and the Estate Steward's eva
 const workflows = require('./workflows.cjs');
 const { resumeSchedules } = require('./schedules.cjs');
 
-/** A ground with the Estate's five repositories (a .git folder each), the plan file, and Steward's eval runs. */
+/** A ground with the Estate's four repositories (a .git folder each), the plan file, and Steward's eval runs. */
 function fakeGround() {
   const ground = fs.mkdtempSync(path.join(os.tmpdir(), 'ground-'));
   const repos = workflows.estateRepos(ground);
@@ -172,13 +172,13 @@ function fakeGround() {
   return { ground, repos, stewardDir };
 }
 
-/** git and gh as recorded fakes: steward is on a feature branch, neiro has uncommitted changes, the rest are clean. */
+/** git and gh as recorded fakes: steward is on a feature branch, atlas has uncommitted changes, the rest are clean. */
 function fakeRun(calls) {
   return async (cmd, args, cwd) => {
     calls.push([cmd, ...args, path.basename(cwd)]);
     const repo = path.basename(cwd);
     if (cmd === 'git' && args[0] === 'rev-parse') return { code: 0, out: repo === 'steward' ? 'fix-x' : 'main', err: '' };
-    if (cmd === 'git' && args[0] === 'diff-index') return { code: repo === 'neiro' ? 1 : 0, out: '', err: '' };
+    if (cmd === 'git' && args[0] === 'diff-index') return { code: repo === 'atlas' ? 1 : 0, out: '', err: '' };
     if (cmd === 'git' && args[0] === 'pull') return { code: 0, out: repo === 'jesster' ? 'Fast-forward' : 'Already up to date.', err: '' };
     if (cmd === 'git' && args[0] === 'log') return { code: 0, out: repo === 'jesster' ? 'ae02179 2026-11-05 Merge pull request #71' : '', err: '' };
     if (cmd === 'gh' && args[0] === 'pr') return { code: 0, out: JSON.stringify(repo === 'jesster' ? [{ number: 71, title: 'Steward keep-up', mergedAt: '2026-11-05T02:00:00Z' }] : []), err: '' };
@@ -241,9 +241,9 @@ test('Startup, the baseline: the steps gather read-only, pull only clean mains, 
   assert.match(text, /The automation's own words: Review work from the previous day/);
   assert.match(text, /research: not pulled: Manjuel sitting 112 is open \(RULE 9\)/);
   assert.match(text, /steward: not pulled: on branch fix-x, not main/);
-  assert.match(text, /neiro: not pulled: the work tree has uncommitted changes/);
+  assert.match(text, /atlas: not pulled: the work tree has uncommitted changes/);
   assert.match(text, /jesster: pulled \(fast-forward\)/);
-  assert.match(text, /atlas: current \(nothing to pull\)/);
+  assert.doesNotMatch(text, /neiro/, 'Neiro is retired (2026-11-05)');
   assert.match(text, /ae02179 2026-11-05 Merge pull request #71/);
   assert.match(text, /#71 Steward keep-up/);
   assert.match(text, /jesster: secondbrain-b85 \(2026-11-05T03:00:00Z\)\n/, 'only releases since the last run');
@@ -254,7 +254,7 @@ test('Startup, the baseline: the steps gather read-only, pull only clean mains, 
   assert.doesNotMatch(text, /The plan by office/, 'only the working path');
   // the pulls happened only where allowed, and nothing ran git status or git diff
   const pulls = calls.filter((c) => c[0] === 'git' && c[1] === 'pull').map((c) => c.at(-1));
-  assert.deepEqual(pulls.sort(), ['atlas', 'jesster']);
+  assert.deepEqual(pulls.sort(), ['jesster']);
   assert.ok(!calls.some((c) => c[0] === 'git' && ['status', 'diff'].includes(c[1])), 'never git status or git diff');
   assert.ok(calls.filter((c) => c[1] === 'pull').every((c) => c.includes('--ff-only') && c.includes('main')));
   assert.ok(calls.filter((c) => c[1] === 'log').every((c) => c.includes(`--since=${new Date(t1 - 24 * 3600000).toISOString()}`)), 'the last day when it never ran');

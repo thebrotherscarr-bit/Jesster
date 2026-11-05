@@ -81,7 +81,10 @@ function run(cmd, args, cwd, timeout = 60000) {
   });
 }
 
-/** The Estate's repositories from the ground (Desktop\Research); `releases` marks the two whose releases are read. */
+/**
+ * The Estate's repositories from the ground (Desktop\Research); `releases` marks the two whose releases are read.
+ * Neiro is not one since 2026-11-05: retired as a gate and archived read-only, each part's own CI is its gate.
+ */
 function estateRepos(ground) {
   if (!ground) return [];
   return [
@@ -89,7 +92,6 @@ function estateRepos(ground) {
     { name: 'steward', dir: path.join(ground, 'worlds', 'steward') },
     { name: 'jesster', dir: path.join(ground, 'worlds', 'jesster'), releases: true },
     { name: 'atlas', dir: path.join(ground, 'atlas'), releases: true },
-    { name: 'neiro', dir: path.join(ground, 'worlds', 'neiro') },
   ];
 }
 
