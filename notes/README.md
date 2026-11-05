@@ -76,8 +76,43 @@ another editor are caught, and `provenance.witness` deposits them.
 |---|---|
 | any language | `python notes/cli.py rpc`: JSON-RPC 2.0, one message per line on stdio |
 | web or remote | `python notes/cli.py serve`: `POST /rpc` with the same messages |
-| agents (Claude Code, Codex, Cursor) | `python notes/cli.py mcp`: every method is an MCP tool (`notes_create`, `llm_ask`, …). Registered in `../.mcp.json`. |
+| agents (Claude Code, Codex, Cursor) | `python notes/cli.py mcp`: every method is an MCP tool (`notes_create`, `llm_ask`, …). Registered in `../.mcp.json`. `--only` narrows it (below). |
 | Python | `from kernel import open_kernel; k = open_kernel(path); k.call("notes.search", {"q": "x"})` |
+
+### Use from an IDE (Cursor)
+
+`python notes/cli.py mcp --only <list>` serves only the methods named:
+comma-separated method names, prefixes ending in `.` or `.*`, or a preset.
+The rest are not in `tools/list`, and calling one answers the MCP error for
+an unknown tool. An entry that matches no method stops the server. Without
+`--only`, every method is a tool, as above.
+
+The preset `--only notes` is exactly `notes.create`, `notes.get`,
+`notes.list`, `notes.reload`, `notes.search`, `notes.stats`, `notes.tags`,
+`notes.update`, `index.search`, `context.for` and `context.now`: no
+`notes.remove`, no `notes.dump`, and nothing from `archive`, `system`,
+`ingest`, `import`, `live` or `llm`. It runs over stdio, so it needs no key
+and opens no port.
+
+In Cursor, add to `.cursor/mcp.json` (the project's) or
+`%USERPROFILE%\.cursor\mcp.json` (every project). The vault is the one
+SecondBrain uses on this ground, `worlds\notes`; any Python 3.9 or newer on
+PATH will do, since the kernel is standard library only.
+
+```json
+{
+  "mcpServers": {
+    "jesster-notes": {
+      "command": "python",
+      "args": ["C:\\Users\\novad\\Desktop\\Research\\worlds\\jesster\\notes\\cli.py",
+               "mcp", "--vault", "C:\\Users\\novad\\Desktop\\Research\\worlds\\notes",
+               "--only", "notes"]
+    }
+  }
+}
+```
+
+Saves made this way are deposited on the vault's chain like any other.
 
 `kernel.methods` lists every method with its JSON Schema. A host can pass its
 own plugin list to `Kernel(root, config, plugins=[...])`. A plugin is a module
