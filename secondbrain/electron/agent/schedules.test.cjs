@@ -142,7 +142,8 @@ test('an automation card answered in time is the answer, and the timer ends with
 
 test("main.cjs hands the scheduler Telegram's cards and the Estate Steward's evals", () => {
   const main = fs.readFileSync(path.join(__dirname, '..', 'main.cjs'), 'utf8');
-  assert.equal(main.match(/sched\.runSchedule\(s, scheduleDeps\(\)\)/g).length, 2, 'the tick and Run now');
+  assert.equal(main.match(/sched\.runSchedule\(s, scheduleDeps\(\)\)/g).length, 1, 'the tick');
+  assert.equal(main.match(/sched\.runSchedule\(s, \{ \.\.\.scheduleDeps\(\), trigger: 'now' \}\)/g).length, 1, 'Run now, kept as such in the run history');
   assert.match(main, /onCard: phoneCard,/);
   assert.match(main, /busy: \(\) => getAgent\(\)\.busy\(\),/);
   assert.match(main, /await sched\.resumeSchedules\(scheduleDeps\(\)\)/);
@@ -156,6 +157,13 @@ test("main.cjs hands the scheduler Telegram's cards and the Estate Steward's eva
   const preload = fs.readFileSync(path.join(__dirname, '..', 'preload.cjs'), 'utf8');
   assert.match(preload, /edit: \(id, spec\) => ipcRenderer\.invoke\('schedules:edit', id, spec\)/);
   assert.match(preload, /busy: \(\) => ipcRenderer\.invoke\('schedules:busy'\)/);
+  // the Flows shelf, piece 2 (ADR-0008): the graph, the runs and a run's live steps, each from Steward's MCP host
+  assert.match(main, /ipcMain\.handle\('schedules:graph', async \(event, id\) => \{[\s\S]*?return stewardRecipes\.recipeGraph\(workflows\.recipeOf\(s\)\);/);
+  assert.match(main, /ipcMain\.handle\('schedules:runs', async \(event, id, limit\) => \{[\s\S]*?return stewardRecipes\.recipeRuns\(/);
+  assert.match(main, /ipcMain\.handle\('schedules:runStatus', async \(event, runId\) => \{[\s\S]*?return stewardRecipes\.recipeStatus\(/);
+  assert.match(preload, /graph: \(id\) => ipcRenderer\.invoke\('schedules:graph', id\)/);
+  assert.match(preload, /runs: \(id, limit\) => ipcRenderer\.invoke\('schedules:runs', id, limit\)/);
+  assert.match(preload, /runStatus: \(runId\) => ipcRenderer\.invoke\('schedules:runStatus', runId\)/);
 });
 
 test('an automation changed from the Flows shelf: each field checked as add checks it, nothing written on a refusal', () => {
@@ -193,7 +201,7 @@ function fakeSteward(states) {
   return {
     seen,
     steward: {
-      runRecipe: async (recipe, since) => (seen.started.push({ recipe, since }), { run_id: `run${seen.started.length}`, state: 'running' }),
+      runRecipe: async (recipe, since, extra) => (seen.started.push({ recipe, since, extra }), { run_id: `run${seen.started.length}`, state: 'running' }),
       recipeStatus: async (id) => (seen.read.push(id), states.shift() || { state: 'running' }),
     },
   };
@@ -239,6 +247,7 @@ test("Startup, the baseline: SecondBrain hands his schedule's recipe to Steward'
   assert.equal(parked.parked.run_id, 'run1', 'Startup starts no eval, so a busy Steward does not skip it');
   assert.deepEqual(seen.started[0].recipe, { name: 'Startup', prompt, steps: STARTUP_STEPS, summarize: 'Write the daily what-happened from this.', deliver: ['note', 'telegram'] });
   assert.equal(seen.started[0].since, (t1 - 24 * 3600000) / 1000, 'the last day, in seconds, when it never ran');
+  assert.deepEqual(seen.started[0].extra, { flow: mine.id, trigger: 'schedule' }, 'the flow and what started it, for its run history');
   assert.equal(schedules.all()[0].lastResult, "waiting on Steward's run run1");
   assert.deepEqual(await resumeSchedules({ ...base, now: t1 + 30000 }), [], 'still running');
   const [filed] = await resumeSchedules({ ...base, now: t1 + 60000 });
@@ -327,4 +336,33 @@ test('a recipe call reaches the host as one the 2026-07-28 server check (mcpvers
   assert.match(seen[1].accept, /application\/json/);
   assert.match(seen[1].accept, /text\/event-stream/);
   assert.equal(workflows.STEWARD_MCP, 'http://127.0.0.1:43121/mcp');
+});
+
+test("the Flows shelf's reads: recipe_graph with the flow's recipe, recipe_runs by flow, each bounded; Run now is kept as such", async () => {
+  const posted = [];
+  const replies = [
+    { jsonrpc: '2.0', id: 1, result: { content: [{ type: 'text', text: '{"workflow": {"start_executor_id": "begin", "executors": {}, "edge_groups": []}}' }] } },
+    { jsonrpc: '2.0', id: 2, result: { content: [{ type: 'text', text: '[{"run_id": "r1", "state": "done", "ok": true, "steps": []}]' }] } },
+    { jsonrpc: '2.0', id: 3, result: { content: [{ type: 'text', text: 'flow is the flow\'s id' }], isError: true } },
+    { jsonrpc: '2.0', id: 4, result: { content: [{ type: 'text', text: '{"run_id": "r2", "state": "running"}' }] } },
+  ];
+  const s = workflows.stewardRecipes({ post: async (url, body, headers, timeout) => (posted.push([body.params, headers['Mcp-Name'], timeout]), replies.shift()) });
+  assert.equal((await s.recipeGraph({ name: 'x', steps: ['plan_left'] })).workflow.start_executor_id, 'begin');
+  assert.deepEqual(await s.recipeRuns('f1', 5), [{ run_id: 'r1', state: 'done', ok: true, steps: [] }]);
+  await assert.rejects(s.recipeRuns(''), /recipe_runs: flow is the flow's id/);
+  assert.deepEqual(posted.map((p) => [p[0].name, p[0].arguments, p[1]]), [
+    ['recipe_graph', { recipe: { name: 'x', steps: ['plan_left'] } }, 'recipe_graph'],
+    ['recipe_runs', { flow: 'f1', limit: 5 }, 'recipe_runs'],
+    ['recipe_runs', { flow: '', limit: 10 }, 'recipe_runs'],
+  ]);
+  assert.ok(posted.every((p) => p[2] > 0 && p[2] <= 5000), 'a host that is down is told within seconds');
+  await s.runRecipe({ name: 'x', steps: ['plan_left'] }, 1, { flow: 'f1', trigger: 'now' });
+  assert.deepEqual(posted[3][0].arguments, { recipe: { name: 'x', steps: ['plan_left'] }, since: 1, flow: 'f1', trigger: 'now' });
+
+  const vault = new Vault(fs.mkdtempSync(path.join(os.tmpdir(), 'wf-')));
+  const schedules = new Schedules(() => vault);
+  const f = schedules.add({ name: 'Plan', when: '', steps: ['plan_left'] });
+  const { steward, seen } = fakeSteward([]);
+  await runSchedule(f, { schedules, vault, agent: {}, steward, deliverers: {}, trigger: 'now' });
+  assert.deepEqual(seen.started[0].extra, { flow: f.id, trigger: 'now' });
 });

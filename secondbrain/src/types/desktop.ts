@@ -91,7 +91,7 @@ export interface ScheduleView {
   steps?: (string | { step: string; [arg: string]: unknown })[];
   summarize?: string;
   /** a workflow parked on eval_wait: the eval run it waits for */
-  pending?: { tag?: string; label?: string; until: number } | null;
+  pending?: { run_id?: string; tag?: string; label?: string; until: number } | null;
   /** tags: "example" marks the Flows shelf's built-in examples (electron/agent/flowExamples.cjs) */
   tags?: string[];
   enabled: boolean;
@@ -124,6 +124,46 @@ export interface SchedulesBridge {
   busy?: () => Promise<boolean>;
   remove: (id: string) => Promise<ScheduleView[]>;
   run: (id: string) => Promise<{ note: string; ok: boolean; schedules: ScheduleView[] }>;
+  /** the flow built as Steward's MAF workflow (recipe_graph: Workflow.to_dict()); rejects when his host is down */
+  graph?: (id: string) => Promise<{ workflow: MafWorkflowDict; mermaid?: string }>;
+  /** the flow's runs, newest first (recipe_runs) */
+  runs?: (id: string, limit?: number) => Promise<FlowRun[]>;
+  /** one run as it stands, its steps so far (recipe_status), for the live canvas */
+  runStatus?: (runId: string) => Promise<FlowRun>;
+}
+
+/** MAF's Workflow.to_dict(), the part the canvas reads (Steward's recipe_graph). */
+export interface MafWorkflowDict {
+  name?: string;
+  start_executor_id: string;
+  executors: Record<string, { id: string; type: string }>;
+  edge_groups: { id?: string; type: string; edges: { source_id: string; target_id: string }[] }[];
+  output_executors?: string[];
+}
+
+/** One step of a run, from MAF's events (Steward's step_states). */
+export interface FlowRunStep {
+  id: string;
+  step: string;
+  state: 'done' | 'failed' | 'skipped' | 'running' | 'waiting';
+  ms: number | null;
+  ok: boolean;
+  error?: string;
+}
+
+/** One run of a flow (Steward's recipe_runs and recipe_status). */
+export interface FlowRun {
+  run_id: string;
+  name?: string;
+  flow?: string | null;
+  trigger?: 'now' | 'schedule' | null;
+  state: 'running' | 'done' | 'failed';
+  ok?: boolean | null;
+  short?: string | null;
+  error?: string | null;
+  started?: string | null;
+  ended?: string | null;
+  steps: FlowRunStep[];
 }
 
 export interface McpState {

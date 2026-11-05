@@ -115,32 +115,40 @@ function postJson(url, body, extra = {}, timeout = 30000) {
  */
 function stewardRecipes({ url = STEWARD_MCP, post = postJson } = {}) {
   let n = 0;
-  const call = async (name, args) => {
+  const call = async (name, args, timeout) => {
     const msg = { jsonrpc: '2.0', id: ++n, method: 'tools/call', params: { name, arguments: args, _meta: mcpv.requestMeta(CLIENT_INFO) } };
-    const reply = await post(url, msg, mcpv.requestHeaders(msg));
+    const reply = await (timeout ? post(url, msg, mcpv.requestHeaders(msg), timeout) : post(url, msg, mcpv.requestHeaders(msg)));
     if (reply.error) throw new Error(`${name}: ${reply.error.message}`);
     const text = ((reply.result && reply.result.content) || []).find((c) => c.type === 'text')?.text || '';
     if (reply.result && reply.result.isError) throw new Error(`${name}: ${text}`);
     return JSON.parse(text);
   };
   return {
-    runRecipe: (recipe, since) => call('run_recipe', { recipe, since }),
-    recipeStatus: (runId) => call('recipe_status', { run_id: runId }),
+    // `extra`: { flow, trigger }, kept by Steward for the flow's run history (recipe_runs)
+    runRecipe: (recipe, since, extra) => call('run_recipe', { recipe, since, ...(extra || {}) }),
+    recipeStatus: (runId) => call('recipe_status', { run_id: runId }, READ_MS),
+    // the Flows shelf (ADR-0008): the recipe built as its MAF workflow (to_dict), and one flow's runs; both read only
+    recipeGraph: (recipe) => call('recipe_graph', { recipe }, READ_MS),
+    recipeRuns: (flow, limit = 10) => call('recipe_runs', { flow, limit }, READ_MS),
   };
 }
+
+// the shelf's reads wait at most this long: a host that is down is told quickly, and the canvas is drawn locally
+const READ_MS = 5000;
 
 // ---- the scheduler's side ------------------------------------------------------------------------------------------
 
 /**
  * A workflow's run at its time: skipped while a conversation is mid-turn if it starts an eval; else run_recipe, and
- * the run parked on the schedule (`pending`) for the ticks to read. deps: { steward (stewardRecipes), busy, now }.
+ * the run parked on the schedule (`pending`) for the ticks to read. deps: { steward (stewardRecipes), busy, now,
+ * trigger ('now' from Run now; 'schedule' otherwise) }. The flow's id and the trigger go with it, for the run history.
  */
 async function startWorkflow(s, deps) {
   const recipe = recipeOf(s);
   if (recipe.steps.some((x) => stepOf(x).step === 'eval_start') && deps.busy && deps.busy()) return { skipped: 'skipped: Steward busy' };
   const now = deps.now ?? Date.now();
   const since = (s.lastRun || now - DAY_MS) / 1000;
-  const r = await deps.steward.runRecipe(recipe, since);
+  const r = await deps.steward.runRecipe(recipe, since, { flow: s.id, trigger: deps.trigger === 'now' ? 'now' : 'schedule' });
   return { parked: { run_id: r.run_id, label: `Steward's run ${r.run_id}`, started: now, until: now + RUN_MAX_MS } };
 }
 
