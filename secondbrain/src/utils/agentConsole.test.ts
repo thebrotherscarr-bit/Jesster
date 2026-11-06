@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
-import { CHATS_OPEN_KEY, CONSOLE_OPEN_KEY, CONSOLE_SHELVES, MOVED_TO_CONSOLE, TOP_BAR, barStatus, historyRow, keepPanel, mcpServers, panelOpen, versusBaseline } from './agentConsole.ts';
+import { CHATS_OPEN_KEY, CONSOLE_OPEN_KEY, CONSOLE_SHELVES, MOVED_TO_CONSOLE, TOP_BAR, WorkflowStepEvent, barStatus, historyRow, keepPanel, mcpServers, panelOpen, stepLine, versusBaseline } from './agentConsole.ts';
 
 // The operator, 2026-11-04: "there is a lot of clutter in the top bar", and the rulings after it (Flows, Capture,
 // Import files, GitHub, Ask Brain, Services, Integrations and + New note leave the top bar; Steward's controls go to
@@ -128,6 +128,43 @@ test('the chats bar and the console fold from the header, each remembered', () =
   assert.equal((bar.match(/<button\b/g) || []).length, 2, 'New chat and the row button only');
   assert.match(bar, /New chat/);
   assert.match(bar, /truncate[^"]*`\}\s*title=\{s\.title/);
+});
+
+// AG-UI step 3 (Steward's ExecPlan 0003, milestone 2): the turn's workflow_step events as its step line. The executor
+// names and their order are what Steward's AG-UI host sends (measured 2026-11-05: route, explore, plan, read_plan,
+// ask_approval raising the card, then on the resume ask_approval again, execute, check, ..., report).
+test('the step line: each step lit as it starts, done or failed as it ends, a card shown waiting, check attempts counted', () => {
+  const ev = (spec: string): WorkflowStepEvent[] =>
+    spec.split(' ').map((x) => {
+      const [name, s] = x.split(':');
+      return { name, state: ({ s: 'started', f: 'finished', x: 'failed' } as const)[s as 's' | 'f' | 'x'] };
+    });
+  const show = (cells: ReturnType<typeof stepLine>) => cells.map((c) => `${c.id}:${c.state}${c.attempts > 1 ? `x${c.attempts}` : ''}`).join(' ');
+  const planning = ev('route:s route:f explore:s explore:f plan:s');
+  assert.equal(show(stepLine(planning)), 'plan:running approve:waiting execute:waiting check:waiting repair:waiting commit:waiting report:waiting');
+  const card = [...planning, ...ev('plan:f read_plan:s read_plan:f ask_approval:s ask_approval:f')];
+  assert.equal(show(stepLine(card, true)).split(' ').slice(0, 3).join(' '), 'plan:done approve:card execute:waiting', 'the plan card waits');
+  const checking = [...card, ...ev('ask_approval:s ask_approval:f execute:s execute:f check:s')];
+  assert.equal(show(stepLine(checking)).split(' ').slice(0, 4).join(' '), 'plan:done approve:done execute:done check:running', 'the resume is the same approve');
+  const second = [...checking, ...ev('check:f repair:s repair:f check:s')];
+  assert.equal(show(stepLine(second)).split(' ').slice(3, 5).join(' '), 'check:runningx2 repair:done', 'check, attempt 2');
+  const commitCard = [...second, ...ev('check:f commit:s commit:f')];
+  assert.equal(show(stepLine(commitCard, true)), 'plan:done approve:done execute:done check:donex2 repair:done commit:card report:waiting', 'the line ends with commit on its card');
+  const denied = [...commitCard, ...ev('commit:s commit:x')];
+  assert.equal(show(stepLine(denied)), 'plan:done approve:done execute:done check:donex2 repair:done commit:failed', 'a No: commit failed, and nothing after it');
+  // a green check passes over repair and, with nothing changed, commit
+  assert.equal(show(stepLine([...checking, ...ev('check:f report:s report:f')])), 'plan:done approve:done execute:done check:done report:done');
+  // a plain question is one step; no events (an older host, the Responses fallback) is no line
+  assert.equal(show(stepLine(ev('route:s route:f answer:s'))), 'answer:running');
+  assert.deepEqual(stepLine([]), []);
+  assert.deepEqual(stepLine(ev('route:s route:f merge:s')), [], "steps the line does not know are ignored");
+
+  // the Agent tab draws it above the turn's output, from the workflow_step events, and starts it again with each message
+  const view = read('../components/AgentView.tsx');
+  assert.match(view, /<StepLine cells=\{stepLine\(steps, cardWaits\)\} \/>/, 'the Agent tab draws the line');
+  assert.match(view, /e\.type === 'workflow_step'\) setSteps/, 'from the workflow_step events');
+  assert.match(view, /e\.type === 'user'\) setSteps\(\[\]\)/, 'a new message starts a new line');
+  assert.match(read('../components/StepLine.tsx'), /data-step-line/);
 });
 
 test("the bar is the small set whole on its two newest runs and the newest steps run passing; the Evals shelf shows it and a run's progress", () => {

@@ -5,8 +5,9 @@ import { AgentEvent, ApprovalRequest } from '../types/desktop.ts';
 import { OllamaConfig } from '../types/index.ts';
 import { renderMarkdown } from '../utils/markdown.ts';
 import { AgentConsole } from './AgentConsole.tsx';
+import { StepLine } from './StepLine.tsx';
 import { SpeakToggle } from './SpeakToggle.tsx';
-import { CHATS_OPEN_KEY, CONSOLE_OPEN_KEY, keepPanel, panelOpen } from '../utils/agentConsole.ts';
+import { CHATS_OPEN_KEY, CONSOLE_OPEN_KEY, WorkflowStepEvent, keepPanel, panelOpen, stepLine } from '../utils/agentConsole.ts';
 
 // where the two folding panels keep their state (none when the window's storage cannot be reached)
 const store = () => {
@@ -47,6 +48,8 @@ export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice, draft
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [busy, setBusy] = useState(false);
+  // the turn's workflow steps (AG-UI step 3): the step line above its output; a new message starts a new line
+  const [steps, setSteps] = useState<WorkflowStepEvent[]>([]);
   const [input, setInput] = useState('');
   // the Notes tab's "Ask Steward" puts the note in the message box; he sends nothing until it is sent
   useEffect(() => {
@@ -94,6 +97,8 @@ export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice, draft
         if (e.type === 'done') refresh();
         return;
       }
+      if (e.type === 'user') setSteps([]);
+      if (e.type === 'workflow_step') setSteps((x) => [...x, { name: e.name, state: e.state }]);
       setTurns((t) => {
         if (e.type === 'tool') return [...t, { role: 'tool', name: e.name, text: JSON.stringify(e.args) }];
         if (e.type === 'result') {
@@ -150,6 +155,7 @@ export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice, draft
     return agent.onShow(async (id) => {
       current.current = id;
       setSessionId(id);
+      setSteps([]);
       const s = await agent.open(id);
       setBusy(s.busy);
       setTurns(s.messages.map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', text: m.content })));
@@ -170,6 +176,7 @@ export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice, draft
   const open = async (id: string) => {
     const s = await agent.open(id);
     setSessionId(id);
+    setSteps([]);
     setBusy(s.busy);
     setTurns(s.messages.map((m) => ({ role: m.role === 'user' ? 'user' : 'assistant', text: m.content })));
   };
@@ -177,6 +184,7 @@ export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice, draft
   // a card waiting in this conversation: a message sent now answers it No and goes to the agent
   // next (service.cjs ask), so Send stays open while it waits
   const cardWaits = approvals.some((a) => a.sessionId === sessionId);
+  const lastUser = turns.map((t) => t.role).lastIndexOf('user');
 
   const send = () => {
     const text = input.trim();
@@ -221,6 +229,7 @@ export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice, draft
             onClick={() => {
               setSessionId(null);
               setTurns([]);
+              setSteps([]);
               setBusy(false);
             }}
             className="mx-2 mt-2 mb-1 flex items-center gap-1.5 px-2 py-1.5 rounded-md text-xs text-neutral-300 hover:bg-neutral-900 hover:text-white min-w-0"
@@ -303,9 +312,13 @@ export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice, draft
           )}
           {turns.map((t, i) =>
             t.role === 'user' ? (
-              <div key={i} className="flex justify-end">
-                <div className="max-w-[80%] min-w-0 rounded-2xl bg-neutral-800 px-4 py-2.5 text-sm text-white whitespace-pre-wrap [overflow-wrap:anywhere]">{t.text}</div>
-              </div>
+              <React.Fragment key={i}>
+                <div className="flex justify-end">
+                  <div className="max-w-[80%] min-w-0 rounded-2xl bg-neutral-800 px-4 py-2.5 text-sm text-white whitespace-pre-wrap [overflow-wrap:anywhere]">{t.text}</div>
+                </div>
+                {/* the step line sits above the output of the last turn, the one its events are for */}
+                {i === lastUser && <StepLine cells={stepLine(steps, cardWaits)} />}
+              </React.Fragment>
             ) : t.role === 'tool' ? (
               <div key={i} className="text-[11px] text-neutral-500 font-mono whitespace-pre-wrap break-words pl-2 border-l border-neutral-800">
                 <Wrench className="inline w-3 h-3 mr-1 -mt-0.5" />
