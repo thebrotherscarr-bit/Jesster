@@ -10,6 +10,7 @@ import { WhatsAppSection } from './settings/WhatsAppSection.tsx';
 import { channelOn, visibleChats } from '../utils/channels.ts';
 import { WorkflowStepEvent, keepSteps, phoneSession, stepLine } from '../utils/agentConsole.ts';
 import { StepLine } from './StepLine.tsx';
+import { A2uiCard } from './A2uiCard.tsx';
 
 /**
  * The phone (the operator, 2026-11-04: "so we know like 'this is the pc' and 'this is the phone'"): the Agent tab's
@@ -150,22 +151,32 @@ export const PhoneView: React.FC<{ voice?: VoiceSettings; onVoiceChange?: (v: Pa
             ) : e.kind === 'reply' ? (
               <div key={i} className="agent-md prose prose-invert prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: renderMarkdown(e.text) }} />
             ) : e.kind === 'card' ? (
-              <div key={i} role="alertdialog" className="rounded-xl border border-amber-800 bg-amber-950/40 p-3 space-y-2">
-                <div className="flex items-center gap-2 text-sm text-amber-200">
-                  <ShieldAlert className="w-4 h-4 shrink-0" /> <span className="min-w-0 [overflow-wrap:anywhere]">Steward wants to use <code>{e.name}</code></span>
-                </div>
-                <pre className="text-xs text-neutral-200 whitespace-pre-wrap break-words [overflow-wrap:anywhere] max-w-full bg-black/40 rounded-md p-2">{e.text}</pre>
-                {e.cardId && open.includes(e.cardId) && (
-                  <div className="flex gap-2">
-                    <button onClick={() => answer(e.cardId!, true)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 text-xs text-white hover:bg-emerald-500">
-                      <Check className="w-3.5 h-3.5" /> Allow
-                    </button>
-                    <button onClick={() => answer(e.cardId!, false)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-neutral-700 text-xs text-neutral-300 hover:bg-neutral-800">
-                      <X className="w-3.5 h-3.5" /> Deny
-                    </button>
+              (() => {
+                const card = (
+                  <div key={i} role="alertdialog" className="rounded-xl border border-amber-800 bg-amber-950/40 p-3 space-y-2">
+                    <div className="flex items-center gap-2 text-sm text-amber-200">
+                      <ShieldAlert className="w-4 h-4 shrink-0" /> <span className="min-w-0 [overflow-wrap:anywhere]">Steward wants to use <code>{e.name}</code></span>
+                    </div>
+                    <pre className="text-xs text-neutral-200 whitespace-pre-wrap break-words [overflow-wrap:anywhere] max-w-full bg-black/40 rounded-md p-2">{e.text}</pre>
+                    {e.cardId && open.includes(e.cardId) && (
+                      <div className="flex gap-2">
+                        <button onClick={() => answer(e.cardId!, true)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 text-xs text-white hover:bg-emerald-500">
+                          <Check className="w-3.5 h-3.5" /> Allow
+                        </button>
+                        <button onClick={() => answer(e.cardId!, false)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-neutral-700 text-xs text-neutral-300 hover:bg-neutral-800">
+                          <X className="w-3.5 h-3.5" /> Deny
+                        </button>
+                      </div>
+                    )}
                   </div>
-                )}
-              </div>
+                );
+                // an open card that came with Steward's A2UI surface (his ADR-0013) is drawn from it; today's card otherwise
+                return e.a2ui && e.cardId && open.includes(e.cardId) ? (
+                  <A2uiCard key={i} messages={e.a2ui} onAnswer={(allow) => answer(e.cardId!, allow)} fallback={card} />
+                ) : (
+                  card
+                );
+              })()
             ) : (
               <div key={i} className="text-[11px] text-neutral-500 pl-2 border-l border-neutral-800">
                 {e.text}

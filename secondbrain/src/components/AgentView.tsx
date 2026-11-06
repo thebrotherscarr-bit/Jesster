@@ -6,6 +6,7 @@ import { OllamaConfig } from '../types/index.ts';
 import { renderMarkdown } from '../utils/markdown.ts';
 import { AgentConsole } from './AgentConsole.tsx';
 import { StepLine } from './StepLine.tsx';
+import { A2uiCard } from './A2uiCard.tsx';
 import { SpeakToggle } from './SpeakToggle.tsx';
 import { CHATS_OPEN_KEY, CONSOLE_OPEN_KEY, WorkflowStepEvent, keepPanel, panelOpen, stepLine } from '../utils/agentConsole.ts';
 
@@ -345,20 +346,9 @@ export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice, draft
               />
             )
           )}
-          {approvals.map((r) => (
-            <div key={r.id} role="alertdialog" className="rounded-xl border border-amber-800 bg-amber-950/40 p-3 space-y-2">
-              <div className="flex items-center gap-2 text-sm text-amber-200">
-                <ShieldAlert className="w-4 h-4 shrink-0" /> <span className="min-w-0 [overflow-wrap:anywhere]">The agent wants to use <code>{r.name}</code></span>
-              </div>
-              <pre className="text-xs text-neutral-200 whitespace-pre-wrap break-words [overflow-wrap:anywhere] max-w-full bg-black/40 rounded-md p-2">{r.summary}</pre>
-              <div className="flex gap-2">
-                <button onClick={() => answer(r, true)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 text-xs text-white hover:bg-emerald-500">
-                  <Check className="w-3.5 h-3.5" /> Allow once
-                </button>
-                <button onClick={() => answer(r, false)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-neutral-700 text-xs text-neutral-300 hover:bg-neutral-800">
-                  <X className="w-3.5 h-3.5" /> Deny
-                </button>
-              </div>
+          {approvals.map((r) => {
+            // a reply typed on the card: under today's card and under one drawn from Steward's A2UI surface alike
+            const reply = (
               <div className="flex gap-2">
                 <input
                   value={replies[r.id] || ''}
@@ -376,8 +366,31 @@ export const AgentView: React.FC<AgentViewProps> = ({ ollamaConfig, voice, draft
                   <Send className="w-3.5 h-3.5" /> Reply
                 </button>
               </div>
-            </div>
-          ))}
+            );
+            const card = (
+              <div key={r.id} role="alertdialog" className="rounded-xl border border-amber-800 bg-amber-950/40 p-3 space-y-2">
+                <div className="flex items-center gap-2 text-sm text-amber-200">
+                  <ShieldAlert className="w-4 h-4 shrink-0" /> <span className="min-w-0 [overflow-wrap:anywhere]">The agent wants to use <code>{r.name}</code></span>
+                </div>
+                <pre className="text-xs text-neutral-200 whitespace-pre-wrap break-words [overflow-wrap:anywhere] max-w-full bg-black/40 rounded-md p-2">{r.summary}</pre>
+                <div className="flex gap-2">
+                  <button onClick={() => answer(r, true)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg bg-emerald-600 text-xs text-white hover:bg-emerald-500">
+                    <Check className="w-3.5 h-3.5" /> Allow once
+                  </button>
+                  <button onClick={() => answer(r, false)} className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-neutral-700 text-xs text-neutral-300 hover:bg-neutral-800">
+                    <X className="w-3.5 h-3.5" /> Deny
+                  </button>
+                </div>
+                {reply}
+              </div>
+            );
+            // the plan card drawn from the A2UI surface Steward sent with it (his ADR-0013); today's card otherwise
+            return r.a2ui ? (
+              <A2uiCard key={r.id} messages={r.a2ui} onAnswer={(allow) => answer(r, allow)} fallback={card} footer={reply} />
+            ) : (
+              card
+            );
+          })}
           {busy && <div className="text-xs text-neutral-500 animate-pulse">Working…</div>}
           {voiceError && <div role="alert" className="text-xs text-amber-400">{voiceError}</div>}
           {recorder.progress && <div className="text-xs text-neutral-500">Preparing speech model: {recorder.progress}</div>}
