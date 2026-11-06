@@ -132,6 +132,43 @@ test('Deny resumes with approved false, and the run ends on his words', async (t
   assert.equal(r.answer, 'Not approved; nothing was changed.');
 });
 
+// AG-UI step 3 (Steward's ExecPlan 0003, ADR-0003): MAF's STEP_STARTED / STEP_FINISHED, one pair per executor, become
+// 'workflow_step' events in the order they came, for the step line; red when the STEP_* cases come unplugged.
+test("the workflow's steps reach the window in order: started, finished, and failed where a No or an error ends them", async (t) => {
+  const step = (type, stepName) => ({ type, stepName });
+  // as ag_ui_app.py streams them (measured 2026-11-05): each superstep in its own pair, each executor inside it, and a
+  // card's step run again on the resume, where it takes the answer
+  const sup = (n, name, ...inside) => [step('STEP_STARTED', `superstep:${n}`), step('STEP_STARTED', name), ...inside, step('STEP_FINISHED', name), step('STEP_FINISHED', `superstep:${n}`)];
+  const host = await fakeHost((body, n) =>
+    n === 1
+      ? [...sup(1, 'plan', ...words('p', 'Plan.', 'REASONING')), ...sup(2, 'ask_approval'), ...card(PLAN, 'ck-s').slice(1, -2), card(PLAN, 'ck-s').at(-1)]
+      : [...sup(3, 'ask_approval'), ...words('no', 'Not approved.'), { type: 'RUN_FINISHED' }],
+  );
+  t.after(() => host.server.close());
+  const events = [];
+  const r = await agui.turn({ url: host.url, threadId: THREAD, text: 'Write x.py.', approve: async () => false, onEvent: (e) => events.push(e) });
+  assert.equal(r.answer, 'Plan.\n\nNot approved.', 'the steps change nothing else');
+  assert.deepEqual(
+    events.filter((e) => e.type === 'workflow_step'),
+    [
+      { type: 'workflow_step', name: 'plan', state: 'started' },
+      { type: 'workflow_step', name: 'plan', state: 'finished' },
+      { type: 'workflow_step', name: 'ask_approval', state: 'started' },
+      { type: 'workflow_step', name: 'ask_approval', state: 'finished' }, // the card is raised
+      { type: 'workflow_step', name: 'ask_approval', state: 'started' }, // the resume
+      { type: 'workflow_step', name: 'ask_approval', state: 'failed' }, // it took the No
+    ],
+    'no superstep pairs; the denied card fails its step'
+  );
+  assert.ok(!events.some((e) => e.type === 'step'), "'step' stays the local loop's counter");
+  // a run that errors inside a step reports it failed
+  const broken = await fakeHost(() => [step('STEP_STARTED', 'check'), { type: 'RUN_ERROR', message: 'the model is not loaded' }]);
+  t.after(() => broken.server.close());
+  const seen = [];
+  await assert.rejects(agui.turn({ url: broken.url, threadId: THREAD, text: 'hi', approve: async () => true, onEvent: (e) => seen.push(e) }), /the model is not loaded/);
+  assert.deepEqual(seen.filter((e) => e.type === 'workflow_step').map((e) => `${e.name}:${e.state}`), ['check:started', 'check:failed']);
+});
+
 test('a card whose checkpoint is gone (his host restarted) is said plainly', async (t) => {
   const host = await fakeHost((body, n) =>
     n === 1 ? card(PLAN, 'ck-3') : [{ type: 'RUN_ERROR', message: "Could not load workflow checkpoint 'ck-3': checkpoint 'ck-3' was not found", code: 'WORKFLOW_CHECKPOINT_LOAD_FAILED' }],

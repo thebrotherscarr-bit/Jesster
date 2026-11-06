@@ -45,6 +45,8 @@ export interface InboxBridge {
 export type AgentEvent =
   | { sessionId: string; type: 'user'; text: string; source: string }
   | { sessionId: string; type: 'step'; step: number }
+  /** one of Steward's workflow steps over AG-UI (electron/agent/agui.cjs; Steward's ExecPlan 0003) */
+  | { sessionId: string; type: 'workflow_step'; name: string; state: 'started' | 'finished' | 'failed' }
   | { sessionId: string; type: 'tool'; name: string; args: Record<string, unknown> }
   | { sessionId: string; type: 'result'; name: string; text: string }
   | { sessionId: string; type: 'thinking'; text: string }
