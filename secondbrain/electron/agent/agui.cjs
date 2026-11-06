@@ -14,7 +14,15 @@
  *   shelf and Telegram share), each answered by a new run on the same thread with resume [{interruptId, status:
  *   'resolved', payload: {approved}}] and forwardedProps.checkpointId (the interrupt's checkpoint);
  *   RUN_ERROR -> said plainly; a card whose checkpoint is gone (his host was restarted: checkpoints are in memory)
- *   says so.
+ *   says so;
+ *   STEP_STARTED / STEP_FINISHED (one pair per workflow executor, `stepName` its id: route, explore, plan, read_plan,
+ *   ask_approval, execute, check, repair, commit, report, answer) -> 'workflow_step' events, { name, state: 'started'
+ *   | 'finished' }, for the step line (AG-UI step 3, Steward's ExecPlan 0003). MAF also wraps each superstep of the
+ *   graph in its own pair ('superstep:<n>'); those are the engine's rounds, not his steps, and are not passed on. A
+ *   card's step finishes before RUN_FINISHED (the AG-UI client refuses a run that ends with a step open) and runs
+ *   again on the resume, taking the answer: after a No it is reported { state: 'failed' } when it finishes. A step
+ *   still open when the run errors is reported failed too. ('step' is the local loop's step counter, so these have
+ *   their own type.)
  *
  * The thread is the conversation's id; the history is the session's own messages, sent with each new request (AG-UI's
  * client owns the history), so it is recorded the same way as the Responses path's.
@@ -95,6 +103,11 @@ async function turn({ url, threadId, messages = [], text, approve, metadata, onE
   const pieces = []; // his words, one per streamed message
   const open = new Map(); // toolCallId -> { name, args }
   let piece = null;
+  const steps = []; // the workflow steps open now, in the order they started
+  let lastStep = null; // the step started last: the one whose card is answered
+  const denied = new Set(); // steps whose card was answered No: they fail when they finish on the resume
+  const step = (name, state) => onEvent({ type: 'workflow_step', name, state });
+  const ours = (name) => typeof name === 'string' && name && !name.startsWith('superstep:');
   const say = (delta) => {
     if (!delta) return;
     if (piece === null) {
@@ -106,6 +119,19 @@ async function turn({ url, threadId, messages = [], text, approve, metadata, onE
   };
   const on = (e) => {
     switch (e.type) {
+      case 'STEP_STARTED':
+        if (!ours(e.stepName)) break;
+        steps.push(e.stepName);
+        lastStep = e.stepName;
+        step(e.stepName, 'started');
+        break;
+      case 'STEP_FINISHED': {
+        if (!ours(e.stepName)) break;
+        const at = steps.lastIndexOf(e.stepName);
+        if (at >= 0) steps.splice(at, 1);
+        step(e.stepName, denied.delete(e.stepName) ? 'failed' : 'finished');
+        break;
+      }
       case 'TEXT_MESSAGE_START':
       case 'REASONING_MESSAGE_START':
       case 'TEXT_MESSAGE_END':
@@ -149,7 +175,10 @@ async function turn({ url, threadId, messages = [], text, approve, metadata, onE
   const agentFor = (initialMessages) => new Agent({ url, threadId, initialMessages });
   let r = await run(agentFor([...history(messages), { id: `m${messages.length}`, role: 'user', content: text }]), { forwardedProps: props }, on, signal);
   for (let round = 1; round <= MAX_ROUNDS; round++) {
-    if (r.error) throw new Error(round > 1 && GONE.includes(r.error.code) ? RESTARTED : `Steward: ${r.error.message || 'the run failed'}`);
+    if (r.error) {
+      for (const name of steps.splice(0).reverse()) step(name, 'failed'); // the run ended inside them
+      throw new Error(round > 1 && GONE.includes(r.error.code) ? RESTARTED : `Steward: ${r.error.message || 'the run failed'}`);
+    }
     if (!r.interrupts.length) {
       const answer = pieces.join('\n\n');
       onEvent({ type: 'answer', text: answer });
@@ -164,6 +193,7 @@ async function turn({ url, threadId, messages = [], text, approve, metadata, onE
       const args = parseArgs(fc.arguments);
       const allow = await approve(name, args, `${name} ${JSON.stringify(args, null, 2)}`);
       resume.push({ interruptId: i.id, status: 'resolved', payload: { approved: Boolean(allow) } });
+      if (!allow && lastStep) denied.add(lastStep);
       checkpointId = af.checkpoint_id || checkpointId;
     }
     if (signal?.aborted) {
