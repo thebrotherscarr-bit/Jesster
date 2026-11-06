@@ -3,7 +3,7 @@
   "mcp": {
     "jesster-notes": {
       "type": "local",
-      "command": ["python", "notes/cli.py", "mcp"],
+      "command": ["python", "notes/cli.py", "mcp", "--vault", "../notes", "--only", "notes"],
       "enabled": true
     }
   },

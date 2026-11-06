@@ -67,11 +67,14 @@ cd secondbrain && timeout 300 npm run lint && timeout 900 npm test && timeout 60
 ## Talking to the user's live vault
 
 With the `jesster-notes` MCP server (in `opencode.json` / `.mcp.json`), you
-work on the same vault the user has open:
+work on the same vault the user has open (`../notes`, beside this repository):
 
 - `context_now` / `context_for`: what they're working on, and a briefing
   for a question
 - `index_search`: find passages across notes and imported chats
 - `notes_*`: read and write notes
-- `live_focus`: which note their window shows; `live_send`: open a note
-  there, or show a message
+
+It runs the kernel's notes-only adapter (`mcp --only notes`) on the one vault
+(changed 2026-11-05 by Steward's ADR-0010, "Notes are central in Jesster": it
+had opened `~/JessterNotes` with every kernel method, `live_focus` and
+`live_send` included; those are no longer exposed here).

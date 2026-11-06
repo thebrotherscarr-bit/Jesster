@@ -1,20 +1,21 @@
 /**
- * Integrations: Claude, ChatGPT and Gemini, both ways.
+ * Integrations: Claude, ChatGPT and Gemini in the app.
  *
- *  In:  with your API keys, each model answers in the app (Ask Brain), briefed
- *       from your notes like the local model, and every exchange is kept in
- *       today's capture note for that model, so it is searchable later.
- *  Out: their own apps can use your notes. Claude Desktop and Gemini CLI get
- *       the notes kernel as an MCP server in their config file; Claude Code
- *       gets the one command that adds it.
+ * With your API keys, each model answers in the app (Ask Brain), briefed
+ * from your notes like the local model, and every exchange is kept in
+ * today's capture note for that model, so it is searchable later.
+ *
+ * The other way ("Their apps, using your notes": writing the whole notes
+ * kernel into Claude Desktop's and Gemini CLI's configs, and the Claude Code
+ * command) was retired 2026-11-05 by ADR-0010 (Steward docs/decisions): notes
+ * are central in Jesster, and a local client gets only the kernel's notes-only
+ * adapter (`cli.py mcp --only notes`).
  *
  * Keys live in the app's settings file in your profile (never in the vault,
  * never sent to the page). Calls run here, in the main process.
  */
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
-const { findCli } = require('./archive.cjs');
 const { parseFile, renderFile } = require('./vaultfs.cjs');
 
 const PROVIDERS = {
@@ -185,86 +186,16 @@ function capture(vault, { source, model, user, assistant, now = new Date() }) {
   return id;
 }
 
-// ------------------------------------------------------- their apps, out --
-
-/** The notes kernel as an MCP server entry: the same one Manjuel and Claude Code use. */
-function kernelServer({ python = 'python', cli, vaultDir }) {
-  return { command: python, args: [cli, '--vault', vaultDir, 'mcp'] };
-}
-
-function appConfigs(home = os.homedir(), platform = process.platform, env = process.env) {
-  const claudeDir =
-    platform === 'win32'
-      ? path.join(env.APPDATA || path.join(home, 'AppData', 'Roaming'), 'Claude')
-      : platform === 'darwin'
-        ? path.join(home, 'Library', 'Application Support', 'Claude')
-        : path.join(home, '.config', 'Claude');
-  return {
-    claudeDesktop: { label: 'Claude Desktop', file: path.join(claudeDir, 'claude_desktop_config.json') },
-    gemini: { label: 'Gemini CLI', file: path.join(home, '.gemini', 'settings.json') },
-  };
-}
-
-function readJson(file) {
-  try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'));
-  } catch (e) {
-    if (e.code === 'ENOENT') return {};
-    throw new Error(`${file} is not valid JSON; fix or move it first (${e.message})`);
-  }
-}
-
-/** Is `name` in that app's mcpServers? */
-function hasServer(file, name) {
-  try {
-    return Boolean((readJson(file).mcpServers || {})[name]);
-  } catch {
-    return false;
-  }
-}
-
-/** Put the server in the app's config, keeping everything else; the old file is kept as .bak. */
-function addServer(file, name, entry) {
-  const cfg = readJson(file);
-  let backup = null;
-  if (fs.existsSync(file)) {
-    backup = `${file}.bak-${Date.now()}`;
-    fs.copyFileSync(file, backup);
-  }
-  cfg.mcpServers = { ...(cfg.mcpServers || {}), [name]: entry };
-  fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(cfg, null, 2));
-  return { file, backup };
-}
-
-function quote(s) {
-  return /[\s"]/.test(s) ? `"${String(s).replace(/"/g, '\\"')}"` : s;
-}
-
-function claudeCodeCommand(server) {
-  return `claude mcp add --scope user secondbrain -- ${[server.command, ...server.args].map(quote).join(' ')}`;
-}
-
 // ------------------------------------------------------------------- IPC --
 
-function register({ ipcMain, guard, getSettings, getVault, vaultDir, send }) {
+function register({ ipcMain, guard, getSettings, getVault, send }) {
   const running = new Map();
   const cfg = () => getSettings().get('integrations');
-  const server = () => {
-    const a = getSettings().get('archive');
-    const cli = findCli(a.cli, vaultDir());
-    return cli ? kernelServer({ python: a.python || 'python', cli, vaultDir: vaultDir() }) : null;
-  };
   const view = () => {
     const c = cfg();
-    const s = server();
-    const apps = appConfigs();
     return {
       providers: Object.entries(PROVIDERS).map(([id, p]) => ({ id, label: p.label, hasKey: Boolean(c[id].key), key: mask(c[id].key), model: c[id].model || p.defaultModel })),
       capture: c.capture !== false,
-      kernel: s,
-      apps: Object.entries(apps).map(([id, a]) => ({ id, label: a.label, file: a.file, connected: hasServer(a.file, 'secondbrain') })),
-      claudeCode: s ? claudeCodeCommand(s) : null,
     };
   };
   const handle = (name, fn) =>
@@ -318,14 +249,6 @@ function register({ ipcMain, guard, getSettings, getVault, vaultDir, send }) {
     const ctl = running.get(id);
     if (ctl) ctl.abort();
   });
-  handle('integrations:connect-app', (appId) => {
-    const s = server();
-    if (!s) throw new Error('the notes kernel (notes/cli.py) was not found: set it in Settings → Archive digger');
-    const app = appConfigs()[appId];
-    if (!app) throw new Error('not an app');
-    const r = addServer(app.file, 'secondbrain', s);
-    return { ...view(), wrote: r };
-  });
 }
 
-module.exports = { PROVIDERS, listModels, chat, capture, kernelServer, appConfigs, addServer, hasServer, claudeCodeCommand, register, mask };
+module.exports = { PROVIDERS, listModels, chat, capture, register, mask };

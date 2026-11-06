@@ -23,7 +23,6 @@ export const SETTINGS: SettingPlace[] = [
   { control: 'OllamaSection', files: ['SettingsModal.tsx'], place: 'Settings → Ollama', clicks: 1 },
   { control: 'IntegrationsSection', files: ['SettingsModal.tsx'], place: 'Settings → Integrations', clicks: 1 },
   { control: 'VoiceSection', files: ['SettingsModal.tsx'], place: 'Settings → Voice', clicks: 1 },
-  { control: 'ArchiveSection', files: ['SettingsModal.tsx'], place: 'Settings → Archive digger', clicks: 1 },
   { control: 'ReportBack', files: ['SettingsModal.tsx'], place: 'Settings → Inbox from Claude', clicks: 1 },
   { control: 'AtlasSection', files: ['AgentConsole.tsx'], place: 'Agent tab → Console → Servers', clicks: 2 },
   { control: 'TerminalSection', files: ['AgentConsole.tsx'], place: 'Agent tab → Console → Tools', clicks: 2 },

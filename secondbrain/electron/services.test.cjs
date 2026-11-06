@@ -72,7 +72,7 @@ test('the list has every entry, each with the status its probe gives', async () 
       stewardEntry({ id: 'steward-mcp', label: "Steward's MCP", svc: fakeSvc(43121, calls), logPath: () => null }),
       { id: 'door', label: 'The door', port: 43111, kind: 'owned' },
       { id: 'glass', label: 'The Atlas glass', port: 8091, kind: () => 'external' },
-      { id: 'notes-kernel', label: 'The notes kernel', port: null, up: async () => true },
+      { id: 'piped', label: 'A server on its pipes', port: null, up: async () => true },
       fakeOllama().server,
     ],
     { probe: async (port) => up.has(port) },
@@ -83,7 +83,7 @@ test('the list has every entry, each with the status its probe gives', async () 
     ['steward-mcp', 43121, 'owned', 'down', true],
     ['door', 43111, 'owned', 'up', false],
     ['glass', 8091, 'external', 'down', false],
-    ['notes-kernel', null, 'owned', 'up', false],
+    ['piped', null, 'owned', 'up', false],
     ['ollama', 11434, 'external', 'down', true],
   ]);
   assert.equal(list[0].logPath, 'C:\\s\\steward.log');

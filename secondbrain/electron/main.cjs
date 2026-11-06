@@ -15,7 +15,6 @@ const services = require('./services.cjs');
 const approvals = require('./approvals.cjs');
 const estate = require('./estate.cjs');
 const door = require('./door/index.cjs');
-const archive = require('./archive.cjs');
 const integrations = require('./integrations.cjs');
 const whisper = require('./whisper.cjs');
 const { AgentService } = require('./agent/service.cjs');
@@ -1083,14 +1082,15 @@ ipcMain.handle('atlas:connect', async (event, opts) => {
 const theDoor = door.register({ atlas, ipcMain, guard, getSettings, vaultDir, getAgent, showAgent: (id) => mainWindow && mainWindow.webContents.send('agent:show', id) });
 atlasGlass.register({ app, ipcMain, guard, getSettings, vaultDir, shell, door: theDoor }); // 43111 and the glass at start; the button opens it
 
-// ---- the archive digger (Settings → Archive), run by the notes kernel ----------
-const archiveRunner = archive.register({ ipcMain, guard, getSettings, vaultDir, send: (ch, data) => mainWindow && mainWindow.webContents.send(ch, data) });
-// ---- integrations (Live → Integrations): Claude, ChatGPT, Gemini in; their apps out ----
-integrations.register({ ipcMain, guard, getSettings, getVault, vaultDir, send: (ch, data) => mainWindow && mainWindow.webContents.send(ch, data) });
+// The archive digger (Settings → Archive digger, archive.cjs) was retired 2026-11-05 by ADR-0010 (Steward
+// docs/decisions): the Archive is reconciled (the operator: "no longer needs digging"), and notes are central in
+// Jesster. The kernel's archive plugin stays in notes/; nothing in the app starts it.
+// ---- integrations (Settings → Integrations): Claude, ChatGPT, Gemini in (their apps out retired, ADR-0010) ----
+integrations.register({ ipcMain, guard, getSettings, getVault, send: (ch, data) => mainWindow && mainWindow.webContents.send(ch, data) });
 
 // ---- the Servers shelf (services.cjs): every server Steward needs, in one list ----------
-// Steward's two are the service() instances above; the door is SecondBrain itself and the glass and the notes kernel
-// are shown, not controlled; Ollama runs here only when Settings → services.ollama is on
+// Steward's two are the service() instances above; the door is SecondBrain itself and the glass is shown, not
+// controlled (the notes kernel's row went with the archive digger, ADR-0010, 2026-11-05); Ollama runs here only when Settings → services.ollama is on
 const stewardLog = (name) => () => {
   const dir = steward.findSteward((getSettings().get('agent').steward || {}).dir, vaultDir());
   return dir ? path.join(dir, name) : null;
@@ -1112,8 +1112,6 @@ const servers = services.registry([
       return g ? path.join(g, 'atlas', 'webapp', 'web.err.log') : null;
     },
   },
-  // the notes kernel speaks on its pipes, not a port: up while the Archive digger has it running
-  { id: 'notes-kernel', label: 'The notes kernel', port: null, kind: 'owned', up: async () => Boolean(archiveRunner.kernel && !archiveRunner.kernel.closed) },
   ollamaServer,
 ]);
 ipcMain.handle('services:list', (event) => {

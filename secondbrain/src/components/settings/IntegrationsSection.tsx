@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { KeyRound, Check, Copy, RefreshCw, MonitorSmartphone } from 'lucide-react';
+import { KeyRound, Check, RefreshCw } from 'lucide-react';
 import { IntegrationsState, ProviderId } from '../../types/desktop.ts';
 
 const clean = (e: unknown) => (e instanceof Error ? e.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, '') : String(e));
@@ -84,14 +84,12 @@ const ProviderRow: React.FC<{
 };
 
 /**
- * Integrations: bring Claude, ChatGPT and Gemini into the app with your API keys, and connect their own apps to your
- * notes. Sections of Settings (they were a window of their own, opened from the console); key values are never shown.
+ * Integrations: bring Claude, ChatGPT and Gemini into the app with your API keys. Sections of Settings (they were a window of their own, opened from the console); key values are never shown.
  */
 export const IntegrationsSection: React.FC = () => {
   const api = window.secondbrainDesktop?.integrations;
   const [s, setS] = useState<IntegrationsState | null>(null);
   const [note, setNote] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
 
   const update = (x: IntegrationsState) => setS(x);
 
@@ -117,67 +115,9 @@ export const IntegrationsSection: React.FC = () => {
               </label>
             </section>
 
-            <section className="px-5 py-4 border-b border-neutral-900 space-y-3" aria-label="Their apps">
-              <div className="flex items-center gap-2 text-white text-sm font-medium"><MonitorSmartphone className="w-4 h-4 text-emerald-300" /> Their apps, using your notes</div>
-              <p className="text-xs text-neutral-400">
-                Adds your notes to their own apps as an MCP server named <code>secondbrain</code>: the notes kernel over
-                this vault, the same one Manjuel and Claude Code use. They can then search, read and write your notes.
-              </p>
-              {!s?.kernel ? (
-                <p className="text-xs text-amber-400">The notes kernel (notes/cli.py) was not found beside this vault. Set it in Settings → Archive digger.</p>
-              ) : (
-                <>
-                  {s.apps.map((a) => (
-                    <div key={a.id} className="flex items-center gap-2 text-xs">
-                      <span className="w-28 text-neutral-200">{a.label}</span>
-                      <span className="flex-1 text-neutral-500 break-all">{a.file}</span>
-                      {a.connected ? (
-                        <span className="text-emerald-400 flex items-center gap-1"><Check className="w-3 h-3" /> added</span>
-                      ) : (
-                        <button
-                          onClick={async () => {
-                            try {
-                              const r = await api.connectApp(a.id);
-                              update(r);
-                              setNote(`Added to ${a.label}${r.wrote.backup ? `; the old config is kept as ${r.wrote.backup}` : ''}. Restart ${a.label} to load it.`);
-                            } catch (e) {
-                              setNote(clean(e));
-                            }
-                          }}
-                          className="px-2.5 py-1 rounded-lg border border-neutral-700 text-neutral-200 hover:bg-neutral-800"
-                        >
-                          Add
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                  {s.claudeCode && (
-                    <div className="space-y-1">
-                      <div className="text-xs text-neutral-200">Claude Code: run this once in a terminal</div>
-                      <div className="flex gap-2">
-                        <pre className="flex-1 text-[11px] bg-black/50 border border-neutral-800 rounded-lg p-2 text-neutral-200 whitespace-pre-wrap break-all">{s.claudeCode}</pre>
-                        <button
-                          onClick={async () => {
-                            await navigator.clipboard.writeText(s.claudeCode!);
-                            setCopied(true);
-                            setTimeout(() => setCopied(false), 1500);
-                          }}
-                          aria-label="Copy the Claude Code command"
-                          className="self-start p-2 rounded-lg border border-neutral-700 text-neutral-200 hover:bg-neutral-800"
-                        >
-                          {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                  <p className="text-xs text-neutral-500">
-                    ChatGPT's own apps reach MCP servers on the internet, not programs on this PC, so ChatGPT comes in
-                    through its API key above instead.
-                  </p>
-                </>
-              )}
-              {note && <p className="text-xs text-neutral-300">{note}</p>}
-            </section>
+            {/* "Their apps, using your notes" (the whole notes kernel written into Claude Desktop's and Gemini
+                CLI's configs) was retired 2026-11-05 by ADR-0010: notes are central in Jesster. */}
+            {note && <p className="px-5 py-2 text-xs text-neutral-300">{note}</p>}
     </>
   );
 };

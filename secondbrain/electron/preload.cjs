@@ -164,29 +164,13 @@ contextBridge.exposeInMainWorld('secondbrainDesktop', {
     models: (provider) => ipcRenderer.invoke('integrations:models', provider),
     chat: (id, req) => ipcRenderer.invoke('integrations:chat', id, req),
     stop: (id) => ipcRenderer.invoke('integrations:stop', id),
-    connectApp: (app) => ipcRenderer.invoke('integrations:connect-app', app),
     onChunk: (cb) => {
       const fn = (_e, c) => cb(c);
       ipcRenderer.on('integrations:chunk', fn);
       return () => ipcRenderer.removeListener('integrations:chunk', fn);
     },
   },
-  archive: {
-    get: () => ipcRenderer.invoke('archive:get'),
-    set: (patch) => ipcRenderer.invoke('archive:set', patch),
-    status: () => ipcRenderer.invoke('archive:status'),
-    sources: (change) => ipcRenderer.invoke('archive:sources', change || {}),
-    dig: () => ipcRenderer.invoke('archive:dig'),
-    distill: (opts) => ipcRenderer.invoke('archive:distill', opts || {}),
-    write: () => ipcRenderer.invoke('archive:write'),
-    pause: () => ipcRenderer.invoke('archive:pause'),
-    stop: () => ipcRenderer.invoke('archive:stop'),
-    onState: (cb) => {
-      const fn = (_e, s) => cb(s);
-      ipcRenderer.on('archive:state', fn);
-      return () => ipcRenderer.removeListener('archive:state', fn);
-    },
-  },
+  // archive: the archive digger's calls, retired 2026-11-05 (ADR-0010)
   computer: {
     models: () => ipcRenderer.invoke('computer:models'),
   },
