@@ -23,6 +23,9 @@
  *   again on the resume, taking the answer: after a No it is reported { state: 'failed' } when it finishes. A step
  *   still open when the run errors is reported failed too. ('step' is the local loop's step counter, so these have
  *   their own type.)
+ *   CUSTOM 'a2ui' (Steward's ADR-0013, the A2UI pilot): the plan card's A2UI v0.9 surface, { request_id, messages },
+ *   sent by his workflow just before the card; it is kept by the card's id and handed with that interrupt to
+ *   approve(name, args, summary, { a2ui: messages }), so the window can draw the card from it (today's card without).
  *
  * The thread is the conversation's id; the history is the session's own messages, sent with each new request (AG-UI's
  * client owns the history), so it is recorded the same way as the Responses path's.
@@ -106,6 +109,7 @@ async function turn({ url, threadId, messages = [], text, approve, metadata, onE
   const steps = []; // the workflow steps open now, in the order they started
   let lastStep = null; // the step started last: the one whose card is answered
   const denied = new Set(); // steps whose card was answered No: they fail when they finish on the resume
+  const surfaces = new Map(); // card id -> its A2UI messages (CUSTOM 'a2ui')
   const step = (name, state) => onEvent({ type: 'workflow_step', name, state });
   const ours = (name) => typeof name === 'string' && name && !name.startsWith('superstep:');
   const say = (delta) => {
@@ -144,6 +148,11 @@ async function turn({ url, threadId, messages = [], text, approve, metadata, onE
       case 'REASONING_MESSAGE_CHUNK':
         say(e.delta);
         break;
+      case 'CUSTOM': {
+        const v = e.name === 'a2ui' && e.value && typeof e.value === 'object' ? e.value : null;
+        if (v && v.request_id && Array.isArray(v.messages)) surfaces.set(String(v.request_id), v.messages);
+        break;
+      }
       case 'TOOL_CALL_START':
         open.set(e.toolCallId, { name: e.toolCallName, args: '' });
         break;
@@ -191,7 +200,8 @@ async function turn({ url, threadId, messages = [], text, approve, metadata, onE
       const fc = af.function_call || {};
       const name = fc.name || 'request_info';
       const args = parseArgs(fc.arguments);
-      const allow = await approve(name, args, `${name} ${JSON.stringify(args, null, 2)}`);
+      const a2ui = surfaces.get(String(i.id));
+      const allow = await approve(name, args, `${name} ${JSON.stringify(args, null, 2)}`, ...(a2ui ? [{ a2ui }] : []));
       resume.push({ interruptId: i.id, status: 'resolved', payload: { approved: Boolean(allow) } });
       if (!allow && lastStep) denied.add(lastStep);
       checkpointId = af.checkpoint_id || checkpointId;

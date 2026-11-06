@@ -110,16 +110,18 @@ class AgentService {
    * answerApproval from either place, and a message typed while it waits is handled the same way.
    */
   approveInWindow(sessionId, onCard, { timeoutMs = 0, label = '' } = {}) {
-    return (name, args, summary) => {
+    // `extra.a2ui`: the card's A2UI surface (Steward's ADR-0013), carried on the card for the window and the phone log
+    return (name, args, summary, extra) => {
+      const surface = extra && Array.isArray(extra.a2ui) ? { a2ui: extra.a2ui } : {};
       const key = `${name}:${summary}`;
       if (this.alwaysAllow.has(key)) return Promise.resolve(true);
       const id = crypto.randomBytes(6).toString('hex');
       // an automation's card (label) says so on its first line, as askCard's do, and the history keeps the label
       const shown = label ? `[${label}]\n${summary}` : summary;
-      this.emit('agent:approval', { id, sessionId, name, args, summary: shown });
-      const answer = new Promise((resolve) => this.pending.set(id, { resolve, key, sessionId, name, args, summary: shown, at: Date.now(), ...(label ? { source: label } : {}) }));
+      this.emit('agent:approval', { id, sessionId, name, args, summary: shown, ...surface });
+      const answer = new Promise((resolve) => this.pending.set(id, { resolve, key, sessionId, name, args, summary: shown, at: Date.now(), ...(label ? { source: label } : {}), ...surface }));
       this.timeOut(id, timeoutMs);
-      this.tellCard(onCard, { id, sessionId, name, args, summary: shown });
+      this.tellCard(onCard, { id, sessionId, name, args, summary: shown, ...surface });
       return answer;
     };
   }
@@ -245,7 +247,7 @@ class AgentService {
 
   /** The cards waiting now, as the window was sent them, with when each was asked. */
   cards() {
-    return [...this.pending].map(([id, p]) => ({ id, sessionId: p.sessionId, name: p.name, args: p.args, summary: p.summary, at: p.at, ...(p.kind ? { kind: p.kind } : {}), ...(p.source ? { source: p.source } : {}) }));
+    return [...this.pending].map(([id, p]) => ({ id, sessionId: p.sessionId, name: p.name, args: p.args, summary: p.summary, at: p.at, ...(p.kind ? { kind: p.kind } : {}), ...(p.source ? { source: p.source } : {}), ...(p.a2ui ? { a2ui: p.a2ui } : {}) }));
   }
 
   /** The standing Always allow entries: each is one tool with the exact text its card showed. */
