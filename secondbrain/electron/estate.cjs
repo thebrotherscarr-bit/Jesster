@@ -27,7 +27,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
-const { spawn, execFile } = require('child_process');
+const { execFile } = require('child_process');
 
 const OLLAMA = { host: '127.0.0.1', port: 11434 };
 const MAX_LOG_LINES = 400;
@@ -46,8 +46,16 @@ const RUN_BAR = [...EVALS_DIR, 'run-bar.ps1'];
 const RUNS_DIR = ['storage', 'evals', 'runs'];
 const TAG = /^[\w.-]+$/;
 const MAX_RUNS = 3;
-// run-bar.ps1 -Transport: in-process (the tool's default), or the running Responses or AG-UI host
+// run-bar.ps1 -Transport: in-process, or the running Responses or AG-UI host. evals.py sends only an asks set (a set
+// file's `runner: asks`: small, heldout) over a host and refuses any other set on one (exit 2), so when eval_start names
+// no transport it is AG-UI for asks sets only (ADR-0003) and in-process for the rest (bfcl, aider-py, steps ...)
 const TRANSPORTS = ['in-process', 'responses', 'ag-ui'];
+const HOST_RUNNER = 'asks';
+// eval_start checks the run began: its progress file, or its PowerShell still up (evals.py validate runs first, ~10 s)
+const START_WAIT_MS = 20000;
+const START_POLL_MS = 500;
+const LAUNCH_LOG = 'launch.log';
+const LOG_TAIL_LINES = 20;
 const MAX_STATUS_LINES = 200;
 
 const ESTATE_TOOLS = [
@@ -97,14 +105,18 @@ const ESTATE_TOOLS = [
   {
     name: 'eval_start',
     description:
-      "Start Steward's eval sets: run-bar.ps1 in its own minimized window, each set run `runs` times, one after another. sets: set names from harness/steward/evals/ (e.g. small, steps, heldout, aider-py, bfcl); runs: 1 to 3 (1 when left out); tag: letters, digits, '.', '-' or '_', not used before (<sets>-<date> when left out). Refused while an eval is already running. A bounded Estate action, served with the reads and never on a card: it only runs eval sets, which write only Steward's eval history and throwaway working copies. Returns the tag and its progress file; read it with eval_status.",
+      "Start Steward's eval sets: run-bar.ps1 in its own minimized window, each set run `runs` times, one after another. sets: set names from harness/steward/evals/ (e.g. small, steps, heldout, aider-py, bfcl); runs: 1 to 3 (1 when left out); tag: letters, digits, '.', '-' or '_', not used before (<sets>-<date> when left out). Refused while an eval is already running. A bounded Estate action, served with the reads and never on a card: it only runs eval sets, which write only Steward's eval history and throwaway working copies. Returns the tag and its progress file once the run has begun (an error with its launch log when it did not); read it with eval_status.",
     inputSchema: {
       type: 'object',
       properties: {
         sets: { type: 'array', items: { type: 'string' }, minItems: 1, description: 'set names, e.g. ["aider-py"]' },
         runs: { type: 'integer', minimum: 1, maximum: MAX_RUNS, description: 'runs of each set; 1 when left out' },
         tag: { type: 'string', description: "the run's name; <sets>-<date> when left out" },
-        transport: { type: 'string', enum: TRANSPORTS, description: 'in-process when left out; ag-ui or responses send each case to that running host' },
+        transport: {
+          type: 'string',
+          enum: TRANSPORTS,
+          description: 'when left out: ag-ui if every set is an asks set (small, heldout), else in-process. ag-ui or responses send each case to that running host, and take asks sets only',
+        },
       },
       required: ['sets'],
     },
@@ -128,8 +140,9 @@ function isWrite(name, args = {}) {
 }
 
 /**
- * The eval sets in Steward's harness/steward/evals/: each set file's `name:` and `tier:` lines (T0, T1, ext ...),
- * sorted by name; a file without a name is not a set. The Flows shelf's eval examples are made from these.
+ * The eval sets in Steward's harness/steward/evals/: each set file's `name:`, `tier:` (T0, T1, ext ...) and `runner:`
+ * (asks, steps, bfcl ...) lines, sorted by name; a file without a name is not a set. The Flows shelf's eval examples
+ * are made from these.
  */
 function evalSets(dir) {
   const folder = path.join(dir, ...EVALS_DIR);
@@ -149,7 +162,8 @@ function evalSets(dir) {
     }
     const m = /^name:[ \t]*["']?([\w.-]+)["']?[ \t]*\r?$/m.exec(text);
     const t = /^tier:[ \t]*["']?([\w.-]+)["']?[ \t]*\r?$/m.exec(text);
-    if (m && !sets.has(m[1])) sets.set(m[1], { name: m[1], tier: t ? t[1] : '' });
+    const r = /^runner:[ \t]*["']?([\w.-]+)["']?[ \t]*\r?$/m.exec(text);
+    if (m && !sets.has(m[1])) sets.set(m[1], { name: m[1], tier: t ? t[1] : '', runner: r ? r[1] : '' });
   }
   return [...sets.values()].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
@@ -163,10 +177,34 @@ function evalSetNames(dir) {
 const RUNNING_QUERY =
   "@(Get-CimInstance Win32_Process -Filter \"ProcessId <> $PID AND ((Name LIKE 'python%' AND CommandLine LIKE '%evals.py%') OR CommandLine LIKE '%run-bar.ps1%')\").Count";
 
+/** A PowerShell single-quoted string: nothing in it is expanded. */
+function psq(s) {
+  return `'${String(s).replace(/'/g, "''")}'`;
+}
+
+/**
+ * The launcher script (fed on stdin to a short-lived, hidden PowerShell): Start-Process opens run-bar.ps1's own
+ * minimized console window and prints its pid. Not Node's detached spawn: that gives the child DETACHED_PROCESS,
+ * no console at all, and Windows PowerShell (and pwsh) then exits 0 at once having run nothing
+ * (2026-11-05, b100: eval_start answered "started" twice and no run folder appeared). Everything the run says, and the
+ * error that stops it before its first progress line (parameters, execution policy, a throw), goes to `log` too.
+ * No double quotes: the inner command rides a command line.
+ */
+function launchScript({ dir, sets, runs, tag, transport, log }) {
+  const runBar = path.join(dir, ...RUN_BAR);
+  const say = (x) => `[IO.File]::AppendAllText(${psq(log)}, ${x} + [Environment]::NewLine)`;
+  const inner =
+    `try { & ${psq(runBar)} -Sets ${psq(sets.join(','))} -Runs ${Number(runs)} -Tag ${psq(tag)} -Transport ${psq(transport)} *>&1 | ` +
+    `ForEach-Object { $l = [string]$_; ${say('$l')}; $l } } catch { ${say('[string]$_')}; exit 1 }`;
+  const argLine = `-NoProfile -ExecutionPolicy Bypass -Command ${inner}`;
+  return `$p = Start-Process -FilePath powershell.exe -ArgumentList ${psq(argLine)} -WorkingDirectory ${psq(dir)} -WindowStyle Minimized -PassThru\r\n$p.Id\r\n`;
+}
+
 /**
  * The eval tools' outside acts, as the app runs them (tests give fakes): `dir()` Steward's folder or null; `running()`
- * whether an eval runs now (one Win32_Process query, the script on stdin); `launch({ dir, sets, runs, tag })` starts
- * run-bar.ps1 detached in its own minimized PowerShell window and returns { pid }.
+ * whether an eval runs now (one Win32_Process query, the script on stdin); `launch({ dir, sets, runs, tag, transport,
+ * log })` starts run-bar.ps1 in its own minimized PowerShell window (launchScript) and returns { pid }; `alive(pid)`
+ * whether that process is still up; `sleep(ms)`.
  */
 function evalsApi({ stewardDir }) {
   return {
@@ -179,13 +217,43 @@ function evalsApi({ stewardDir }) {
         });
         child.stdin.end(`${RUNNING_QUERY}\r\n`);
       }),
-    launch: ({ dir, sets, runs, tag, transport = 'in-process' }) => {
-      const args = ['-NoProfile', '-WindowStyle', 'Minimized', '-File', path.join(dir, ...RUN_BAR), '-Sets', sets.join(','), '-Runs', String(runs), '-Tag', tag, '-Transport', transport];
-      const child = spawn('powershell.exe', args, { cwd: dir, detached: true, stdio: 'ignore', windowsHide: false });
-      child.unref();
-      return { pid: child.pid ?? null };
+    launch: ({ dir, sets, runs, tag, transport = 'in-process', log }) =>
+      new Promise((resolve, reject) => {
+        const args = ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', '-'];
+        const child = execFile('powershell.exe', args, { cwd: dir, timeout: 20000, windowsHide: true }, (err, stdout, stderr) => {
+          if (err) return reject(new Error(`run-bar.ps1 could not be started: ${String(stderr || '').trim() || err.message}`));
+          const pid = parseInt(String(stdout).trim().split(/\r?\n/).pop(), 10);
+          resolve({ pid: Number.isInteger(pid) ? pid : null });
+        });
+        child.stdin.end(launchScript({ dir, sets, runs, tag, transport, log }));
+      }),
+    alive: (pid) => {
+      try {
+        process.kill(pid, 0);
+        return true;
+      } catch (e) {
+        return e.code === 'EPERM';
+      }
     },
+    sleep: (ms) => new Promise((r) => setTimeout(r, ms)),
   };
+}
+
+/** The last lines of a launch log, or a word that it is empty. */
+function logTail(file) {
+  let text = '';
+  try {
+    text = fs.readFileSync(file, 'utf8');
+  } catch {
+    /* said below */
+  }
+  const lines = text.split(/\r?\n/).filter((l) => l.trim());
+  return lines.length ? `Its launch log (${file}) ends:\n${lines.slice(-LOG_TAIL_LINES).join('\n')}` : `Its launch log (${file}) is empty.`;
+}
+
+/** The transport when none is named: AG-UI if every set is an asks set, else in-process (see TRANSPORTS). */
+function defaultTransport(sets, all) {
+  return sets.every((n) => (all.find((s) => s.name === n) || {}).runner === HOST_RUNNER) ? 'ag-ui' : 'in-process';
 }
 
 function today() {
@@ -200,7 +268,8 @@ async function evalStart(args, evals) {
   if (!fs.existsSync(path.join(dir, ...RUN_BAR))) return { error: `run-bar.ps1 was not found at ${path.join(dir, ...RUN_BAR)}.` };
   const sets = Array.isArray(args.sets) ? [...new Set(args.sets.map((x) => String(x).trim()).filter(Boolean))] : [];
   if (!sets.length) return { error: 'eval_start needs sets: one or more set names from harness/steward/evals/' };
-  const known = evalSetNames(dir);
+  const all = evalSets(dir);
+  const known = all.map((s) => s.name);
   const unknown = sets.filter((x) => !known.includes(x));
   if (unknown.length) return { error: `No such eval set: ${unknown.join(', ')}. The sets are: ${known.join(', ')}.` };
   const runs = args.runs === undefined || args.runs === null ? 1 : Number(args.runs);
@@ -209,11 +278,30 @@ async function evalStart(args, evals) {
   if (!TAG.test(tag)) return { error: `tag "${tag}" must be letters, digits, '.', '-' or '_'` };
   const folder = path.join(dir, ...RUNS_DIR, tag);
   if (fs.existsSync(path.join(folder, 'progress.txt'))) return { error: `tag "${tag}" has a run already (${path.join(folder, 'progress.txt')}); give a new tag.` };
-  if (await evals.running()) return { error: 'An eval is running now; nothing was started. Read its progress with eval_status.' };
-  const transport = args.transport === undefined || args.transport === null || args.transport === '' ? 'in-process' : String(args.transport);
+  const transport = args.transport === undefined || args.transport === null || args.transport === '' ? defaultTransport(sets, all) : String(args.transport);
   if (!TRANSPORTS.includes(transport)) return { error: `transport is one of ${TRANSPORTS.join(', ')}` };
-  const { pid } = await evals.launch({ dir, sets, runs, tag, transport });
-  return JSON.stringify({ started: true, tag, sets, runs, transport, pid, progress: path.join(folder, 'progress.txt') });
+  const offHost = sets.filter((n) => (all.find((s) => s.name === n) || {}).runner !== HOST_RUNNER);
+  if (transport !== 'in-process' && offHost.length)
+    return { error: `evals.py --transport: a host transport runs an asks set (small, heldout) only; ${offHost.join(', ')} must run in-process. Nothing was started.` };
+  if (await evals.running()) return { error: 'An eval is running now; nothing was started. Read its progress with eval_status.' };
+  const progress = path.join(folder, 'progress.txt');
+  const log = path.join(folder, LAUNCH_LOG);
+  fs.mkdirSync(folder, { recursive: true });
+  fs.writeFileSync(log, '');
+  let pid;
+  try {
+    ({ pid } = await evals.launch({ dir, sets, runs, tag, transport, log }));
+  } catch (e) {
+    return { error: `${e.message}\n${logTail(log)}` };
+  }
+  // the run has begun once its progress file is there; a PowerShell that ended without one never began
+  for (let waited = 0; !fs.existsSync(progress); waited += START_POLL_MS) {
+    if (!pid || !evals.alive(pid)) return { error: `The eval run "${tag}" did not start: run-bar.ps1 ended without a progress file (${progress}).\n${logTail(log)}` };
+    if (waited >= START_WAIT_MS) break; // still up after the wait: validating the sets before its first line
+    await evals.sleep(START_POLL_MS);
+  }
+  const begun = fs.existsSync(progress);
+  return JSON.stringify({ started: true, begun, tag, sets, runs, transport, pid, progress, log });
 }
 
 /** eval_status: one run's progress file, the newest run's when no tag is given. */
@@ -400,4 +488,4 @@ async function estateCall(name, args, deps, { writes = false } = {}) {
   return { error: `no tool ${name}` };
 }
 
-module.exports = { ESTATE_TOOLS, NAMES, estateCall, isWrite, ollama, ollamaApi, status, versionsApi, repoVersion, VERSIONS_TTL_MS, evalsApi, evalSets, evalSetNames, TRANSPORTS, evalStart, evalStatus, RUNNING_QUERY, MAX_LOG_LINES, MAX_HISTORY, MAX_RUNS };
+module.exports = { ESTATE_TOOLS, NAMES, estateCall, isWrite, ollama, ollamaApi, status, versionsApi, repoVersion, VERSIONS_TTL_MS, evalsApi, evalSets, evalSetNames, TRANSPORTS, evalStart, evalStatus, launchScript, defaultTransport, START_WAIT_MS, LAUNCH_LOG, RUNNING_QUERY, MAX_LOG_LINES, MAX_HISTORY, MAX_RUNS };
