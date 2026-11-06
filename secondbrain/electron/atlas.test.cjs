@@ -415,22 +415,30 @@ test('POST /mcp over HTTP: the header rung, 400 for a version or header refusal,
 });
 
 /** Steward's folder with the eval set files and run-bar.ps1, and the eval tools' outside acts recorded instead of done. */
-function fakeEvals({ running = false } = {}) {
+function fakeEvals({ running = false, starts = true } = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'steward-evals-'));
   const evalsDir = path.join(dir, 'harness', 'steward', 'evals');
   fs.mkdirSync(evalsDir, { recursive: true });
   fs.writeFileSync(path.join(evalsDir, 'run-bar.ps1'), 'param()\r\n');
-  fs.writeFileSync(path.join(evalsDir, 't0-small.yaml'), '# T0\r\nname: small\r\ntier: T0\r\n');
-  fs.writeFileSync(path.join(evalsDir, 'ext-aider-py.yaml'), '# EXT\r\nname: aider-py\r\ntier: ext\r\n');
+  fs.writeFileSync(path.join(evalsDir, 't0-small.yaml'), '# T0\r\nname: small\r\ntier: T0\r\nrunner: asks\r\n');
+  fs.writeFileSync(path.join(evalsDir, 'ext-aider-py.yaml'), '# EXT\r\nname: aider-py\r\ntier: ext\r\nrunner: exercises\r\n');
   fs.writeFileSync(path.join(evalsDir, 'README.md'), 'name: notaset\n');
-  const seen = { launched: [], asked: 0 };
+  const seen = { launched: [], asked: 0, slept: 0 };
   return {
     dir,
     seen,
     evals: {
       dir: () => dir,
       running: async () => (seen.asked++, running),
-      launch: async (spec) => (seen.launched.push(spec), { pid: 4242 }),
+      // a run that begins writes its first progress line; one that does not leaves only its launch log, and ends
+      launch: async (spec) => {
+        seen.launched.push(spec);
+        if (starts) fs.writeFileSync(path.join(path.dirname(spec.log), 'progress.txt'), `2026-11-05T23:00:01 bar ${spec.tag} : sets ${spec.sets.join(', ')}\r\n`);
+        else fs.appendFileSync(spec.log, 'run-bar.ps1 : Cannot process argument transformation on parameter Runs.\r\n');
+        return { pid: 4242 };
+      },
+      alive: () => starts,
+      sleep: async () => void seen.slept++,
     },
   };
 }
@@ -464,12 +472,30 @@ test('eval_start starts run-bar.ps1 for known sets only, never while an eval run
   }
   assert.deepEqual(seen.launched, [], 'nothing started');
 
+  // a host transport takes asks sets only (evals.py exits 2 on any other): refused before anything starts
+  const host = await call('eval_start', { sets: ['aider-py'], tag: 'x-host', transport: 'ag-ui' });
+  assert.equal(host.result.isError, true);
+  assert.match(text(host), /a host transport runs an asks set \(small, heldout\) only; aider-py must run in-process/);
+  assert.deepEqual(seen.launched, [], 'nothing started');
+
+  const runFolder = path.join(dir, 'storage', 'evals', 'runs', 'ext-aider-2026-11-05');
   const ok = JSON.parse(text(await call('eval_start', { sets: ['aider-py'], tag: 'ext-aider-2026-11-05' })));
-  assert.deepEqual(seen.launched, [{ dir, sets: ['aider-py'], runs: 1, tag: 'ext-aider-2026-11-05', transport: 'in-process' }]);
+  assert.deepEqual(seen.launched, [{ dir, sets: ['aider-py'], runs: 1, tag: 'ext-aider-2026-11-05', transport: 'in-process', log: path.join(runFolder, 'launch.log') }], 'an ext set runs in-process when no transport is named');
   assert.equal(ok.tag, 'ext-aider-2026-11-05');
-  assert.equal(ok.progress, path.join(dir, 'storage', 'evals', 'runs', 'ext-aider-2026-11-05', 'progress.txt'));
+  assert.equal(ok.begun, true, 'its progress file is there');
+  assert.equal(ok.progress, path.join(runFolder, 'progress.txt'));
   const dated = JSON.parse(text(await call('eval_start', { sets: ['small', 'aider-py'], runs: 2 })));
   assert.match(dated.tag, /^small_aider-py-\d{4}-\d\d-\d\d$/, 'a tag of the sets and the date when left out');
+  assert.equal(dated.transport, 'in-process', 'a mix with a non-asks set runs in-process');
+  const asks = JSON.parse(text(await call('eval_start', { sets: ['small'], tag: 'small-x' })));
+  assert.equal(asks.transport, 'ag-ui', 'asks sets only: over AG-UI by default (ADR-0003)');
+
+  // a run that never begins is an error with its launch log, never "started"
+  const dud = fakeEvals({ starts: false });
+  const never = await atlas.handleMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'eval_start', arguments: { sets: ['small'], tag: 'dud' } } }, { registry, ctx: { ...ctx, estate: { ...estate, evals: dud.evals } } });
+  assert.equal(never.result.isError, true);
+  assert.match(text(never), /The eval run "dud" did not start: run-bar\.ps1 ended without a progress file/);
+  assert.match(text(never), /launch log .* ends:\nrun-bar\.ps1 : Cannot process argument transformation/);
 
   // eval_status: the run's progress file, and whether it ended
   const folder = path.join(dir, 'storage', 'evals', 'runs', 'ext-aider-2026-11-05');
@@ -492,16 +518,48 @@ test('eval_start starts run-bar.ps1 for known sets only, never while an eval run
   assert.match(text(await atlas.handleMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'eval_status', arguments: {} } }, { registry, ctx: { ...ctx, estate } })), /not served here/);
 });
 
-test("the app's evals: run-bar.ps1 detached in its own minimized PowerShell window; the running check skips its own query", () => {
+test("the app's evals: run-bar.ps1 by Start-Process in its own minimized window, logged; never Node's detached spawn; the running check skips its own query", () => {
   const estateMod = require('./estate.cjs');
   const src = fs.readFileSync(path.join(__dirname, 'estate.cjs'), 'utf8');
-  assert.match(src, /spawn\('powershell\.exe', args, \{ cwd: dir, detached: true, stdio: 'ignore', windowsHide: false \}\)/);
-  assert.match(src, /'-WindowStyle', 'Minimized', '-File', path\.join\(dir, \.\.\.RUN_BAR\)/);
-  assert.match(src, /'-Tag', tag, '-Transport', transport\]/);
+  // 2026-11-05, b100: spawn(..., { detached: true }) is DETACHED_PROCESS, no console; PowerShell then exits 0 having run nothing
+  assert.doesNotMatch(src, /detached: true/);
+  const dir = "C:\\St'ew";
+  const log = path.join(dir, 'storage', 'evals', 'runs', 't1', 'launch.log');
+  const script = estateMod.launchScript({ dir, sets: ['small', 'heldout'], runs: 2, tag: 't1', transport: 'ag-ui', log });
+  assert.match(script, /^\$p = Start-Process -FilePath powershell\.exe -ArgumentList '/);
+  assert.match(script, / -WorkingDirectory 'C:\\St''ew' -WindowStyle Minimized -PassThru\r\n\$p\.Id\r\n$/);
+  const argLine = /-ArgumentList '((?:[^']|'')*)'/.exec(script)[1].replace(/''/g, "'");
+  assert.ok(argLine.startsWith('-NoProfile -ExecutionPolicy Bypass -Command try { & '), argLine);
+  assert.ok(argLine.includes(`& '${path.join("C:\\St''ew", 'harness', 'steward', 'evals', 'run-bar.ps1')}' -Sets 'small,heldout' -Runs 2 -Tag 't1' -Transport 'ag-ui' *>&1`), 'run-bar.ps1 by name, so the running check sees it');
+  assert.ok(argLine.includes(`AppendAllText('${log.replace(/'/g, "''")}', [string]$_`), 'a throw before the first progress line goes to the launch log');
+  assert.doesNotMatch(argLine, /"/, 'no double quote on the command line');
   assert.match(estateMod.RUNNING_QUERY, /ProcessId <> \$PID/);
   assert.match(estateMod.RUNNING_QUERY, /evals\.py/);
   assert.match(estateMod.RUNNING_QUERY, /run-bar\.ps1/);
-  assert.equal(typeof estateMod.evalsApi({ stewardDir: () => null }).launch, 'function');
+  const api = estateMod.evalsApi({ stewardDir: () => null });
+  assert.deepEqual([typeof api.launch, api.alive(process.pid)], ['function', true]);
+});
+
+test('eval_start on Windows: a real run-bar.ps1 stand-in begins in its own window, and one that throws is an error with its log', { skip: process.platform !== 'win32' }, async () => {
+  const estateMod = require('./estate.cjs');
+  const make = (body) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'steward-live-'));
+    const evalsDir = path.join(dir, 'harness', 'steward', 'evals');
+    fs.mkdirSync(evalsDir, { recursive: true });
+    fs.writeFileSync(path.join(evalsDir, 't0-small.yaml'), 'name: small\r\ntier: T0\r\nrunner: asks\r\n');
+    fs.writeFileSync(path.join(evalsDir, 'run-bar.ps1'), body);
+    return { ...estateMod.evalsApi({ stewardDir: () => dir }), running: async () => false };
+  };
+  const good = make(
+    "param([string[]]$Sets, [string]$Tag, [int]$Runs, [string]$Transport)\r\n$f = Join-Path $PSScriptRoot \"..\\..\\..\\storage\\evals\\runs\\$Tag\"\r\n" +
+      "New-Item -ItemType Directory -Force -Path $f | Out-Null\r\n[IO.File]::AppendAllText((Join-Path $f 'progress.txt'), \"bar $Tag : sets $Sets`r`nBAR DONE`r`n\")\r\n",
+  );
+  const ok = JSON.parse(await estateMod.evalStart({ sets: ['small'], tag: 'live', transport: 'in-process' }, good));
+  assert.equal(ok.begun, true, JSON.stringify(ok));
+  const bad = make("param([string[]]$Sets, [string]$Tag, [int]$Runs, [string]$Transport)\r\nthrow 'boom before the first line'\r\n");
+  const r = await estateMod.evalStart({ sets: ['small'], tag: 'live', transport: 'in-process' }, bad);
+  assert.match(r.error, /did not start/);
+  assert.match(r.error, /boom before the first line/);
 });
 
 test("estate_status carries each repository's version from its local refs, cached for a minute; never git status or git diff", async () => {

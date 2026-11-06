@@ -12,21 +12,21 @@ const ex = require('./flowExamples.cjs');
 // The Flows shelf's built-in examples (the operator, 2026-11-05: "I don't have a way to create my own flows or any of
 // the evals built up with examples yet"): an eval flow per eval set file, two recipes; seeded once, never over his.
 
-/** A Steward folder with eval set files as his harness has them (name and tier lines among the rest). */
+/** A Steward folder with eval set files as his harness has them (name, tier and runner lines among the rest). */
 function stewardWith(sets) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'steward-'));
   const evals = path.join(dir, 'harness', 'steward', 'evals');
   fs.mkdirSync(evals, { recursive: true });
-  for (const [file, name, tier] of sets) fs.writeFileSync(path.join(evals, file), `# a set\r\nname: ${name}\r\ntier: ${tier}\r\nversion: 1\r\ncases: []\r\n`);
+  for (const [file, name, tier, runner] of sets) fs.writeFileSync(path.join(evals, file), `# a set\r\nname: ${name}\r\ntier: ${tier}\r\nversion: 1\r\nrunner: ${runner}\r\ncases: []\r\n`);
   fs.writeFileSync(path.join(evals, 'baselines.json'), '{}');
   return dir;
 }
 const SETS = [
-  ['t0-small.yaml', 'small', 'T0'],
-  ['t0-steps.yaml', 'steps', 'T0'],
-  ['t1-heldout.yaml', 'heldout', 'T1'],
-  ['ext-bfcl.yaml', 'bfcl', 'ext'],
-  ['ext-aider-py.yaml', 'aider-py', 'ext'],
+  ['t0-small.yaml', 'small', 'T0', 'asks'],
+  ['t0-steps.yaml', 'steps', 'T0', 'steps'],
+  ['t1-heldout.yaml', 'heldout', 'T1', 'asks'],
+  ['ext-bfcl.yaml', 'bfcl', 'ext', 'bfcl'],
+  ['ext-aider-py.yaml', 'aider-py', 'ext', 'exercises'],
 ];
 
 const fresh = () => {
@@ -37,11 +37,11 @@ const fresh = () => {
 test('the eval examples are the yaml files\' sets: Eval: <set>, its tier, eval_start → eval_wait → eval_bars → summarize → note', () => {
   const sets = estate.evalSets(stewardWith(SETS));
   assert.deepEqual(sets, [
-    { name: 'aider-py', tier: 'ext' },
-    { name: 'bfcl', tier: 'ext' },
-    { name: 'heldout', tier: 'T1' },
-    { name: 'small', tier: 'T0' },
-    { name: 'steps', tier: 'T0' },
+    { name: 'aider-py', tier: 'ext', runner: 'exercises' },
+    { name: 'bfcl', tier: 'ext', runner: 'bfcl' },
+    { name: 'heldout', tier: 'T1', runner: 'asks' },
+    { name: 'small', tier: 'T0', runner: 'asks' },
+    { name: 'steps', tier: 'T0', runner: 'steps' },
   ]);
   const all = ex.examples(sets);
   assert.deepEqual(all.map((e) => e.name), ['Eval: aider-py', 'Eval: bfcl', 'Eval: heldout', 'Eval: small', 'Eval: steps', 'Repo drift check', 'What shipped this week']);

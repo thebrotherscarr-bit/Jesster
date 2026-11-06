@@ -216,7 +216,8 @@ test('a workflow is data: steps from the fixed list only, each checked when save
   assert.throws(() => workflows.validateSteps([{ step: 'eval_start' }]), /needs sets/);
   assert.throws(() => workflows.validateSteps([{ step: 'eval_start', sets: ['x'], runs: 9 }]), /runs is 1 to 3/);
   assert.throws(() => workflows.validateSteps([{ step: 'eval_wait', hours: 30 }]), /at most 8/);
-  assert.deepEqual(workflows.validateSteps([{ step: 'eval_start', sets: ['aider-py'] }, 'eval_wait']), [{ step: 'eval_start', sets: ['aider-py'], runs: 1, transport: 'ag-ui' }, { step: 'eval_wait', hours: 8 }], 'over AG-UI by default');
+  assert.deepEqual(workflows.validateSteps([{ step: 'eval_start', sets: ['aider-py'] }, 'eval_wait']), [{ step: 'eval_start', sets: ['aider-py'], runs: 1 }, { step: 'eval_wait', hours: 8 }], 'no transport sent: eval_start picks it by set (bfcl, aider-py in-process)');
+  assert.deepEqual(workflows.validateSteps([{ step: 'eval_start', sets: ['small'], transport: 'ag-ui' }]), [{ step: 'eval_start', sets: ['small'], runs: 1, transport: 'ag-ui' }], 'a named transport is kept');
   assert.throws(() => workflows.validateSteps([{ step: 'eval_start', sets: ['x'], transport: 'carrier-pigeon' }]), /transport is one of/);
   const vault = new Vault(fs.mkdtempSync(path.join(os.tmpdir(), 'wf-')));
   const schedules = new Schedules(() => vault);
@@ -274,7 +275,7 @@ test('the nightly eval recipe: skipped while Steward is busy; a failed or overlo
 
   const t2 = at('2026-11-06T23:00:05');
   await runSchedule(schedules.due(t2)[0], { ...base, now: t2, busy: () => false });
-  assert.deepEqual(seen.started[0].recipe.steps, [{ step: 'eval_start', sets: ['aider-py'], runs: 1, transport: 'ag-ui' }, { step: 'eval_wait', hours: 8 }]);
+  assert.deepEqual(seen.started[0].recipe.steps, [{ step: 'eval_start', sets: ['aider-py'], runs: 1 }, { step: 'eval_wait', hours: 8 }]);
   const [failed] = await resumeSchedules({ ...base, now: t2 + 60000 });
   assert.equal(failed.ok, false);
   assert.deepEqual(sent, ['Nightly aider-py: Failed: RuntimeError: An eval is running now']);

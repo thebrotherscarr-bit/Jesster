@@ -5,6 +5,17 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ## [Unreleased]
 
+### Fixed
+
+- `eval_start` answered "started" and no run began (2026-11-05, b100, twice): Node's detached spawn gives
+  PowerShell no console (DETACHED_PROCESS), and Windows PowerShell then exits 0 having run nothing. run-bar.ps1 is now
+  opened by `Start-Process` in its own minimized window, everything it says goes to `storage/evals/runs/<tag>/launch.log`
+  too, and `eval_start` waits up to 20 s for the run's progress file: a run that ends without one is an error with the
+  log's tail, never "started".
+- `eval_start` with no transport is AG-UI for asks sets only (small, heldout) and in-process for every other set; a host
+  transport named for a set evals.py refuses on one (bfcl, aider-py, steps) is an error before anything starts. A
+  workflow's `eval_start` step no longer adds `ag-ui` itself (2026-11-05: the bfcl flow exited 2 at once).
+
 ### Removed
 
 - The archive digger, retired by Steward's ADR-0010 ("Notes are central in Jesster", 2026-11-05; the operator: "archive

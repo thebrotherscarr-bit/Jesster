@@ -12,7 +12,8 @@
  *     steps: ['pull_ff', 'versions', 'repo_log', 'merged_prs', 'releases', 'eval_bars', 'plan_left'],   // STEPS only
  *     summarize: 'Write the daily what-happened from this ...' }                                         // optional
  *
- * A step is a name, or { step, ...its arguments } (eval_start { sets, runs, transport: 'ag-ui' by default },
+ * A step is a name, or { step, ...its arguments } (eval_start { sets, runs, transport }: with no
+ * transport, SecondBrain's eval_start picks it: AG-UI for asks sets only, in-process for the rest),
  * eval_wait { hours }). A recipe that starts an eval is skipped while any conversation is mid-turn ("skipped: Steward
  * busy"): his personal use comes first.
  */
@@ -45,8 +46,10 @@ function validateSteps(steps) {
       if (!Array.isArray(s.sets) || !s.sets.length) throw new Error('eval_start needs sets');
       const runs = s.runs === undefined ? 1 : Number(s.runs);
       if (!Number.isInteger(runs) || runs < 1 || runs > estate.MAX_RUNS) throw new Error(`eval_start runs is 1 to ${estate.MAX_RUNS}`);
-      // over AG-UI by default (2026-11-05, the operator: "use it"; run-bar.ps1 -Transport ag-ui)
-      const transport = s.transport === undefined ? 'ag-ui' : String(s.transport);
+      // no transport named: none is sent, and eval_start picks AG-UI for asks sets only (the operator, 2026-11-05: "use
+      // it"), in-process for any other set, which evals.py refuses on a host (2026-11-05: bfcl over ag-ui exited 2)
+      if (s.transport === undefined) return { step: 'eval_start', sets: s.sets.map(String), runs };
+      const transport = String(s.transport);
       if (!estate.TRANSPORTS.includes(transport)) throw new Error(`eval_start transport is one of ${estate.TRANSPORTS.join(', ')}`);
       return { step: 'eval_start', sets: s.sets.map(String), runs, transport };
     }
