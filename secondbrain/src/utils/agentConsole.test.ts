@@ -1,6 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { StepLinePane, following } from '../components/StepLine.tsx';
 import { CHATS_OPEN_KEY, CONSOLE_OPEN_KEY, CONSOLE_SHELVES, MOVED_TO_CONSOLE, TOP_BAR, WorkflowStepEvent, barStatus, historyRow, keepPanel, keepSteps, mcpServers, panelOpen, phoneSession, stepLine, versusBaseline } from './agentConsole.ts';
 
 // The operator, 2026-11-04: "there is a lot of clutter in the top bar", and the rulings after it (Flows, Capture,
@@ -159,9 +162,10 @@ test('the step line: each step lit as it starts, done or failed as it ends, a ca
   assert.deepEqual(stepLine([]), []);
   assert.deepEqual(stepLine(ev('route:s route:f merge:s')), [], "steps the line does not know are ignored");
 
-  // the Agent tab draws it above the turn's output, from the workflow_step events, and starts it again with each message
+  // the Agent tab draws it pinned at the bottom of the conversation, from the workflow_step events, and starts it again
+  // with each message
   const view = read('../components/AgentView.tsx');
-  assert.match(view, /<StepLine cells=\{stepLine\(steps, cardWaits\)\} \/>/, 'the Agent tab draws the line');
+  assert.match(view, /cells=\{turns\.some\(\(t\) => t\.role === 'user'\) \? stepLine\(steps, cardWaits\) : \[\]\}/, 'the Agent tab draws the line');
   assert.match(view, /e\.type === 'workflow_step'\) setSteps/, 'from the workflow_step events');
   assert.match(view, /e\.type === 'user'\) setSteps\(\[\]\)/, 'a new message starts a new line');
   assert.match(read('../components/StepLine.tsx'), /data-step-line/);
@@ -199,7 +203,43 @@ test("a phone turn's step events reach the Phone view's step line; other session
   const view = read('../components/PhoneView.tsx');
   assert.match(view, /agent\?\.onEvent\(\(e\) => setSteps\(\(x\) => keepSteps\(x, e, session\.current\)\)\)/, 'the view keeps its session\'s steps');
   assert.match(view, /session\.current = phoneSession\(entries\)/, 'its session is the chat\'s');
-  assert.match(view, /<StepLine cells=\{stepLine\(steps, open\.length > 0\)\} \/>/, 'and draws the line');
+  assert.match(view, /cells=\{entries\.some\(\(e\) => e\.kind === 'user'\) \? stepLine\(steps, open\.length > 0\) : \[\]\}/, 'and draws the line');
+});
+
+// The operator, 2026-11-06: "the live line of the steps stays at the top of the conversation, should be pinned to the
+// bottom as he works, so you can see progress" (Steward's ExecPlan 0003). The line is the last thing in the
+// conversation, after the latest message, in both views, and the pane follows it while it is at its bottom.
+test('the step line is pinned under the latest message and stays last as messages arrive, in both views', () => {
+  const cells = stepLine([{ name: 'plan', state: 'finished' }, { name: 'execute', state: 'started' }]);
+  const pane = (said: string[]) =>
+    renderToStaticMarkup(
+      React.createElement(StepLinePane, { cells }, ...said.map((t, i) => React.createElement('p', { key: i, 'data-said': t }, t)))
+    );
+  const lastSaid = (html: string) => html.lastIndexOf('data-said=');
+  const line = (html: string) => html.indexOf('data-step-line');
+  let said = ['Write x.py.'];
+  let html = pane(said);
+  assert.ok(line(html) > lastSaid(html), 'the line comes after the message');
+  for (const more of ['Looking at the project.', 'plan_write x.py', 'Done: x.py written.']) {
+    said = [...said, more];
+    html = pane(said);
+    assert.ok(line(html) > lastSaid(html), `still last after "${more}"`);
+    assert.equal(html.match(/data-step-line/g)?.length, 1, 'one line');
+  }
+  assert.ok(html.endsWith('</ol></div>'), 'the line closes the conversation');
+  assert.doesNotMatch(renderToStaticMarkup(React.createElement(StepLinePane, { cells: [] }, 'hi')), /data-step-line/, 'no steps, no line');
+
+  // following: within 80px of the bottom the pane follows; scrolled further up it stays where it was put
+  assert.equal(following({ scrollHeight: 1000, scrollTop: 500, clientHeight: 480 }), true);
+  assert.equal(following({ scrollHeight: 1000, scrollTop: 200, clientHeight: 480 }), false);
+
+  for (const [file, deps] of [['../components/AgentView.tsx', '[turns, approvals, steps]'], ['../components/PhoneView.tsx', '[entries, steps]']] as const) {
+    const view = read(file);
+    assert.match(view, /<StepLinePane\s+ref=\{pane\}/, `${file}: the conversation is a StepLinePane`);
+    assert.doesNotMatch(view, /<StepLine /, `${file}: no step line drawn inside the messages`);
+    assert.match(view, /atBottom\.current = following\(e\.currentTarget\)/, `${file}: it follows only while at the bottom`);
+    assert.ok(view.includes(`}, ${deps});`), `${file}: its steps scroll the pane too`);
+  }
 });
 
 test("the bar is the small set whole on its two newest runs and the newest steps run passing; the Evals shelf shows it and a run's progress", () => {

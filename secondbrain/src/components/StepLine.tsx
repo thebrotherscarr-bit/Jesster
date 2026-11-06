@@ -5,7 +5,8 @@ import { StepCell } from '../utils/agentConsole.ts';
 /**
  * The step line (AG-UI step 3, Steward's ExecPlan 0003): which of Steward's workflow steps the turn is in, each lit as
  * it starts and marked done or failed as it ends, from his AG-UI host's step events (utils/agentConsole.ts stepLine).
- * Drawn above the turn's output in the Agent tab and the Phone view; nothing is drawn when there are no step events.
+ * Drawn at the bottom of the conversation in the Agent tab and the Phone view (StepLinePane, below); nothing is drawn
+ * when there are no step events.
  */
 export const StepLine: React.FC<{ cells: StepCell[] }> = ({ cells }) => {
   if (!cells.length) return null;
@@ -43,3 +44,26 @@ export const StepLine: React.FC<{ cells: StepCell[] }> = ({ cells }) => {
     </ol>
   );
 };
+
+/**
+ * Whether a scrolled pane is at (or near) its bottom: the conversation follows new text, and the step line with it,
+ * only while it is, so a pane the operator has scrolled up stays where he put it.
+ */
+export const following = (el: { scrollHeight: number; scrollTop: number; clientHeight: number }) => el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+
+/**
+ * A conversation pane whose step line is pinned at its bottom, after the latest message and just above the input
+ * (the operator, 2026-11-06: "should be pinned to the bottom as he works, so you can see progress"; Steward's ExecPlan
+ * 0003). It had been drawn under the turn's own message, at the top of the turn's output, and scrolled away as the
+ * turn went on. The line comes after every child, so it follows each message as it arrives and settles after the
+ * final reply when the run ends. The views scroll it into view while they are following (see `following`).
+ */
+export const StepLinePane = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement> & { cells: StepCell[] }>(
+  ({ cells, children, ...pane }, ref) => (
+    <div ref={ref} {...pane}>
+      {children}
+      <StepLine cells={cells} />
+    </div>
+  )
+);
+StepLinePane.displayName = 'StepLinePane';

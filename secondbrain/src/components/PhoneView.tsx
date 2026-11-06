@@ -9,7 +9,7 @@ import { DiscordSection } from './settings/DiscordSection.tsx';
 import { WhatsAppSection } from './settings/WhatsAppSection.tsx';
 import { channelOn, visibleChats } from '../utils/channels.ts';
 import { WorkflowStepEvent, keepSteps, phoneSession, stepLine } from '../utils/agentConsole.ts';
-import { StepLine } from './StepLine.tsx';
+import { StepLinePane, following } from './StepLine.tsx';
 import { A2uiCard } from './A2uiCard.tsx';
 
 /**
@@ -34,6 +34,8 @@ export const PhoneView: React.FC<{ voice?: VoiceSettings; onVoiceChange?: (v: Pa
   const session = useRef<string | null>(null);
   session.current = phoneSession(entries);
   const pane = useRef<HTMLDivElement>(null);
+  // the pane follows new entries, and the step line pinned under them, only while it is at its bottom
+  const atBottom = useRef(true);
   // the channels that are on (channels.json), named for the Setup button and the empty pane
   const setupNames = (['telegram', 'whatsapp', 'discord'] as const)
     .filter((c) => channelOn(c))
@@ -47,6 +49,7 @@ export const PhoneView: React.FC<{ voice?: VoiceSettings; onVoiceChange?: (v: Pa
   const show = async (c: PhoneConversation) => {
     setChat(c);
     setSteps([]);
+    atBottom.current = true;
     const r = await phone!.read(c.channel, c.chatId);
     setEntries([...r.entries].reverse());
     setOpen(r.open);
@@ -76,12 +79,10 @@ export const PhoneView: React.FC<{ voice?: VoiceSettings; onVoiceChange?: (v: Pa
   }, [phone]);
 
   useEffect(() => {
-    if (pane.current) pane.current.scrollTop = pane.current.scrollHeight;
-  }, [entries]);
+    if (pane.current && atBottom.current) pane.current.scrollTop = pane.current.scrollHeight;
+  }, [entries, steps]);
 
   if (!phone) return <div className="p-8 text-sm text-neutral-400">The phone view runs in the Jesster desktop app.</div>;
-
-  const lastUser = entries.map((e) => e.kind).lastIndexOf('user');
 
   const answer = async (cardId: string, allow: boolean) => {
     await agent?.approve(cardId, allow);
@@ -131,7 +132,14 @@ export const PhoneView: React.FC<{ voice?: VoiceSettings; onVoiceChange?: (v: Pa
             {channelOn('discord') && <DiscordSection />}
           </div>
         )}
-        <div ref={pane} className="flex-1 min-w-0 min-h-0 overflow-y-auto overflow-x-hidden px-4 sm:px-8 py-6 space-y-4">
+        <StepLinePane
+          ref={pane}
+          cells={entries.some((e) => e.kind === 'user') ? stepLine(steps, open.length > 0) : []}
+          onScroll={(e) => {
+            atBottom.current = following(e.currentTarget);
+          }}
+          className="flex-1 min-w-0 min-h-0 overflow-y-auto overflow-x-hidden px-4 sm:px-8 py-6 space-y-4"
+        >
           {!chat && (
             <div className="max-w-xl mx-auto text-center text-neutral-400 mt-16 space-y-2">
               <Smartphone className="w-10 h-10 mx-auto text-sky-400" />
@@ -141,13 +149,9 @@ export const PhoneView: React.FC<{ voice?: VoiceSettings; onVoiceChange?: (v: Pa
           )}
           {entries.map((e, i) =>
             e.kind === 'user' ? (
-              <React.Fragment key={i}>
-                <div className="flex justify-end">
-                  <div className="max-w-[80%] min-w-0 rounded-2xl bg-neutral-800 px-4 py-2.5 text-sm text-white whitespace-pre-wrap [overflow-wrap:anywhere]">{e.text}</div>
-                </div>
-                {/* the step line sits above the output of the chat's last message, the turn its events are for */}
-                {i === lastUser && <StepLine cells={stepLine(steps, open.length > 0)} />}
-              </React.Fragment>
+              <div key={i} className="flex justify-end">
+                <div className="max-w-[80%] min-w-0 rounded-2xl bg-neutral-800 px-4 py-2.5 text-sm text-white whitespace-pre-wrap [overflow-wrap:anywhere]">{e.text}</div>
+              </div>
             ) : e.kind === 'reply' ? (
               <div key={i} className="agent-md prose prose-invert prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: renderMarkdown(e.text) }} />
             ) : e.kind === 'card' ? (
@@ -184,7 +188,7 @@ export const PhoneView: React.FC<{ voice?: VoiceSettings; onVoiceChange?: (v: Pa
               </div>
             )
           )}
-        </div>
+        </StepLinePane>
       </section>
     </div>
   );
