@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
-import { CHATS_OPEN_KEY, CONSOLE_OPEN_KEY, CONSOLE_SHELVES, MOVED_TO_CONSOLE, TOP_BAR, WorkflowStepEvent, barStatus, historyRow, keepPanel, mcpServers, panelOpen, stepLine, versusBaseline } from './agentConsole.ts';
+import { CHATS_OPEN_KEY, CONSOLE_OPEN_KEY, CONSOLE_SHELVES, MOVED_TO_CONSOLE, TOP_BAR, WorkflowStepEvent, barStatus, historyRow, keepPanel, keepSteps, mcpServers, panelOpen, phoneSession, stepLine, versusBaseline } from './agentConsole.ts';
 
 // The operator, 2026-11-04: "there is a lot of clutter in the top bar", and the rulings after it (Flows, Capture,
 // Import files, GitHub, Ask Brain, Services, Integrations and + New note leave the top bar; Steward's controls go to
@@ -165,6 +165,41 @@ test('the step line: each step lit as it starts, done or failed as it ends, a ca
   assert.match(view, /e\.type === 'workflow_step'\) setSteps/, 'from the workflow_step events');
   assert.match(view, /e\.type === 'user'\) setSteps\(\[\]\)/, 'a new message starts a new line');
   assert.match(read('../components/StepLine.tsx'), /data-step-line/);
+});
+
+// AG-UI step 3, milestone 3: a phone turn's steps reach the Phone view. Its chat's entries carry the Steward session the
+// chat continues; that session's workflow_step events (on agent:event, as every session's are) are the view's steps.
+test("a phone turn's step events reach the Phone view's step line; other sessions' do not", () => {
+  const entries = [
+    { sessionId: 'tg-old', kind: 'user' },
+    { sessionId: null, kind: 'answer' },
+    { sessionId: 'tg-1', kind: 'reply' },
+  ];
+  const sid = phoneSession(entries);
+  assert.equal(sid, 'tg-1', 'the latest entry that names a session');
+  assert.equal(phoneSession([]), null);
+  const stream = [
+    { sessionId: 'tg-1', type: 'workflow_step', name: 'plan', state: 'finished' }, // the last turn's
+    { sessionId: 'tg-1', type: 'user', text: 'Fix it', source: 'telegram' }, // a new message starts the line again
+    { sessionId: 'tg-1', type: 'workflow_step', name: 'explore', state: 'started' },
+    { sessionId: 'app-9', type: 'workflow_step', name: 'execute', state: 'started' }, // the Agent tab's: not this chat's
+    { sessionId: 'tg-1', type: 'delta', text: 'Looking.' },
+    { sessionId: 'tg-1', type: 'workflow_step', name: 'explore', state: 'finished' },
+    { sessionId: 'tg-1', type: 'workflow_step', name: 'plan', state: 'started' },
+  ];
+  const kept = stream.reduce<WorkflowStepEvent[]>((x, e) => keepSteps(x, e, sid), []);
+  assert.deepEqual(kept, [
+    { name: 'explore', state: 'started' },
+    { name: 'explore', state: 'finished' },
+    { name: 'plan', state: 'started' },
+  ]);
+  assert.equal(stepLine(kept)[0].state, 'running', 'plan running on the phone');
+  assert.deepEqual(stream.reduce<WorkflowStepEvent[]>((x, e) => keepSteps(x, e, null), []), [], 'no session, no steps');
+
+  const view = read('../components/PhoneView.tsx');
+  assert.match(view, /agent\?\.onEvent\(\(e\) => setSteps\(\(x\) => keepSteps\(x, e, session\.current\)\)\)/, 'the view keeps its session\'s steps');
+  assert.match(view, /session\.current = phoneSession\(entries\)/, 'its session is the chat\'s');
+  assert.match(view, /<StepLine cells=\{stepLine\(steps, open\.length > 0\)\} \/>/, 'and draws the line');
 });
 
 test("the bar is the small set whole on its two newest runs and the newest steps run passing; the Evals shelf shows it and a run's progress", () => {
