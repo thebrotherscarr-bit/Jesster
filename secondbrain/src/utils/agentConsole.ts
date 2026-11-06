@@ -216,6 +216,29 @@ export function stepLine(events: WorkflowStepEvent[], cardWaits = false): StepCe
   return failed >= 0 ? line.slice(0, failed + 1) : line;
 }
 
+/**
+ * The step events a view keeps for the one conversation it shows (the Phone view's chat, by its Steward session): that
+ * session's 'workflow_step' events, in order; its new message ('user') starts them again; another session's events
+ * are not its own.
+ */
+export function keepSteps(
+  kept: WorkflowStepEvent[],
+  e: { sessionId: string; type: string; name?: string; state?: string },
+  sessionId: string | null | undefined,
+): WorkflowStepEvent[] {
+  if (!sessionId || e.sessionId !== sessionId) return kept;
+  if (e.type === 'user') return [];
+  if (e.type === 'workflow_step' && e.name && (e.state === 'started' || e.state === 'finished' || e.state === 'failed'))
+    return [...kept, { name: e.name, state: e.state }];
+  return kept;
+}
+
+/** The Steward session a phone chat continues: the latest entry that names one (each phone line carries it). */
+export function phoneSession(entries: { sessionId?: string | null }[]): string | null {
+  for (let i = entries.length - 1; i >= 0; i--) if (entries[i].sessionId) return entries[i].sessionId as string;
+  return null;
+}
+
 /** A time from a record, short. */
 export const shortTime = (t: string | number) => {
   const d = new Date(t);

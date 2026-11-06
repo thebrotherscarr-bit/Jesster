@@ -8,6 +8,8 @@ import { TelegramSection } from './settings/TelegramSection.tsx';
 import { DiscordSection } from './settings/DiscordSection.tsx';
 import { WhatsAppSection } from './settings/WhatsAppSection.tsx';
 import { channelOn, visibleChats } from '../utils/channels.ts';
+import { WorkflowStepEvent, keepSteps, phoneSession, stepLine } from '../utils/agentConsole.ts';
+import { StepLine } from './StepLine.tsx';
 
 /**
  * The phone (the operator, 2026-11-04: "so we know like 'this is the pc' and 'this is the phone'"): the Agent tab's
@@ -26,6 +28,10 @@ export const PhoneView: React.FC<{ voice?: VoiceSettings; onVoiceChange?: (v: Pa
   const [setup, setSetup] = useState(false);
   const current = useRef<PhoneConversation | null>(null);
   current.current = chat;
+  // the chat's turn in progress (AG-UI step 3): its Steward session's workflow steps, drawn as the Agent tab draws them
+  const [steps, setSteps] = useState<WorkflowStepEvent[]>([]);
+  const session = useRef<string | null>(null);
+  session.current = phoneSession(entries);
   const pane = useRef<HTMLDivElement>(null);
   // the channels that are on (channels.json), named for the Setup button and the empty pane
   const setupNames = (['telegram', 'whatsapp', 'discord'] as const)
@@ -39,6 +45,7 @@ export const PhoneView: React.FC<{ voice?: VoiceSettings; onVoiceChange?: (v: Pa
 
   const show = async (c: PhoneConversation) => {
     setChat(c);
+    setSteps([]);
     const r = await phone!.read(c.channel, c.chatId);
     setEntries([...r.entries].reverse());
     setOpen(r.open);
@@ -57,9 +64,12 @@ export const PhoneView: React.FC<{ voice?: VoiceSettings; onVoiceChange?: (v: Pa
     });
     // a card answered anywhere (here, the Agent tab, the phone) loses its buttons here
     const offAnswered = agent?.onAnswered?.((d) => setOpen((o) => o.filter((id) => id !== d.id)));
+    // every session's events reach the window (service.cjs); this chat's session's steps are its step line
+    const offSteps = agent?.onEvent((e) => setSteps((x) => keepSteps(x, e, session.current)));
     return () => {
       offEntry();
       offAnswered?.();
+      offSteps?.();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [phone]);
@@ -69,6 +79,8 @@ export const PhoneView: React.FC<{ voice?: VoiceSettings; onVoiceChange?: (v: Pa
   }, [entries]);
 
   if (!phone) return <div className="p-8 text-sm text-neutral-400">The phone view runs in the Jesster desktop app.</div>;
+
+  const lastUser = entries.map((e) => e.kind).lastIndexOf('user');
 
   const answer = async (cardId: string, allow: boolean) => {
     await agent?.approve(cardId, allow);
@@ -128,9 +140,13 @@ export const PhoneView: React.FC<{ voice?: VoiceSettings; onVoiceChange?: (v: Pa
           )}
           {entries.map((e, i) =>
             e.kind === 'user' ? (
-              <div key={i} className="flex justify-end">
-                <div className="max-w-[80%] min-w-0 rounded-2xl bg-neutral-800 px-4 py-2.5 text-sm text-white whitespace-pre-wrap [overflow-wrap:anywhere]">{e.text}</div>
-              </div>
+              <React.Fragment key={i}>
+                <div className="flex justify-end">
+                  <div className="max-w-[80%] min-w-0 rounded-2xl bg-neutral-800 px-4 py-2.5 text-sm text-white whitespace-pre-wrap [overflow-wrap:anywhere]">{e.text}</div>
+                </div>
+                {/* the step line sits above the output of the chat's last message, the turn its events are for */}
+                {i === lastUser && <StepLine cells={stepLine(steps, open.length > 0)} />}
+              </React.Fragment>
             ) : e.kind === 'reply' ? (
               <div key={i} className="agent-md prose prose-invert prose-sm max-w-none" dangerouslySetInnerHTML={{ __html: renderMarkdown(e.text) }} />
             ) : e.kind === 'card' ? (
