@@ -142,6 +142,80 @@ export function keepPanel(store: PanelStore, key: string, on: boolean): void {
   }
 }
 
+/**
+ * The step line (AG-UI step 3, Steward's ExecPlan 0003): Steward's workflow steps for the turn in progress, drawn from
+ * the 'workflow_step' events his AG-UI host's STEP_STARTED / STEP_FINISHED become (electron/agent/agui.cjs). Each
+ * entry of STEP_LINE is one step as the operator reads it, with the executor ids that make it up (MAF names each step
+ * by its executor's id; ask_approval is the plan's card).
+ */
+export const STEP_LINE: { id: string; label: string; names: string[] }[] = [
+  { id: 'plan', label: 'plan', names: ['explore', 'plan', 'read_plan'] },
+  { id: 'approve', label: 'approve', names: ['ask_approval'] },
+  { id: 'execute', label: 'execute', names: ['execute'] },
+  { id: 'check', label: 'check', names: ['check'] },
+  { id: 'repair', label: 'repair', names: ['repair'] },
+  { id: 'commit', label: 'commit', names: ['commit'] },
+  { id: 'report', label: 'report', names: ['report'] },
+];
+
+/** 'card': the step raised a card that waits on the operator (its executor has finished; the answer resumes it). */
+export type StepState = 'waiting' | 'running' | 'done' | 'failed' | 'card';
+export interface StepCell {
+  id: string;
+  label: string;
+  state: StepState;
+  /** how many times it ran: shown for check and repair, the steps that run again on a red check */
+  attempts: number;
+}
+export interface WorkflowStepEvent {
+  name: string;
+  state: 'started' | 'finished' | 'failed';
+}
+
+const RETRIED = new Set(['check', 'repair']);
+
+/**
+ * A turn's step events, in the order they came, as its line. No events (an older host, the Responses fallback): no
+ * line. A turn that ran none of the workflow's steps (a plain question: route, then answer) is one 'answer' step. Each
+ * step takes the state of its last event; a step not yet reached is waiting; one passed over (repair after a green
+ * check, commit when nothing changed) is left out. `cardWaits`: a card waits in this conversation, so the step that
+ * raised it (the last one to move) is shown waiting on its card.
+ */
+export function stepLine(events: WorkflowStepEvent[], cardWaits = false): StepCell[] {
+  const cells = new Map<string, StepCell>();
+  let last: string | null = null;
+  let answer: StepCell | null = null;
+  const stateOf = (e: WorkflowStepEvent): StepState => (e.state === 'started' ? 'running' : e.state === 'finished' ? 'done' : 'failed');
+  for (const e of events) {
+    if (e.name === 'answer') {
+      const before: number = (answer as StepCell | null)?.attempts || 0;
+      answer = { id: 'answer', label: 'answer', state: stateOf(e), attempts: before + (e.state === 'started' ? 1 : 0) };
+      continue;
+    }
+    const step = STEP_LINE.find((s) => s.names.includes(e.name));
+    if (!step) continue; // route, MAF's own, or a step this line does not know: ignored
+    const cell = cells.get(step.id) || { id: step.id, label: step.label, state: 'waiting' as StepState, attempts: 0 };
+    // a card's step runs again on the resume: that is the same attempt, so only check and repair count their runs
+    if (e.state === 'started' && (RETRIED.has(step.id) ? true : cell.attempts === 0)) cell.attempts += 1;
+    cell.state = stateOf(e);
+    cells.set(step.id, cell);
+    last = step.id;
+  }
+  if (!cells.size) {
+    if (!answer) return [];
+    return [cardWaits && answer.state === 'done' ? { ...answer, state: 'card' } : answer];
+  }
+  const reached = Math.max(...[...cells.keys()].map((id) => STEP_LINE.findIndex((s) => s.id === id)));
+  const line = STEP_LINE.flatMap((s, i) => {
+    const cell = cells.get(s.id);
+    if (cell) return [cell.id === last && cardWaits && cell.state === 'done' ? { ...cell, state: 'card' as StepState } : cell];
+    return i > reached ? [{ id: s.id, label: s.label, state: 'waiting' as StepState, attempts: 0 }] : [];
+  });
+  // a failed step ends the run: what was still to come will not run
+  const failed = line.findIndex((c) => c.state === 'failed');
+  return failed >= 0 ? line.slice(0, failed + 1) : line;
+}
+
 /** A time from a record, short. */
 export const shortTime = (t: string | number) => {
   const d = new Date(t);
