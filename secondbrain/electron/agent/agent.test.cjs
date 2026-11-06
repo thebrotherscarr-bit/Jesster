@@ -294,24 +294,45 @@ test("SecondBrain quitting stops Steward's two services it started, each with it
   assert.deepEqual(killed, []);
 });
 
-test('keepUpEvery brings a service back when its port is down, never one the user stopped', async () => {
+/**
+ * keepUpEvery's tests run on a virtual clock (node:test's mock timers: setInterval, setTimeout and Date), advanced one
+ * millisecond at a time with the promises each step starts settled before the next. They had run on the real clock,
+ * counting starts inside a 120 ms window of 5 ms intervals and 2 ms sleeps, and failed two release builds on GitHub's
+ * Windows runner ("a crashed start is retried (1)", 2026-11-05 and 2026-11-06) while passing in pull request checks:
+ * Windows wakes a timer on its ~15.6 ms system tick (a 2 ms setTimeout measured 15.5 ms at the median on the
+ * operator's PC), so a busy runner fitted only one start into the window. On the virtual clock every run is the same.
+ */
+function virtualClock(t) {
+  t.mock.timers.enable({ apis: ['setInterval', 'setTimeout', 'Date'] });
+  return async (ms) => {
+    for (let i = 0; i < ms; i++) {
+      t.mock.timers.tick(1);
+      // setImmediate is not mocked: it runs once every promise the tick started has settled
+      await new Promise((r) => setImmediate(r));
+    }
+  };
+}
+
+test('keepUpEvery brings a service back when its port is down, never one the user stopped', async (t) => {
   const { keepUpEvery } = require('./steward.cjs');
+  const advance = virtualClock(t);
   let held = false;
   let ensured = 0;
   let up = false;
   const svc = { held: () => held, ensure: async () => { ensured++; up = true; } };
   const timer = keepUpEvery(svc, 43121, async () => up, 5);
-  await new Promise((r) => setTimeout(r, 40));
+  await advance(40);
   assert.strictEqual(ensured, 1, 'started once, then found up');
   up = false;
   held = true;
-  await new Promise((r) => setTimeout(r, 30));
+  await advance(30);
   assert.strictEqual(ensured, 1, 'a service the user stopped stays stopped');
   clearInterval(timer);
 });
 
-test('keepUpEvery never starts a second copy while the first is still starting; a crashed or hung start is retried', async () => {
+test('keepUpEvery never starts a second copy while the first is still starting; a crashed or hung start is retried', async (t) => {
   const steward = require('./steward.cjs');
+  const advance = virtualClock(t);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'steward-'));
   for (const f of [['.venv', 'Scripts', 'python.exe'], steward.MCP_SCRIPT]) {
     fs.mkdirSync(path.join(dir, ...f.slice(0, -1)), { recursive: true });
@@ -353,7 +374,7 @@ test('keepUpEvery never starts a second copy while the first is still starting; 
       setTimeout(() => (st.up = true), 80);
       return { pid: 1, exitCode: null };
     }, { startLimit: 1000 });
-    await sleep(150);
+    await advance(150);
     clearInterval(slow.timer);
     assert.strictEqual(slow.st.up, true);
     assert.strictEqual(slow.st.spawned, 1, 'one start, waited for; no second copy on the port');
@@ -364,12 +385,12 @@ test('keepUpEvery never starts a second copy while the first is still starting; 
       setTimeout(() => (c.exitCode = 1), 3);
       return c;
     });
-    await sleep(120);
+    await advance(120);
     clearInterval(crash.timer);
     assert.ok(crash.st.spawned >= 2, `a crashed start is retried (${crash.st.spawned})`);
     // one alive but still not answering past the start limit is ended, then started again
     const hung = make(() => ({ pid: 3, exitCode: null }), { startLimit: 40 });
-    await sleep(150);
+    await advance(150);
     clearInterval(hung.timer);
     assert.ok(hung.st.spawned >= 2, `a hung start is retried (${hung.st.spawned})`);
     assert.ok(hung.st.killed.includes(3), 'the hung one is ended first');
