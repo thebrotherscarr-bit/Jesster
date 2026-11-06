@@ -28,7 +28,7 @@ const DEFAULTS = {
   computer: { enabled: false, askEachAction: true, model: 'qwen3-vl:8b', maxSteps: 25 }, // screen, mouse and keyboard
   share: { enabled: false, writes: false, key: '' }, // the notes over MCP for Atlas/Manjuel
   atlas: { exe: '', ground: '', python: 'python', engine: true, trusted: false, all: false }, // Settings → Atlas & Manjuel, remembered
-  archive: { python: 'python', cli: '', model: '' },
+  // archive: the archive digger's settings, retired 2026-11-05 (ADR-0010); a stored one is left unread
   // the Servers shelf (services.cjs): SecondBrain runs `ollama serve` only when this is on, with this environment
   // pinned over its own; OLLAMA_MODELS '' keeps the one SecondBrain was started with (his User variable).
   // The environment variable SECONDBRAIN_RUNS_OLLAMA, read when SecondBrain starts, overrides `enabled`: 1 turns it on,
@@ -41,7 +41,7 @@ const DEFAULTS = {
     },
   },
   // Claude, ChatGPT, Gemini: API keys (secrets, like the Telegram token), models, keep exchanges as notes
-  integrations: { anthropic: { key: '', model: 'claude-opus-5-5' }, openai: { key: '', model: '' }, google: { key: '', model: '' }, capture: true }, // the archive digger: the notes kernel's cli.py ('' = beside the vault)
+  integrations: { anthropic: { key: '', model: 'claude-opus-5-5' }, openai: { key: '', model: '' }, google: { key: '', model: '' }, capture: true },
 };
 
 // the secrets public() masks, as [section, ...path]

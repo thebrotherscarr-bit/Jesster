@@ -2,7 +2,7 @@
   "mcpServers": {
     "jesster-notes": {
       "command": "python",
-      "args": ["notes/cli.py", "mcp"]
+      "args": ["notes/cli.py", "mcp", "--vault", "../notes", "--only", "notes"]
     },
     "rea": {
       "command": "npx",

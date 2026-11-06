@@ -82,26 +82,22 @@ test('exchanges are kept in one capture note per model per day', () => {
   assert.equal((n.content.match(/\*\*You:\*\*/g) || []).length, 2);
 });
 
-test('their apps get the notes kernel added to their config, the rest kept and backed up', () => {
-  const home = tmp();
-  const apps = ig.appConfigs(home, 'win32', { APPDATA: path.join(home, 'Roaming') });
-  assert.equal(apps.claudeDesktop.file, path.join(home, 'Roaming', 'Claude', 'claude_desktop_config.json'));
-  const server = ig.kernelServer({ python: 'python', cli: 'C:\\Research\\worlds\\jesster\\notes\\cli.py', vaultDir: 'C:\\Research\\worlds\\notes' });
-  fs.mkdirSync(path.dirname(apps.claudeDesktop.file), { recursive: true });
-  fs.writeFileSync(apps.claudeDesktop.file, JSON.stringify({ mcpServers: { other: { command: 'x' } }, theme: 'dark' }));
-  assert.equal(ig.hasServer(apps.claudeDesktop.file, 'secondbrain'), false);
-  const r = ig.addServer(apps.claudeDesktop.file, 'secondbrain', server);
-  const cfg = JSON.parse(fs.readFileSync(apps.claudeDesktop.file, 'utf8'));
-  assert.deepEqual(Object.keys(cfg.mcpServers), ['other', 'secondbrain']);
-  assert.equal(cfg.theme, 'dark');
-  assert.deepEqual(cfg.mcpServers.secondbrain.args.slice(1), ['--vault', 'C:\\Research\\worlds\\notes', 'mcp']);
-  assert.ok(fs.existsSync(r.backup));
-  assert.equal(ig.hasServer(apps.claudeDesktop.file, 'secondbrain'), true);
-  ig.addServer(apps.gemini.file, 'secondbrain', server);
-  assert.ok(ig.hasServer(apps.gemini.file, 'secondbrain'), 'a missing config file is created');
-  fs.writeFileSync(apps.gemini.file, '{ broken');
-  assert.throws(() => ig.addServer(apps.gemini.file, 'secondbrain', server), /not valid JSON/);
-  assert.equal(ig.claudeCodeCommand({ command: 'python', args: ['C:\\My Stuff\\cli.py', '--vault', 'v', 'mcp'] }), 'claude mcp add --scope user secondbrain -- python "C:\\My Stuff\\cli.py" --vault v mcp');
+// ADR-0010 (Steward docs/decisions, 2026-11-05): notes are central in Jesster. The archive digger (archive.cjs,
+// Settings → Archive digger, the Servers shelf's notes-kernel row) and Integrations' "their apps" writer of the whole
+// notes kernel are retired; this goes red if either is wired back.
+test('the archive digger and the whole-kernel app writer stay retired (ADR-0010)', () => {
+  const handlers = [];
+  ig.register({ ipcMain: { handle: (ch) => handlers.push(ch) }, guard: () => {}, getSettings: () => ({}), getVault: () => null, send: () => {} });
+  assert.ok(handlers.includes('integrations:get'), 'integrations still registers its own calls');
+  assert.ok(!handlers.includes('integrations:connect-app'), 'no connect-app');
+  for (const gone of ['kernelServer', 'appConfigs', 'addServer', 'claudeCodeCommand']) assert.equal(ig[gone], undefined, `${gone} is retired`);
+  assert.ok(!fs.existsSync(path.join(__dirname, 'archive.cjs')), 'archive.cjs is gone');
+  const main = fs.readFileSync(path.join(__dirname, 'main.cjs'), 'utf8');
+  const preload = fs.readFileSync(path.join(__dirname, 'preload.cjs'), 'utf8');
+  assert.ok(!/require\('\.\/archive\.cjs'\)/.test(main), 'main.cjs requires no archive digger');
+  assert.ok(!/['"]archive:/.test(main + preload), 'no archive:* IPC in main or preload');
+  assert.ok(!/id:\s*'notes-kernel'/.test(main), 'the Servers list has no notes-kernel row');
+  assert.ok(!/connect-app/.test(preload), 'preload exposes no connect-app');
 });
 
 test('keys are masked for the page', () => {

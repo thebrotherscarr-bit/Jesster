@@ -133,7 +133,7 @@ Nothing updates these on its own; change them by hand in a pull request.
 | `electron\updater.cjs` | the Update button: finds and installs `secondbrain-b<N>` releases |
 | `electron\vaultfs.cjs` | notes as Markdown files in a folder |
 | `electron\integrations.cjs` | Claude, ChatGPT and Gemini with your own keys |
-| `electron\archive.cjs`, `electron\agent\`, `electron\door\` | the archive, the agent and its tools, the door |
+| `electron\agent\`, `electron\door\` | the agent and its tools, the door (`electron\archive.cjs`, the archive digger, retired 2026-11-05: Steward's ADR-0010) |
 | `vite.config.ts` | Vite + React + Tailwind + PWA service worker |
 
 **Why the Electron main process serves over HTTP instead of `file://`:** a

@@ -178,7 +178,7 @@ export const Header: React.FC<HeaderProps> = ({
           <button
             data-topbar="Settings"
             onClick={onOpenSettings}
-            title="Settings: notes folder, inbox, archive"
+            title="Settings: notes folder, inbox, Ollama, integrations, voice"
             aria-label="Settings"
             className="p-1.5 rounded-lg border border-neutral-800 bg-neutral-900 hover:bg-neutral-800 text-neutral-300 hover:text-white transition-colors shrink-0"
           >

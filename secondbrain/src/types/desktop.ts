@@ -236,9 +236,6 @@ export type ProviderId = 'anthropic' | 'openai' | 'google';
 export interface IntegrationsState {
   providers: { id: ProviderId; label: string; hasKey: boolean; key: string; model: string }[];
   capture: boolean;
-  kernel: { command: string; args: string[] } | null;
-  apps: { id: string; label: string; file: string; connected: boolean }[];
-  claudeCode: string | null;
 }
 
 export interface ProviderChatRequest {
@@ -248,45 +245,6 @@ export interface ProviderChatRequest {
   messages: { role: 'user' | 'assistant'; content: string }[];
   /** what to keep as the question in the capture note (default: the last user message) */
   question?: string;
-}
-
-export interface ArchiveProgress {
-  started: string | false;
-  updated?: string | null;
-  written?: string | null;
-  notes_done?: number;
-  notes_total?: number;
-  finished?: boolean;
-  chunks?: number;
-  failed_chunks?: number;
-  topics?: number;
-  decisions?: number;
-  ideas?: number;
-  threads_open?: number;
-  events?: number;
-  errors?: string[];
-}
-
-export interface ArchiveStatus {
-  sources: string[];
-  raw_notes: number;
-  distill: ArchiveProgress;
-}
-
-export interface ArchiveState {
-  job: 'digging' | 'distilling' | 'writing' | null;
-  pausing: boolean;
-  status: ArchiveStatus | null;
-  error: string | null;
-  last: { job: string; at: string; out: unknown } | null;
-}
-
-export interface ArchiveSettings {
-  python: string;
-  cli: string;
-  model: string;
-  found: string | null;
-  state: ArchiveState;
 }
 
 export interface ShareState {
@@ -372,20 +330,7 @@ export interface DesktopBridge {
     models: (provider: ProviderId) => Promise<string[]>;
     chat: (id: string, req: ProviderChatRequest) => Promise<{ text: string; model: string }>;
     stop: (id: string) => Promise<void>;
-    connectApp: (app: string) => Promise<IntegrationsState & { wrote: { file: string; backup: string | null } }>;
     onChunk: (cb: (c: { id: string; text: string }) => void) => () => void;
-  };
-  archive?: {
-    get: () => Promise<ArchiveSettings>;
-    set: (patch: { python?: string; cli?: string; model?: string }) => Promise<ArchiveSettings>;
-    status: () => Promise<ArchiveStatus>;
-    sources: (change?: { add?: string; remove?: string }) => Promise<string[]>;
-    dig: () => Promise<unknown>;
-    distill: (opts?: { restart?: boolean }) => Promise<ArchiveProgress>;
-    write: () => Promise<unknown>;
-    pause: () => Promise<void>;
-    stop: () => Promise<void>;
-    onState: (cb: (s: ArchiveState) => void) => () => void;
   };
   computer?: { models: () => Promise<string[]> };
   /** the door's git and hold tools, as the operator: the GitHub shelf's hand (door:call) */

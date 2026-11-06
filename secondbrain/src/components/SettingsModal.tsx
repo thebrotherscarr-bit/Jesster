@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { X, Inbox, RefreshCw, FolderGit2, Unplug } from 'lucide-react';
 import { InboxStatus } from '../types/desktop.ts';
-import { ArchiveSection } from './settings/ArchiveSection.tsx';
 import { ReportBack } from './settings/ReportBack.tsx';
 import { OllamaSection } from './settings/OllamaSection.tsx';
 import { IntegrationsSection } from './settings/IntegrationsSection.tsx';
@@ -20,7 +19,7 @@ interface SettingsModalProps {
 
 /**
  * The app's one Settings window, every section on it flat (the operator, 2026-11-04: "no buried settings that are
- * nested"): the notes folder, the inbox, the archive digger, Ollama, integrations and voice. Steward's own settings
+ * nested"): the notes folder, the inbox, Ollama, integrations and voice (the archive digger was retired 2026-11-05, ADR-0010). Steward's own settings
  * (Aurora sharing, his tools, MCP servers) are on the Agent tab's console, the automations on the Flows shelf's Set up,
  * Telegram on the Phone view;
  * utils/settingsMap.ts lists where each one is.
@@ -128,7 +127,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({ isOpen, onClose, o
           )}
         </section>
 
-        <ArchiveSection />
         <OllamaSection config={ollamaConfig} onUpdateConfig={onUpdateOllama} />
         <IntegrationsSection />
         {voice && onVoiceChange && <VoiceSection voice={voice} onChange={onVoiceChange} />}
