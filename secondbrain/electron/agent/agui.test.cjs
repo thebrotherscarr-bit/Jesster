@@ -220,6 +220,48 @@ test("with agent.transport 'ag-ui' the Agent tab's turn goes over AG-UI, its car
   assert.deepEqual(responses, ['ensure', 'turn']);
 });
 
+// Steward's ADR-0013 (the A2UI pilot), ExecPlan 0004 milestone 2: the plan card's A2UI surface (CUSTOM 'a2ui', sent by
+// his workflow before the card, as ag_ui_app.py streams it) reaches the card it names, in the window and on onCard
+// (the phone's log); a surface for another card does not; a card with none has none. Red when the CUSTOM case, the
+// approve argument or the service's card field comes unplugged.
+test("the plan card's A2UI surface reaches its card, the window's and the phone's, and no other", async (t) => {
+  const { AgentService } = require('./service.cjs');
+  const { Vault } = require('../vaultfs.cjs');
+  const vault = new Vault(fs.mkdtempSync(path.join(os.tmpdir(), 'agui-')));
+  const surface = [
+    { version: 'v0.9', createSurface: { surfaceId: 'plan-rq-approve_plan', catalogId: 'https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json' } },
+    { version: 'v0.9', updateComponents: { surfaceId: 'plan-rq-approve_plan', components: [{ id: 'root', component: 'Text', text: 'Write x.py' }] } },
+  ];
+  const a2ui = (id, messages) => ({ type: 'CUSTOM', name: 'a2ui', value: { request_id: id, messages } });
+  const host = await fakeHost((body, n) =>
+    n === 1
+      ? [a2ui('rq-other', [{ version: 'v0.9', deleteSurface: { surfaceId: 'x' } }]), a2ui('rq-approve_plan', surface), ...card(PLAN, 'ck-a')]
+      : n === 2
+        ? card({ name: 'file_access_write', arguments: { file_name: 'x.py' } }, 'ck-b')
+        : [...words('d', 'Done.'), { type: 'RUN_FINISHED' }],
+  );
+  t.after(() => host.server.close());
+  const cards = [];
+  const told = [];
+  const service = new AgentService({
+    getVault: () => vault,
+    getModel: () => ({ backend: 'steward', transport: 'ag-ui' }),
+    steward: { agui: { ensure: async () => host.url, turn: agui.turn } },
+    emit: (channel, e) => channel === 'agent:approval' && cards.push(e),
+  });
+  const asked = service.ask({ text: 'Write x.py.', sessionId: 's-a2ui', source: 'telegram', onCard: (c) => told.push(c) });
+  while (!cards.length) await new Promise((r) => setTimeout(r, 5));
+  assert.deepEqual(cards[0].a2ui, surface, "the plan card carries its own surface, not another card's");
+  assert.deepEqual(told[0].a2ui, surface, "and so does the phone's card");
+  assert.deepEqual(service.cards()[0].a2ui, surface, 'and the Approvals shelf');
+  service.answerApproval(cards[0].id, true, false);
+  while (cards.length < 2) await new Promise((r) => setTimeout(r, 5));
+  assert.equal(cards[1].name, 'file_access_write');
+  assert.ok(!('a2ui' in cards[1]), "a card with no surface has none: today's card");
+  service.answerApproval(cards[1].id, true, false);
+  assert.equal((await asked).answer, 'Done.');
+});
+
 test('the AG-UI host is started like his other two: its script, its port in STEWARD_AG_UI_PORT, its own log', async () => {
   const steward = require('./steward.cjs');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'steward-'));

@@ -64,6 +64,8 @@ export interface ApprovalRequest {
   summary: string;
   /** 'review': the improvement loop's review (Allow keeps the change, Deny drops it); never Always */
   kind?: 'review';
+  /** the card as an A2UI v0.9 surface, when Steward sent one (his ADR-0013: the plan card); drawn by A2uiCard */
+  a2ui?: unknown[];
 }
 
 export interface AgentBridge {
@@ -281,6 +283,8 @@ export interface PhoneEntry {
   name?: string;
   answer?: string;
   where?: string;
+  /** a card's A2UI v0.9 surface, as the card carried it (Steward's ADR-0013) */
+  a2ui?: unknown[];
 }
 
 /** One phone conversation in the Phone view's list. */

@@ -182,7 +182,7 @@ class Telegram {
       const entry = { chat: String(chatId), messageId: null, text: '', timer };
       this.cards.set(card.id, entry);
       // kept when it is asked, before the send: the window can answer it (and the turn reply) while it is on its way
-      this.record(chatId, { kind: 'card', cardId: card.id, name: card.name, text: card.summary });
+      this.record(chatId, { kind: 'card', cardId: card.id, name: card.name, text: card.summary, ...(card.a2ui ? { a2ui: card.a2ui } : {}) });
       const head = card.kind === 'review' ? '' : `Steward wants to use ${card.name}:\n\n`;
       let sent;
       try {
