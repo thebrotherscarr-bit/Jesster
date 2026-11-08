@@ -7,6 +7,11 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ### Changed
 
+- The notes folder is Settings' `vaultDir`, else the environment variable `JESSTER_VAULT` (the one the notes kernel and
+  `start-secondbrain.ps1` already read), else `Documents\SecondBrain`, today's default (`settings.cjs` `vaultDirOf`,
+  `main.cjs` `vaultDir`), so the app and the kernel can be pointed at one vault by one variable (Steward ADR-0020,
+  ExecPlan 0006 P1, audit A11). This PC names its vault in Settings, so it is unchanged. Wire: `settings.test.cjs`
+  ("the notes folder is Settings' vaultDir, else JESSTER_VAULT ..."), red with JESSTER_VAULT unread.
 - The inbox's bridge repository is Settings' new `inbox.repo` (today's `secondbrain-bridge` URL the default; empty
   means the default): Connect clones the one Settings names (`inbox.cjs` `connect`, `main.cjs`). The inbox stays off
   until connected (Steward ADR-0020, ExecPlan 0006 P1, audit B3). Wire: `inbox.test.cjs` ("the inbox's bridge

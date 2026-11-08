@@ -151,3 +151,15 @@ test("the updater's repository is Settings' update.repo, read at every check, to
     delete require.cache[require.resolve('./updater.cjs')];
   }
 });
+
+test("the notes folder is Settings' vaultDir, else JESSTER_VAULT, else Documents/SecondBrain (ADR-0020)", () => {
+  const { vaultDirOf } = require('./settings.cjs');
+  const docs = path.join(os.tmpdir(), 'Documents');
+  const kernel = path.join(os.tmpdir(), 'JessterNotes');
+  const set = path.join(os.tmpdir(), 'notes');
+  assert.equal(vaultDirOf(set, { JESSTER_VAULT: kernel }, docs), set, 'Settings wins (this PC)');
+  assert.equal(vaultDirOf(null, { JESSTER_VAULT: kernel }, docs), kernel, "then the kernel's variable");
+  assert.equal(vaultDirOf(null, {}, docs), path.join(docs, 'SecondBrain'), "then today's default");
+  const main = fs.readFileSync(path.join(__dirname, 'main.cjs'), 'utf8');
+  assert.match(main, /return vaultDirOf\(getSettings\(\)\.get\('vaultDir'\), process\.env, app\.getPath\('documents'\)\);/);
+});

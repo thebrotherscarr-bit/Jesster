@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 
 const DEFAULTS = {
-  vaultDir: null, // null: Documents\SecondBrain
+  vaultDir: null, // null: JESSTER_VAULT, else Documents\SecondBrain (vaultDirOf)
   owner: 'Kyle', // the system's owner as the model-facing prompts name him (agent/checker.cjs); Steward ADR-0020
   update: { repo: 'thebrotherscarr-bit/Jesster' }, // owner/name whose releases the updater reads (updater.cjs); ADR-0020
   // repo: the bridge repository the inbox clones (inbox.cjs connect), today's by default (Steward ADR-0020)
@@ -160,4 +160,12 @@ function estateDir(ground, layout, name) {
   return path.isAbsolute(rel) ? rel : path.join(ground, rel);
 }
 
-module.exports = { Settings, DEFAULTS, merge, telegramEffective, stewardTransport, estateDir };
+/**
+ * The notes folder: Settings' vaultDir, else the environment variable JESSTER_VAULT (the one the notes kernel and
+ * start-secondbrain.ps1 read), else Documents\SecondBrain, today's default (Steward ADR-0020).
+ */
+function vaultDirOf(setting, env, documents) {
+  return setting || (env && env.JESSTER_VAULT) || path.join(documents, 'SecondBrain');
+}
+
+module.exports = { Settings, DEFAULTS, merge, telegramEffective, stewardTransport, estateDir, vaultDirOf };
