@@ -769,6 +769,28 @@ def prove_shelves(root):
        {"inbox", "projects", "tasks", "worlds", "archives", "laws", "scratchpads"})
 
 
+def prove_update_repo(root):
+    """The desktop build is read from JESSTER_UPDATE_REPO (owner/name), else today's (Steward ADR-0020)."""
+    print("== update repository ==")
+    from plugins import system
+    saved = os.environ.pop("JESSTER_UPDATE_REPO", None)
+    try:
+        ck("the default is today's repository", system.update_repo() == "thebrotherscarr-bit/Jesster"
+           and system.releases_url() == "https://api.github.com/repos/thebrotherscarr-bit/Jesster/releases?per_page=30",
+           system.releases_url())
+        os.environ["JESSTER_UPDATE_REPO"] = "someone/fork"
+        ck("JESSTER_UPDATE_REPO names another", system.releases_url() ==
+           "https://api.github.com/repos/someone/fork/releases?per_page=30", system.releases_url())
+        ck("downloads are held to it", system.download_prefix() ==
+           "https://github.com/someone/fork/releases/download/", system.download_prefix())
+        os.environ["JESSTER_UPDATE_REPO"] = "https://evil.example/x"
+        ck("a value that is not owner/name is not used", system.update_repo() == "thebrotherscarr-bit/Jesster")
+    finally:
+        os.environ.pop("JESSTER_UPDATE_REPO", None)
+        if saved is not None:
+            os.environ["JESSTER_UPDATE_REPO"] = saved
+
+
 def main():
     root = tempfile.mkdtemp(prefix="prove-notes-")
     try:
@@ -782,6 +804,7 @@ def main():
         prove_archive(root)
         prove_archive_stays_local(root)
         prove_shelves(root)
+        prove_update_repo(root)
     finally:
         shutil.rmtree(root, ignore_errors=True)
     print()
