@@ -440,6 +440,9 @@ function killTree(pid) {
     /* already gone */
   }
 }
+// every Steward process SecondBrain starts is handed the share URL and key (steward.shareEnv, Steward ADR-0020): no key
+// pasted into his .env by hand on a new install; his .env, where it sets SECONDBRAIN_MCP_KEY, still wins
+const stewardChildEnv = () => steward.shareEnv(getSettings().get('share'), `${APP_ORIGIN}/mcp`);
 // Steward is the Agent tab's agent (agent/steward.cjs): his service is SecondBrain's child, as the glass is
 const stewardService = steward.service({
   getConfig: () => getSettings().get('agent').steward,
@@ -449,6 +452,7 @@ const stewardService = steward.service({
   startOwned: atlasGlass.startOwned,
   portOwner: atlasGlass.portOwner,
   killTree,
+  childEnv: stewardChildEnv,
 });
 // Steward as an MCP tool (mcp_app.py on 127.0.0.1:43121, ADR-0001 item 10), so Manjuel's mcp_call reaches
 // him: started and stopped with SecondBrain the same way, from the same folder; its own log, steward-mcp.log
@@ -460,6 +464,7 @@ const stewardMcp = steward.service({
   startOwned: atlasGlass.startOwned,
   portOwner: atlasGlass.portOwner,
   killTree,
+  childEnv: stewardChildEnv,
   script: steward.MCP_SCRIPT,
   port: steward.MCP_PORT,
   log: 'steward-mcp.log',
@@ -474,6 +479,7 @@ const stewardAgui = steward.service({
   startOwned: atlasGlass.startOwned,
   portOwner: atlasGlass.portOwner,
   killTree,
+  childEnv: stewardChildEnv,
   script: agui.SCRIPT,
   port: agui.PORT,
   log: 'steward-ag-ui.log',
