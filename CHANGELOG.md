@@ -7,6 +7,11 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ### Fixed
 
+- The card wait is 30 minutes (the operator, 2026-11-08: "30 minutes"; it was 10): one value,
+  `electron/agent/cardwait.cjs`, used by Telegram's and Discord's cards, an automation's, a card raised from outside
+  (`approval_ask`) and the summary to the phone ("no answer in 30 minutes (counted as No)"); an answered-by-timeout
+  card's edited text names the same wait. The Agent tab's own cards still wait for ever. `away.test.cjs` proves it on
+  fake timers.
 - Steward's ADR for the Flows-shelf tools is ADR-0017, not ADR-0016 (taken by "Steward is the brain of the PC",
   Steward #185, as #102 merged): the references in `estate.cjs`, its tests and this file now say so.
 - No flow started from the Flows shelf (2026-11-06; the operator: "NONE of the flows started"). Three eval examples

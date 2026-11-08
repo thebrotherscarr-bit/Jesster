@@ -14,7 +14,7 @@
  * nobody is there to approve risky tools, so they are refused. backend
  * "steward" sends it to Steward as a turn tagged "[from an automation (<name>)]"
  * (service.cjs AUTOMATION): his cards go to the window, the Approvals shelf and
- * Telegram like any other, and unanswered in 10 minutes are answered No. An
+ * Telegram like any other, and unanswered in the card wait (cardwait.cjs) are answered No. An
  * automation never approves itself.
  */
 const crypto = require('crypto');

@@ -18,12 +18,13 @@ const { newSessionId } = require('./agent.cjs');
 
 const API = 'https://discord.com/api/v10';
 const MAX_TEXT = 2000; // Discord's message limit
-const CARD_TIMEOUT_MS = 600000; // a card nobody answers in 10 minutes is answered No
+// a card nobody answers in the card wait (cardwait.cjs, 30 minutes) is answered No
+const { CARD_WAIT_MS: CARD_TIMEOUT_MS, timedOut } = require('./cardwait.cjs');
 const RECONNECT_MS = 5000;
 const INTENTS = 1 << 12; // DIRECT_MESSAGES only; a DM's content needs no privileged intent
 const USER_AGENT = 'DiscordBot (https://github.com/thebrotherscarr-bit/Jesster, 1)';
 // how an answered card reads in the chat, once its buttons are gone
-const ANSWERS = { allow: 'Allowed', always: 'Always allowed', deny: 'Denied', timeout: 'No answer in 10 minutes: denied', keep: 'Kept', drop: 'Dropped', guidance: 'Sent back with guidance' };
+const ANSWERS = { allow: 'Allowed', always: 'Always allowed', deny: 'Denied', keep: 'Kept', drop: 'Dropped', guidance: 'Sent back with guidance' };
 const COMMANDS = { new: ['/new', '/start', '!new'], stop: ['/stop', '!stop'], status: ['/status', '!status'] };
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
@@ -282,7 +283,7 @@ class Discord {
       await this.send(userId, `The agent wants to use ${name}:\n\n${summary}`.slice(0, 1900), buttons(id));
       return new Promise((resolve) => {
         this.approvals.set(id, resolve);
-        // no answer in 10 minutes: no (and the timer never keeps the app alive)
+        // no answer in the card wait: no (and the timer never keeps the app alive)
         setTimeout(() => {
           if (this.approvals.delete(id)) resolve(false);
         }, this.cardTimeout).unref?.();
@@ -324,12 +325,17 @@ class Discord {
     this.cards.delete(answer.id);
     clearTimeout(entry.timer);
     entry.answer = answer;
-    this.record(entry.chat, { kind: 'answer', cardId: answer.id, answer: answer.answer, where: answer.where, text: ANSWERS[answer.answer] || answer.answer });
+    this.record(entry.chat, { kind: 'answer', cardId: answer.id, answer: answer.answer, where: answer.where, text: this.said(answer) });
     if (entry.messageId !== null) await this.dropButtons(entry, answer);
   }
 
+  /** How an answered card reads here; a timeout names this channel's card wait. */
+  said(answer) {
+    return answer.answer === 'timeout' ? timedOut(this.cardTimeout) : ANSWERS[answer.answer] || answer.answer;
+  }
+
   async dropButtons(entry, answer) {
-    const said = ANSWERS[answer.answer] || answer.answer;
+    const said = this.said(answer);
     const line = answer.where === 'discord' ? said : `${said} in Jesster`;
     try {
       await this.api('PATCH', `/channels/${entry.channel}/messages/${entry.messageId}`, { content: `${entry.text}\n\n— ${line}`.slice(0, MAX_TEXT), components: [] }, 'edit');

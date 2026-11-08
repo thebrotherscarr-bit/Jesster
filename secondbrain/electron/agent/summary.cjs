@@ -8,6 +8,8 @@
  * and no error needs none: the answer is the end of that run.
  */
 
+const { inWords: wait } = require('./cardwait.cjs');
+
 const MAX_ASKED = 120;
 const MAX_LIST = 8;
 // a call whose name says it changes something: its path, file or flow is named under "Changed"
@@ -20,14 +22,6 @@ const short = (s, n) => {
   const t = String(s ?? '').replace(/\s+/g, ' ').trim();
   return t.length > n ? `${t.slice(0, n - 1)}…` : t;
 };
-
-/** The card wait in words: minutes, or seconds under one minute. */
-function wait(ms) {
-  const m = Math.round(ms / 60000);
-  if (m >= 1) return `${m} minute${m === 1 ? '' : 's'}`;
-  const s = Math.max(1, Math.round(ms / 1000));
-  return `${s} second${s === 1 ? '' : 's'}`;
-}
 
 /** The message without its source line (service.cjs withSource puts it first, or last after an improve: word). */
 function asked(text) {
