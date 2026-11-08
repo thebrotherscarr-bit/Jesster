@@ -7,6 +7,12 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ### Changed
 
+- The Estate's repositories are Settings' new `estate` entry (`atlas`, `jesster`, `steward`, each relative to the ground
+  or absolute), today's layout (`atlas`, `worlds/jesster`, `worlds/steward`) the default, for both the door's worlds
+  (`door/index.cjs` `worldsFor`) and the Estate's versions (`agent/workflows.cjs` `estateRepos`) (Steward ADR-0020,
+  ExecPlan 0006 P1, audit A4). A name Settings leaves out keeps its default; the door reads it when it builds its
+  worlds. Wire: `door/index.test.cjs` ("the Estate's folders are Settings' estate entry ..."), red with the door
+  ignoring the layout.
 - `ollama.exe` is found in Settings' `services.ollama.exe` (new, `''` by default), then `%LOCALAPPDATA%\Programs\Ollama`
   (today's, unchanged here), then the first `ollama` on PATH; when none has it, the Servers shelf says all three places
   (Steward ADR-0020, ExecPlan 0006 P1, audit A13). Wire: `services.test.cjs` ("ollama.exe is Settings'
