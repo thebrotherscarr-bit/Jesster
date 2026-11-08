@@ -309,13 +309,13 @@ test('approval_ask: Deny comes back not approved', async () => {
   assert.equal(service.cards().length, 0);
 });
 
-test('approval_ask: no answer in 10 minutes is No', async (t) => {
+test('approval_ask: no answer in the card wait (30 minutes) is No', async (t) => {
   t.mock.timers.enable({ apis: ['setTimeout'] });
   const { service, shown, kept } = cardService();
   const call = askCard({ ...setup().ctx, agent: service }, 4);
   await settled(shown);
-  t.mock.timers.tick(600000 - 1);
-  assert.equal(service.cards().length, 1, 'still waiting just before 10 minutes');
+  t.mock.timers.tick(30 * 60000 - 1);
+  assert.equal(service.cards().length, 1, 'still waiting just before 30 minutes');
   t.mock.timers.tick(1);
   const r = await call;
   assert.deepEqual(JSON.parse(r.result.content[0].text), { id: shown[0].id, approved: false, answer: 'timeout' });

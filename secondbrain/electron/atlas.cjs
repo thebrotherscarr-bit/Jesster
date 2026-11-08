@@ -94,11 +94,11 @@ const AGENT_TOOLS = [
 // Steward's cards when he runs under his MCP host (mcp_app.py: Manjuel's `maf` face, Aurora's ask_steward), where no
 // window of his own can show them: he asks here, the card is raised through the Agent's own card path (the Agent tab,
 // the Approvals shelf, Telegram, the approvals history) tagged "Manjuel / MCP", and the call returns its answer. No
-// answer in 10 minutes is No. Served while the Agent runs here, writes allowed or not: it only asks.
+// answer in the card wait (30 minutes, agent/cardwait.cjs) is No. Served while the Agent runs here, writes allowed or not: it only asks.
 const APPROVAL_TOOL = {
   name: 'approval_ask',
   description:
-    "Ask the user to approve one tool call on SecondBrain's Allow/Deny card (the Agent tab, the Approvals shelf and Telegram), tagged Manjuel / MCP. Waits for the answer, up to 10 minutes (then No), and returns { id, approved, answer }.",
+    "Ask the user to approve one tool call on SecondBrain's Allow/Deny card (the Agent tab, the Approvals shelf and Telegram), tagged Manjuel / MCP. Waits for the answer, up to 30 minutes (then No), and returns { id, approved, answer }.",
   inputSchema: {
     type: 'object',
     properties: {

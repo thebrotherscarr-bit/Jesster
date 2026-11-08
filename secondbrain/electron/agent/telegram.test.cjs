@@ -264,7 +264,7 @@ test("a Steward card answered in the window loses its buttons in the chat and sh
     await until(() => decided.length === 2, 5000);
     assert.equal(decided[1], false);
     await until(() => edits().length === 2);
-    assert.match(edits()[1].text, /— No answer in 10 minutes: denied$/);
+    assert.match(edits()[1].text, /— No answer in 2 seconds: denied$/);
     assert.equal(service.cards().length, 0);
     const kept = history.read(10);
     assert.deepEqual(kept.map((h) => [h.tool, h.answer, h.where]), [['service_control', 'timeout', 'telegram'], ['service_control', 'allow', 'window']]);

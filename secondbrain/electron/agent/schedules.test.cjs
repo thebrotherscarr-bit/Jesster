@@ -96,7 +96,7 @@ test('a Steward schedule sends its prompt to Steward as an automation turn; its 
   // the tab's own backend is the local loop: a Steward schedule goes to Steward all the same
   const agent = new AgentService({ getVault: () => vault, getModel: () => ({ backend: 'local' }), steward, history: { append: (e) => history.push(e) }, emit: (ch, e) => ch === 'agent:approval' && cards.push(e) });
   const phone = [];
-  // a short timeout stands in for the 10 minutes; runSchedule's own call takes CARD_TIMEOUT_MS
+  // a short timeout stands in for the card wait; runSchedule's own call takes CARD_TIMEOUT_MS
   const realAsk = agent.ask.bind(agent);
   const asked = [];
   agent.ask = (req) => (asked.push(req), realAsk({ ...req, cardTimeoutMs: 30 }));
@@ -138,7 +138,7 @@ test('a Steward schedule sends its prompt to Steward as an automation turn; its 
 
 test('an automation card answered in time is the answer, and the timer ends with it', async () => {
   const { AgentService, CARD_TIMEOUT_MS } = require('./service.cjs');
-  assert.equal(CARD_TIMEOUT_MS, 600000, '10 minutes, as Telegram\'s');
+  assert.equal(CARD_TIMEOUT_MS, 30 * 60000, 'the card wait, 30 minutes (the operator, 2026-11-08), as Telegram\'s');
   const vault = new Vault(fs.mkdtempSync(path.join(os.tmpdir(), 'sched-steward-')));
   let approved = null;
   const steward = { ensure: async () => 'http://s', turn: async ({ approve }) => ((approved = await approve('x', {}, 'do x')), { answer: 'ok', previous: 'r', calls: [] }) };

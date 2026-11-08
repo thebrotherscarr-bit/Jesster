@@ -118,7 +118,7 @@ function stewardHost() {
 }
 
 /** The real bridge and service, Steward on the fake host over AG-UI, the chat paired. */
-async function away(t, host, { cardTimeout = 600000 } = {}) {
+async function away(t, host, { cardTimeout } = {}) {
   const tg = await fakeTelegram();
   const vault = new Vault(fs.mkdtempSync(path.join(os.tmpdir(), 'away-')));
   const service = new AgentService({
@@ -126,7 +126,7 @@ async function away(t, host, { cardTimeout = 600000 } = {}) {
     getModel: () => ({ backend: 'steward' }),
     steward: { ensure: async () => assert.fail('the Responses service is not used'), agui: { ensure: async () => host.url, turn: agui.turn } },
   });
-  const bot = new Telegram({ getConfig: () => ({ token: 'TOKEN', enabled: true, allowedChats: ['42'] }), agent: service, apiBase: tg.base, cardTimeout });
+  const bot = new Telegram({ getConfig: () => ({ token: 'TOKEN', enabled: true, allowedChats: ['42'] }), agent: service, apiBase: tg.base, ...(cardTimeout ? { cardTimeout } : {}) });
   await bot.start();
   t.after(() => {
     bot.stop();
@@ -217,4 +217,46 @@ test('a plain chat answer with no tool, card or error gets no summary: the answe
   await until(() => texts().includes('Hello.'));
   await new Promise((r) => setTimeout(r, 100));
   assert.ok(!texts().some((x) => x.startsWith('Summary')));
+});
+
+// The card wait is the operator's 30 minutes (2026-11-08), one value for Telegram, the service and the summary
+// (cardwait.cjs): on fake timers, a card is still waiting a millisecond before, and is a No at 30 minutes, said so in
+// the card's edited text and the summary. Red when any of them keeps its own wait.
+test("the card wait is 30 minutes, one value: Telegram's card, its edited text and the summary all say so", async (t) => {
+  const { CARD_WAIT_MS } = require('./cardwait.cjs');
+  assert.equal(CARD_WAIT_MS, 30 * 60000);
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const vault = new Vault(fs.mkdtempSync(path.join(os.tmpdir(), 'away-wait-')));
+  const decided = [];
+  const steward = {
+    ensure: async () => 'http://steward',
+    turn: async ({ approve }) => {
+      const ok = await approve('secondbrain_service_control', { service: 'door', action: 'restart' }, 'service_control door restart');
+      decided.push(ok);
+      return { answer: ok ? 'Restarted.' : 'Not restarted.', previous: 'r1', calls: [] };
+    },
+  };
+  const service = new AgentService({ getVault: () => vault, getModel: () => ({ backend: 'steward', transport: 'responses', transportChosen: true }), steward });
+  const bot = new Telegram({ getConfig: () => ({ token: 'TOKEN', enabled: true, allowedChats: ['42'] }), agent: service });
+  const sent = [];
+  const edits = [];
+  bot.api = async (method, body) => {
+    if (method === 'editMessageText') edits.push(body.text);
+    return true;
+  };
+  bot.send = async (chat, text) => (sent.push(text), { message: { message_id: sent.length }, text });
+  const settle = async () => {
+    for (let i = 0; i < 20; i++) await new Promise((r) => setImmediate(r));
+  };
+  const done = bot.handle({ message: { chat: { id: 42 }, text: 'Restart the door.' } });
+  await settle();
+  assert.equal(service.cards().length, 1);
+  t.mock.timers.tick(CARD_WAIT_MS - 1);
+  await settle();
+  assert.equal(service.cards().length, 1, 'still waiting a millisecond before 30 minutes');
+  t.mock.timers.tick(1);
+  await done;
+  assert.deepEqual(decided, [false]);
+  assert.deepEqual(edits.map((e) => e.split('\n').at(-1)), ['— No answer in 30 minutes: denied']);
+  assert.match(sent.at(-1), /^Result: stopped at the secondbrain_service_control card: no answer in 30 minutes \(counted as No\)\.$/m);
 });

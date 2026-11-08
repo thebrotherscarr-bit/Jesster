@@ -18,9 +18,10 @@ const PHONE = ['telegram', 'whatsapp', 'discord'];
 const READ_ONLY = { whatsapp: 'no — WhatsApp is chat and research only' };
 // what such a channel's reply says when something was refused
 const NEEDS_APPROVAL = 'That needs approval — ask from the PC or Telegram.';
-// a card raised from outside (askCard): Steward under his MCP host, for Manjuel and Aurora; answered No after 10 minutes
+// a card raised from outside (askCard): Steward under his MCP host, for Manjuel and Aurora; answered No after the card
+// wait (cardwait.cjs, the one value Telegram's, Discord's and an automation's cards use too)
 const OUTSIDE = 'Manjuel / MCP';
-const CARD_TIMEOUT_MS = 600000;
+const { CARD_WAIT_MS: CARD_TIMEOUT_MS } = require('./cardwait.cjs');
 // a scheduled automation's turn to Steward (schedules.cjs runSchedule, a schedule with backend steward): nobody is
 // watching, so its cards go to the window, the Approvals shelf and Telegram like any other, and unanswered in
 // CARD_TIMEOUT_MS they are answered No. An automation never approves itself.
@@ -166,7 +167,7 @@ class AgentService {
    * A card raised from outside the window: Steward under his MCP host (Manjuel's `maf` face, Aurora's ask_steward)
    * asks through SecondBrain's approval_ask (atlas.cjs). It is the same card as his Agent-tab ones, in the window, the
    * Approvals shelf and, with `onCard`, Telegram; its summary starts with its `source`, which the history keeps. No
-   * answer in `timeoutMs` (10 minutes, as Telegram's cards) answers it No. Resolves { id, approved, answer }.
+   * answer in `timeoutMs` (the card wait, as Telegram's cards) answers it No. Resolves { id, approved, answer }.
    */
   askCard({ name, args = {}, summary, sessionId = '', source = OUTSIDE, timeoutMs = CARD_TIMEOUT_MS, onCard } = {}) {
     const text = `[${source}]\n${summary || `${name} ${JSON.stringify(args, null, 2)}`}`;
