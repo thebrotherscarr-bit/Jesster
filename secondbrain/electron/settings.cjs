@@ -8,7 +8,8 @@ const path = require('path');
 
 const DEFAULTS = {
   vaultDir: null, // null: Documents\SecondBrain
-  inbox: { clone: null, every: 5, reportOnUpdate: false, reportedBuild: 0 }, // minutes between pulls; report back after updates
+  // repo: the bridge repository the inbox clones (inbox.cjs connect), today's by default (Steward ADR-0020)
+  inbox: { clone: null, repo: 'https://github.com/thebrotherscarr-bit/secondbrain-bridge.git', every: 5, reportOnUpdate: false, reportedBuild: 0 }, // minutes between pulls; report back after updates
   // backend 'steward': the Agent tab talks to Steward (agent/steward.cjs); 'ollama': the local loop
   // check: Claude checks each Steward turn in the Agent tab (agent/checker.cjs), on the Integrations key
   // transport: how the Agent tab, the phone and the automations talk to Steward: 'ag-ui' (his AG-UI host on 43122,

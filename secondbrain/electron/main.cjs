@@ -383,7 +383,7 @@ ipcMain.handle('inbox:connect', async (event) => {
     properties: ['openDirectory', 'createDirectory'],
   });
   if (r.canceled || !r.filePaths[0]) return inboxStatus();
-  const { dir } = await inbox.connect(r.filePaths[0]);
+  const { dir } = await inbox.connect(r.filePaths[0], getSettings().get('inbox').repo);
   getSettings().set('inbox', { clone: dir });
   scheduleInbox();
   await syncInbox();
