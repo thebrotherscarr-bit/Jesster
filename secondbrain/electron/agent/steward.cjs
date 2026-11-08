@@ -29,11 +29,17 @@ const SCRIPT = ['harness', 'steward', 'step04_production_ready', 'hosted.py'];
 const MCP_PORT = 43121;
 const MCP_SCRIPT = ['harness', 'steward', 'step04_production_ready', 'mcp_app.py'];
 const PYTHON = ['.venv', 'Scripts', 'python.exe'];
+// a venv built on Linux or macOS keeps its Python in bin (Steward ADR-0020)
+const PYTHON_POSIX = ['.venv', 'bin', 'python'];
 const MAX_ROUNDS = 20; // approval round-trips in one turn
 
-/** Steward's folder: the one Settings names, else worlds\steward beside the notes folder. */
-function findSteward(settingsDir, vaultDir, script = SCRIPT) {
-  for (const d of [settingsDir, vaultDir && path.resolve(vaultDir, '..', 'steward')]) {
+/**
+ * Steward's folder, first match wins: the one Settings names (agent.steward.dir), else the environment variable
+ * STEWARD_DIR, else worlds\steward beside the notes folder (this PC's layout, the default). Steward ADR-0020: a
+ * clone anywhere is found without the operator's folder layout.
+ */
+function findSteward(settingsDir, vaultDir, script = SCRIPT, env = process.env) {
+  for (const d of [settingsDir, env && env.STEWARD_DIR, vaultDir && path.resolve(vaultDir, '..', 'steward')]) {
     if (d && fs.existsSync(path.join(d, ...script))) return d;
   }
   return null;
@@ -46,6 +52,17 @@ function findSteward(settingsDir, vaultDir, script = SCRIPT) {
 function shareEnv(share, url) {
   if (!share || !share.enabled || !share.key) return {};
   return { SECONDBRAIN_SHARE_URL: url, SECONDBRAIN_SHARE_KEY: share.key };
+}
+
+/**
+ * The Python of Steward's venv in `dir`: .venv\Scripts\python.exe (Windows, today's and the default), else
+ * .venv/bin/python when only that one is there. The Windows path is returned when neither is, for the error.
+ */
+function venvPython(dir) {
+  const win = path.join(dir, ...PYTHON);
+  if (fs.existsSync(win)) return win;
+  const posix = path.join(dir, ...PYTHON_POSIX);
+  return fs.existsSync(posix) ? posix : win;
 }
 
 /** POST over node:http: fetch gives up when no headers come within 300 s, and a turn takes longer. */
@@ -272,8 +289,8 @@ function service({ getConfig, vaultDir, answering, waitFor, startOwned, wait = 9
           child = null;
         }
         const dir = findSteward(cfg.dir, vaultDir(), script);
-        if (!dir) throw new Error('Steward was not found: Jesster looks for worlds\\steward beside the notes folder, or the folder in Settings (agent.steward.dir).');
-        const python = path.join(dir, ...PYTHON);
+        if (!dir) throw new Error('Steward was not found: Jesster looks in the folder in Settings (agent.steward.dir), then STEWARD_DIR, then worlds\\steward beside the notes folder.');
+        const python = venvPython(dir);
         if (!fs.existsSync(python)) throw new Error(`Steward's Python was not found at ${python}.`);
         // the port in the variable the script reads (ag_ui_app.py: STEWARD_AG_UI_PORT)
         child = startOwned(python, [path.join(...script)], dir, { ...process.env, ...childEnv(), [portEnv]: String(port) }, [log, log]);
@@ -394,4 +411,4 @@ function threads(file) {
   };
 }
 
-module.exports = { turn, service, keepUp, keepUpEvery, stopOnQuit, findSteward, shareEnv, postJson, postStream, threads, PORT, MCP_PORT, MCP_SCRIPT };
+module.exports = { turn, service, keepUp, keepUpEvery, stopOnQuit, findSteward, venvPython, shareEnv, postJson, postStream, threads, PORT, MCP_PORT, MCP_SCRIPT };
