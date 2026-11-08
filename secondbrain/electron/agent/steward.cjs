@@ -28,9 +28,13 @@ const MCP_SCRIPT = ['harness', 'steward', 'step04_production_ready', 'mcp_app.py
 const PYTHON = ['.venv', 'Scripts', 'python.exe'];
 const MAX_ROUNDS = 20; // approval round-trips in one turn
 
-/** Steward's folder: the one Settings names, else worlds\steward beside the notes folder. */
-function findSteward(settingsDir, vaultDir, script = SCRIPT) {
-  for (const d of [settingsDir, vaultDir && path.resolve(vaultDir, '..', 'steward')]) {
+/**
+ * Steward's folder, first match wins: the one Settings names (agent.steward.dir), else the environment variable
+ * STEWARD_DIR, else worlds\steward beside the notes folder (this PC's layout, the default). Steward ADR-0020: a
+ * clone anywhere is found without the operator's folder layout.
+ */
+function findSteward(settingsDir, vaultDir, script = SCRIPT, env = process.env) {
+  for (const d of [settingsDir, env && env.STEWARD_DIR, vaultDir && path.resolve(vaultDir, '..', 'steward')]) {
     if (d && fs.existsSync(path.join(d, ...script))) return d;
   }
   return null;
@@ -260,7 +264,7 @@ function service({ getConfig, vaultDir, answering, waitFor, startOwned, wait = 9
           child = null;
         }
         const dir = findSteward(cfg.dir, vaultDir(), script);
-        if (!dir) throw new Error('Steward was not found: Jesster looks for worlds\\steward beside the notes folder, or the folder in Settings (agent.steward.dir).');
+        if (!dir) throw new Error('Steward was not found: Jesster looks in the folder in Settings (agent.steward.dir), then STEWARD_DIR, then worlds\\steward beside the notes folder.');
         const python = path.join(dir, ...PYTHON);
         if (!fs.existsSync(python)) throw new Error(`Steward's Python was not found at ${python}.`);
         // the port in the variable the script reads (ag_ui_app.py: STEWARD_AG_UI_PORT)
