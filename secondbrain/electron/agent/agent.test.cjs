@@ -186,6 +186,37 @@ test("Steward's MCP door starts like his service: mcp_app.py on 43121, from his 
   assert.equal(started.length, 2);
 });
 
+test('every Steward process SecondBrain starts is handed the share URL and key, only while sharing is on (ADR-0020)', async () => {
+  const steward = require('./steward.cjs');
+  const url = 'http://127.0.0.1:43110/mcp';
+  assert.deepEqual(steward.shareEnv({ enabled: true, key: 'k1' }, url), { SECONDBRAIN_SHARE_URL: url, SECONDBRAIN_SHARE_KEY: 'k1' });
+  assert.deepEqual(steward.shareEnv({ enabled: false, key: 'k1' }, url), {}, 'sharing off: nothing');
+  assert.deepEqual(steward.shareEnv({ enabled: true, key: '' }, url), {}, 'no key: nothing');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'steward-'));
+  for (const f of [['.venv', 'Scripts', 'python.exe'], ['harness', 'steward', 'step04_production_ready', 'hosted.py']]) {
+    fs.mkdirSync(path.join(dir, ...f.slice(0, -1)), { recursive: true });
+    fs.writeFileSync(path.join(dir, ...f), '');
+  }
+  const envs = [];
+  const svc = steward.service({
+    getConfig: () => ({ dir }),
+    vaultDir: () => null,
+    answering: async () => false,
+    waitFor: async () => true,
+    startOwned: (exe, args, cwd, env) => envs.push(env),
+    childEnv: () => steward.shareEnv({ enabled: true, key: 'k2' }, url),
+  });
+  await svc.ensure();
+  assert.equal(envs[0].SECONDBRAIN_SHARE_KEY, 'k2');
+  assert.equal(envs[0].SECONDBRAIN_SHARE_URL, url);
+  assert.equal(envs[0].STEWARD_PORT, '43120', 'the port is still his');
+  assert.equal(envs[0].SECONDBRAIN_MCP_KEY, process.env.SECONDBRAIN_MCP_KEY, "his .env's name is never set from here");
+  // main.cjs hands it to all three: his service, his MCP door and his AG-UI host
+  const main = fs.readFileSync(path.join(__dirname, '..', 'main.cjs'), 'utf8');
+  assert.match(main, /const stewardChildEnv = \(\) => steward\.shareEnv\(getSettings\(\)\.get\('share'\), `\$\{APP_ORIGIN\}\/mcp`\);/);
+  assert.equal((main.match(/childEnv: stewardChildEnv,/g) || []).length, 3);
+});
+
 test("the Steward window's Stop ends the Python on his port and its tree, holds it, and Start or Restart brings it back", async () => {
   const steward = require('./steward.cjs');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'steward-'));
