@@ -7,6 +7,11 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ### Changed
 
+- The updater reads its releases from Settings' new `update.repo` (owner/name; `thebrotherscarr-bit/Jesster`, today's,
+  the default), at every check, and holds downloads to that repository's release assets (`updater.cjs` `useRepo`,
+  `repo`, `downloadPrefix`; `main.cjs` hands Settings' value over); a value that is not owner/name is not used (Steward
+  ADR-0020, ExecPlan 0006 P1, audit B2). Wire: `settings.test.cjs` ("the updater's repository is Settings'
+  update.repo ..."), red with `repo()` ignoring Settings.
 - Claude's check of a Steward turn names the system's owner from Settings' new `owner` (`'Kyle'`, today's, the
   default), in its instructions and in the turn it reads (`agent/checker.cjs` `system(owner)`, `transcript(turn,
   owner)`), instead of a name written into the prompt (Steward ADR-0020, ExecPlan 0006 P1, audit B1). Wire:

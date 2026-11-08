@@ -119,3 +119,35 @@ test('main.cjs runs Telegram, its masked view and the report scrub on the .env t
   assert.equal((main.match(/getSettings\(\)\.public\(\{ telegramEnv: telegramEnv\(\) \}\)/g) || []).length, 2, 'settings:get and settings:set show its last four');
   assert.match(main, /\[st\.telegram\.token, telegramEnv\(\),/, 'and the report hides it');
 });
+
+test("the updater's repository is Settings' update.repo, read at every check, today's by default (ADR-0020)", () => {
+  // updater.cjs takes `app` from Electron, which plain Node cannot load: a stand-in is put where require finds it
+  const id = require.resolve('electron');
+  const had = require.cache[id];
+  require.cache[id] = { id, filename: id, loaded: true, exports: { app: { isPackaged: false } } };
+  try {
+    delete require.cache[require.resolve('./updater.cjs')];
+    const updater = require('./updater.cjs');
+    const { DEFAULTS } = require('./settings.cjs');
+    assert.equal(DEFAULTS.update.repo, updater.REPO, 'the default is today\'s repository');
+    assert.equal(updater.repo(), updater.REPO);
+    let chosen = 'someone/fork';
+    updater.useRepo(() => chosen);
+    assert.equal(updater.repo(), 'someone/fork');
+    assert.equal(updater.downloadPrefix(), 'https://github.com/someone/fork/releases/download/', 'downloads are held to it');
+    chosen = 'https://evil.example/x';
+    assert.equal(updater.repo(), updater.REPO, 'not owner/name: the default');
+    chosen = '';
+    assert.equal(updater.repo(), updater.REPO);
+    updater.useRepo(null);
+    // main.cjs hands Settings' update.repo over once, read at each check
+    const main = fs.readFileSync(path.join(__dirname, 'main.cjs'), 'utf8');
+    assert.match(main, /updater\.useRepo\(\(\) => \(getSettings\(\)\.get\('update'\) \|\| \{\}\)\.repo\);/);
+    const src = fs.readFileSync(path.join(__dirname, 'updater.cjs'), 'utf8');
+    assert.ok(!/\$\{REPO\}/.test(src), 'no URL is built from the constant');
+  } finally {
+    if (had) require.cache[id] = had;
+    else delete require.cache[id];
+    delete require.cache[require.resolve('./updater.cjs')];
+  }
+});
