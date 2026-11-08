@@ -186,6 +186,20 @@ test("Steward's MCP door starts like his service: mcp_app.py on 43121, from his 
   assert.equal(started.length, 2);
 });
 
+test("Steward's Python is the venv's Scripts\\python.exe, else its bin/python (a venv built off Windows; ADR-0020)", () => {
+  const steward = require('./steward.cjs');
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'steward-'));
+  const win = path.join(dir, '.venv', 'Scripts', 'python.exe');
+  const posix = path.join(dir, '.venv', 'bin', 'python');
+  assert.equal(steward.venvPython(dir), win, 'neither: the Windows path, for the error');
+  fs.mkdirSync(path.dirname(posix), { recursive: true });
+  fs.writeFileSync(posix, '');
+  assert.equal(steward.venvPython(dir), posix, 'only bin/python: that one');
+  fs.mkdirSync(path.dirname(win), { recursive: true });
+  fs.writeFileSync(win, '');
+  assert.equal(steward.venvPython(dir), win, 'Scripts\\python.exe wins, as today');
+});
+
 test("the Steward window's Stop ends the Python on his port and its tree, holds it, and Start or Restart brings it back", async () => {
   const steward = require('./steward.cjs');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'steward-'));
