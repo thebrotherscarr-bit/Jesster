@@ -186,6 +186,27 @@ test("Steward's MCP door starts like his service: mcp_app.py on 43121, from his 
   assert.equal(started.length, 2);
 });
 
+test("Steward's folder is Settings' first, then STEWARD_DIR, then worlds\\steward beside the notes folder (ADR-0020)", () => {
+  const steward = require('./steward.cjs');
+  const make = () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'steward-'));
+    fs.mkdirSync(path.join(dir, 'harness', 'steward', 'step04_production_ready'), { recursive: true });
+    fs.writeFileSync(path.join(dir, 'harness', 'steward', 'step04_production_ready', 'hosted.py'), '');
+    return dir;
+  };
+  const fromSettings = make();
+  const fromEnv = make();
+  // this PC's layout: <ground>\worlds\notes is the vault, <ground>\worlds\steward is Steward
+  const worlds = fs.mkdtempSync(path.join(os.tmpdir(), 'worlds-'));
+  const beside = path.join(worlds, 'steward');
+  fs.mkdirSync(path.join(beside, 'harness', 'steward', 'step04_production_ready'), { recursive: true });
+  fs.writeFileSync(path.join(beside, 'harness', 'steward', 'step04_production_ready', 'hosted.py'), '');
+  const vault = path.join(worlds, 'notes');
+  assert.equal(steward.findSteward(fromSettings, vault, undefined, { STEWARD_DIR: fromEnv }), fromSettings, 'Settings wins');
+  assert.equal(steward.findSteward('', vault, undefined, { STEWARD_DIR: fromEnv }), fromEnv, 'then STEWARD_DIR');
+  assert.equal(steward.findSteward('', vault, undefined, {}), beside, 'then the folder beside the notes (today on this PC)');
+  assert.equal(steward.findSteward('', null, undefined, { STEWARD_DIR: fromEnv }), fromEnv, 'a clone anywhere, with no vault layout');
+  assert.equal(steward.findSteward('', null, undefined, { STEWARD_DIR: path.join(worlds, 'nothing') }), null, 'a STEWARD_DIR without Steward in it is passed over');
 test("Steward's Python is the venv's Scripts\\python.exe, else its bin/python (a venv built off Windows; ADR-0020)", () => {
   const steward = require('./steward.cjs');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'steward-'));
