@@ -26,6 +26,14 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ### Added
 
+- `saved_flow_status` on SecondBrain's MCP (Steward ADR-0016: every Flows-shelf action has its tool on Jesster's MCP):
+  one saved flow's run by the flow's id (its waiting run, else its newest in Steward's history) or Steward's run id:
+  running, done or failed, each step's state and ms, and a failed run's reason, through the shelf's own reads
+  (`recipe_status`, `recipe_runs`); a legacy prompt flow, or Steward's host down, answers from the flow's own last
+  result. A read. `saved_flow_run` is now start-verified: after Run now's path it reads Steward's state back once, and
+  says `started: false` with the reason when Steward did not take the run; a legacy prompt flow, run inline, says
+  `started: true` and how it ended. The `saved_flow*` names stay apart from the door's `flow_*` (Manjuel's engine flows
+  on the same MCP). Steward is offered all three (Steward's pull request with ADR-0016).
 - End-to-end tests for the Flows shelf (`secondbrain/e2e/`, `@playwright/test` 1.65.0 pinned, Playwright's Electron
   support): the built app launched with a temp settings folder and vault holding an eval flow, a recipe flow and a
   legacy prompt flow, and Steward's MCP host replaced by a local fake (`e2e/fake-steward.mjs`). Run now on each one

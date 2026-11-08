@@ -146,7 +146,8 @@ test("main.cjs hands the scheduler Telegram's cards and the Estate Steward's eva
   // Run now (2026-11-08): the shelf's schedules:run and the Estate's saved_flow_run are one function, sched.runNow
   assert.match(main, /async function runFlowNow\(id\) \{\s+const r = await sched\.runNow\(id, scheduleDeps\(\)\);/);
   assert.match(main, /ipcMain\.handle\('schedules:run', async \(event, id\) => \{\s+guard\(event\);\s+return runFlowNow\(id\);/);
-  assert.match(main, /flows: \{ list: \(\) => schedulesView\(\), run: \(id\) => runFlowNow\(id\) \},/);
+  // saved_flow_status (ADR-0016) reads Steward's runs through the shelf's own client, as schedules:runStatus does
+  assert.match(main, /flows: \{ list: \(\) => schedulesView\(\), run: \(id\) => runFlowNow\(id\), status: \(runId\) => stewardRecipes\.recipeStatus\(runId\), runs: \(id, limit\) => stewardRecipes\.recipeRuns\(id, limit\) \},/);
   assert.match(main, /getSchedules\(\)\.clearStale\(\);/, 'a running left by a quit is cleared at start');
   assert.match(main, /flowExamples\.dropStaleTransports\(\{ schedules: getSchedules\(\), vaultDir: vdir, sets \}\)/);
   assert.match(main, /onCard: phoneCard,/);

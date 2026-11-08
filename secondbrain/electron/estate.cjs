@@ -13,7 +13,13 @@
  *   eval_start          bounded  Steward's eval sets, by run-bar.ps1 in its own minimized window (served with the reads)
  *   eval_status         read   one eval_start run's progress file
  *   saved_flows         read   the Flows shelf's saved flows: id, name, steps, running or waiting, the last result
- *   saved_flow_run      bounded  Run now on one saved flow, by id: the shelf's own path (main.cjs runFlowNow)
+ *   saved_flow_run      bounded  Run now on one saved flow, by id: the shelf's own path (main.cjs runFlowNow), its
+ *                              start read back once from Steward (start-verified)
+ *   saved_flow_status   read   one flow's run (by flow id or Steward's run id): running, done or failed, each step's
+ *                              state and ms (Steward's recipe_status / recipe_runs, the shelf's own reads), the reason
+ *
+ * The saved_flow* names keep the Flows shelf's tools apart from the door's flow_* (Manjuel's engine flows, forwarded
+ * on this same MCP): Steward ADR-0016.
  *
  * A write is served only while the operator allows writes (Settings → Share), as WRITE_TOOLS are, and each says so
  * in its MCP annotations (readOnlyHint false), so Steward's side puts it on the operator's card.
@@ -134,9 +140,22 @@ const ESTATE_TOOLS = [
   {
     name: 'saved_flow_run',
     description:
-      "Run one saved flow now, by its id from saved_flows: exactly the Flows shelf's Run now (the same path in SecondBrain). Refused while that flow runs. A bounded action, served with the reads: it runs only a flow the operator saved, as his schedule would. Returns whether it started and Steward's run id; read saved_flows for the result.",
+      "Run one saved flow now, by its id from saved_flows: exactly the Flows shelf's Run now (the same path in SecondBrain). Refused while that flow runs. A bounded action, served with the reads: it runs only a flow the operator saved, as his schedule would. Returns whether it started, Steward's run id and its state read back once (started: false with the reason when it did not); read saved_flow_status for how it goes.",
     inputSchema: { type: 'object', properties: { id: { type: 'string', description: 'a flow id from saved_flows' } }, required: ['id'] },
     annotations: { title: 'Run a saved flow now', ...bounded },
+  },
+  {
+    name: 'saved_flow_status',
+    description:
+      "How one saved flow's run is going or went, by the flow's id (its current or last run) or Steward's run_id: state (running, done or failed), each step's state and ms, and the reason a failed run gave. Read-only.",
+    inputSchema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', description: 'a flow id from saved_flows' },
+        run_id: { type: 'string', description: "Steward's run id, from saved_flow_run" },
+      },
+    },
+    annotations: { title: "A saved flow's run", ...read },
   },
   {
     name: 'eval_status',
@@ -148,6 +167,24 @@ const ESTATE_TOOLS = [
 ];
 
 const NAMES = ESTATE_TOOLS.map((t) => t.name);
+
+/**
+ * Steward ADR-0016: every Flows-shelf action has its tool on this MCP. Each of the shelf's IPC handlers (main.cjs
+ * `schedules:*`) names the tool that does the same thing here, or says why there is none yet. A handler added to the
+ * shelf with no entry here, or an entry naming a tool this MCP does not serve, fails atlas.test.cjs.
+ */
+const SHELF_ACTIONS = {
+  'schedules:list': 'saved_flows',
+  'schedules:run': 'saved_flow_run',
+  'schedules:runStatus': 'saved_flow_status',
+  'schedules:runs': 'saved_flow_status',
+  'schedules:graph': { none: "the canvas's drawing of a flow; saved_flows carries each flow's steps" },
+  'schedules:busy': { none: "Steward's busy flag, which no Run now waits on since 2026-11-08 (ADR-0009, dated note)" },
+  'schedules:add': { pending: "saving a flow or an automation: automation_save on the operator's card (ExecPlan 0002)" },
+  'schedules:edit': { pending: "saving a flow or an automation: automation_save on the operator's card (ExecPlan 0002)" },
+  'schedules:update': { pending: "an automation's when or on/off: automation_save on the operator's card (ExecPlan 0002)" },
+  'schedules:remove': { pending: "deleting a flow or an automation stays the operator's, on the shelf (ExecPlan 0002)" },
+};
 
 /** Is this call a write (refused while the operator allows reads only)? */
 function isWrite(name, args = {}) {
@@ -469,6 +506,77 @@ function flowView(s) {
   };
 }
 
+/** A flow made of steps runs on Steward's host (run_recipe); one without is a legacy prompt, run inline. */
+function isStepFlow(s) {
+  return Boolean(s && Array.isArray(s.steps) && s.steps.length);
+}
+
+/** Steward's run state as saved_flow_status says it: running, done or failed, the steps, and a failed run's reason. */
+function runView(st, fallbackId) {
+  const state = st.state === 'running' ? 'running' : st.state === 'done' && st.ok !== false ? 'done' : 'failed';
+  return {
+    run_id: st.run_id || fallbackId || null,
+    state,
+    ...(st.trigger ? { trigger: st.trigger } : {}),
+    ...(st.started != null ? { started: st.started } : {}),
+    ...(st.ended != null ? { ended: st.ended } : {}),
+    steps: (st.steps || []).map((x) => ({ step: x.step || x.id, state: x.state, ms: x.ms ?? null, ...(x.ok != null ? { ok: x.ok } : {}) })),
+    reason: state === 'failed' ? st.error || st.short || st.state || 'failed' : null,
+    ...(state === 'done' && st.short ? { short: st.short } : {}),
+  };
+}
+
+/**
+ * saved_flow_run: Run now's own path (flows.run, main.cjs runFlowNow), then, for a run Steward took, its state read
+ * back once (flows.status: recipe_status), so "started" is what Steward says, never only what was sent. A legacy
+ * prompt flow runs inline and has ended by the time this answers.
+ */
+async function flowRun(id, flows) {
+  const r = await flows.run(id);
+  const s = (r.schedules || []).find((x) => x.id === id);
+  const out = { id, started: false, run_id: r.run_id || null, ok: r.ok, flow: s ? flowView(s) : null };
+  if (r.skipped) return { ...out, reason: String(r.skipped) };
+  if (r.run_id) {
+    if (!flows.status) return { ...out, started: true, state: 'running' };
+    try {
+      const st = runView(await flows.status(r.run_id), r.run_id);
+      return { ...out, started: true, state: st.state, steps: st.steps, reason: st.reason };
+    } catch (e) {
+      return { ...out, started: true, state: 'unknown', reason: `started, but Steward's state could not be read: ${e.message}` };
+    }
+  }
+  if (s && isStepFlow(s)) return { ...out, reason: (s && s.lastResult) || 'Steward did not take the run' };
+  return { ...out, started: true, state: r.ok ? 'done' : 'failed', reason: r.ok ? null : (s && s.lastResult) || 'failed' };
+}
+
+/**
+ * saved_flow_status: by run_id, Steward's recipe_status; by a flow's id, its waiting run, else its newest run in
+ * Steward's history (recipe_runs), else (a legacy prompt flow, or Steward's host down) the flow's own last result.
+ */
+async function flowStatus(args, flows) {
+  const runId = String(args.run_id || '').trim();
+  const id = String(args.id || '').trim();
+  if (!runId && !id) throw new Error('saved_flow_status needs a flow id (from saved_flows) or a run_id');
+  if (runId && !id) return runView(await flows.status(runId), runId);
+  const s = flows.list().find((x) => x.id === id);
+  if (!s) throw new Error(`no flow "${id}"`);
+  const head = { id, name: s.name, flow: flowView(s) };
+  const waiting = runId || (s.pending && s.pending.run_id);
+  try {
+    if (waiting) return { ...head, ...runView(await flows.status(waiting), waiting) };
+    if (isStepFlow(s) && flows.runs) {
+      const [last] = (await flows.runs(id, 1)) || [];
+      if (last) return { ...head, ...runView(last) };
+    }
+  } catch (e) {
+    head.note = `Steward's run could not be read: ${e.message}`;
+  }
+  if (s.running) return { ...head, state: 'running', steps: [], reason: null };
+  if (!s.lastRun) return { ...head, state: 'never run', steps: [], reason: null };
+  const ok = s.lastResult === 'ok';
+  return { ...head, state: ok ? 'done' : 'failed', steps: [], reason: ok ? null : s.lastResult };
+}
+
 /**
  * One estate tool's call → the text of its result, or { error }. `deps`: { servers (services.cjs registry), buildInfo,
  * check, apply (updater.cjs), sitting() (the open sitting's number on the ground, or ''), history ({ read }), ollama }.
@@ -508,14 +616,13 @@ async function estateCall(name, args, deps, { writes = false } = {}) {
       return { error: 'app_update action is check or apply' };
     }
     if (name === 'approvals_history') return JSON.stringify(deps.history.read(Math.min(MAX_HISTORY, Number(args.limit) || 50)));
-    if (name === 'saved_flows' || name === 'saved_flow_run') {
+    if (name === 'saved_flows' || name === 'saved_flow_run' || name === 'saved_flow_status') {
       if (!deps.flows) return { error: 'the Flows shelf is not served here' };
       if (name === 'saved_flows') return JSON.stringify(deps.flows.list().map(flowView));
+      if (name === 'saved_flow_status') return JSON.stringify(await flowStatus(args, deps.flows));
       const id = String(args.id || '').trim();
       if (!id) return { error: 'saved_flow_run needs the flow id (from saved_flows)' };
-      const r = await deps.flows.run(id);
-      const s = (r.schedules || []).find((x) => x.id === id);
-      return JSON.stringify({ id, started: Boolean(r.run_id), run_id: r.run_id || null, ok: r.ok, ...(r.skipped ? { skipped: r.skipped } : {}), flow: s ? flowView(s) : null });
+      return JSON.stringify(await flowRun(id, deps.flows));
     }
     if (name === 'eval_start' || name === 'eval_status') {
       if (!deps.evals) return { error: "Steward's evals are not served here" };
@@ -527,4 +634,4 @@ async function estateCall(name, args, deps, { writes = false } = {}) {
   return { error: `no tool ${name}` };
 }
 
-module.exports = { flowView, ESTATE_TOOLS, NAMES, estateCall, isWrite, ollama, ollamaApi, status, versionsApi, repoVersion, VERSIONS_TTL_MS, evalsApi, evalSets, evalSetNames, TRANSPORTS, evalStart, evalStatus, launchScript, defaultTransport, START_WAIT_MS, LAUNCH_LOG, RUNNING_QUERY, MAX_LOG_LINES, MAX_HISTORY, MAX_RUNS };
+module.exports = { SHELF_ACTIONS, flowView, runView, flowRun, flowStatus, ESTATE_TOOLS, NAMES, estateCall, isWrite, ollama, ollamaApi, status, versionsApi, repoVersion, VERSIONS_TTL_MS, evalsApi, evalSets, evalSetNames, TRANSPORTS, evalStart, evalStatus, launchScript, defaultTransport, START_WAIT_MS, LAUNCH_LOG, RUNNING_QUERY, MAX_LOG_LINES, MAX_HISTORY, MAX_RUNS };

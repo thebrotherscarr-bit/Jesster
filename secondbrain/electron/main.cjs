@@ -1158,8 +1158,9 @@ function estateDeps() {
     history: getApprovalsHistory(),
     // Steward's eval sets (eval_start, eval_status): run-bar.ps1 in his folder, in its own minimized window
     evals: stewardEvals(),
-    // the Flows shelf's saved flows (saved_flows, saved_flow_run): Run now's own path, runFlowNow
-    flows: { list: () => schedulesView(), run: (id) => runFlowNow(id) },
+    // the Flows shelf's saved flows (saved_flows, saved_flow_run, saved_flow_status): Run now's own path, runFlowNow, and
+    // the shelf's own reads of Steward's runs (schedules:runStatus, schedules:runs)
+    flows: { list: () => schedulesView(), run: (id) => runFlowNow(id), status: (runId) => stewardRecipes.recipeStatus(runId), runs: (id, limit) => stewardRecipes.recipeRuns(id, limit) },
     versions: estateVersions,
     sitting: () => {
       const g = atlasGlass.findGround((getSettings().get('atlas') || {}).ground, vaultDir());
