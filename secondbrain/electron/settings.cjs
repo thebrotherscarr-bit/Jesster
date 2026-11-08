@@ -8,6 +8,8 @@ const path = require('path');
 
 const DEFAULTS = {
   vaultDir: null, // null: Documents\SecondBrain
+  owner: 'Kyle', // the system's owner as the model-facing prompts name him (agent/checker.cjs); Steward ADR-0020
+  update: { repo: 'thebrotherscarr-bit/Jesster' }, // owner/name whose releases the updater reads (updater.cjs); ADR-0020
   // repo: the bridge repository the inbox clones (inbox.cjs connect), today's by default (Steward ADR-0020)
   inbox: { clone: null, repo: 'https://github.com/thebrotherscarr-bit/secondbrain-bridge.git', every: 5, reportOnUpdate: false, reportedBuild: 0 }, // minutes between pulls; report back after updates
   // backend 'steward': the Agent tab talks to Steward (agent/steward.cjs); 'ollama': the local loop
@@ -29,6 +31,10 @@ const DEFAULTS = {
   computer: { enabled: false, askEachAction: true, model: 'qwen3-vl:8b', maxSteps: 25 }, // screen, mouse and keyboard
   share: { enabled: false, writes: false, key: '' }, // the notes over MCP for Atlas/Manjuel
   atlas: { exe: '', ground: '', python: 'python', engine: true, trusted: false, all: false }, // Settings → Atlas & Manjuel, remembered
+  // the Estate's repositories, each relative to the ground (or absolute): read by the door's worlds (door/index.cjs
+  // worldsFor) and the Estate's versions (agent/workflows.cjs estateRepos). Today's layout is the default (Steward
+  // ADR-0020); a ground laid out otherwise names its folders here
+  estate: { atlas: 'atlas', jesster: 'worlds/jesster', steward: 'worlds/steward' },
   // archive: the archive digger's settings, retired 2026-11-05 (ADR-0010); a stored one is left unread
   // the Servers shelf (services.cjs): SecondBrain runs `ollama serve` only when this is on, with this environment
   // pinned over its own; OLLAMA_MODELS '' keeps the one SecondBrain was started with (his User variable).
@@ -38,6 +44,7 @@ const DEFAULTS = {
   services: {
     ollama: {
       enabled: false,
+      exe: '', // '' finds ollama.exe in %LOCALAPPDATA%\Programs\Ollama, then on PATH (services.cjs findOllama)
       env: { OLLAMA_HOST: '127.0.0.1', OLLAMA_KV_CACHE_TYPE: 'q8_0', OLLAMA_FLASH_ATTENTION: '1', OLLAMA_CONTEXT_LENGTH: '65536', OLLAMA_NUM_PARALLEL: '1', OLLAMA_MAX_LOADED_MODELS: '2', OLLAMA_KEEP_ALIVE: '30m', OLLAMA_NO_CLOUD: '1', OLLAMA_MODELS: '' },
     },
   },
@@ -144,4 +151,13 @@ function stewardTransport(agent) {
   return a.transport === 'responses' && a.transportChosen ? 'responses' : 'ag-ui';
 }
 
-module.exports = { Settings, DEFAULTS, merge, telegramEffective, stewardTransport };
+/**
+ * The folder of the Estate's repository `name` ('atlas', 'jesster', 'steward') under `ground`: Settings' estate entry
+ * (`layout`), relative to the ground or absolute, else today's default.
+ */
+function estateDir(ground, layout, name) {
+  const rel = (layout && typeof layout[name] === 'string' && layout[name]) || DEFAULTS.estate[name];
+  return path.isAbsolute(rel) ? rel : path.join(ground, rel);
+}
+
+module.exports = { Settings, DEFAULTS, merge, telegramEffective, stewardTransport, estateDir };
