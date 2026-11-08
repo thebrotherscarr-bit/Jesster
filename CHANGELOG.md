@@ -15,15 +15,6 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
   is shown on the flow in red; a `running` left by a quit is cleared at start; and once per vault the stale transport
   is taken off eval steps whose sets are not all asks sets (`flowExamples.dropStaleTransports`, nothing else touched).
   Steward ADR-0009 and ADR-0003 carry dated notes (Steward #179).
-
-### Added
-
-- `saved_flows` and `saved_flow_run` on SecondBrain's MCP: the Flows shelf's saved flows with their run state, and Run
-  now on one by id through the shelf's own path (`schedules.cjs runNow`, which `schedules:run` calls too). Bounded and
-  served with the reads, like `eval_start`; Steward's side cards it by default.
-
-### Fixed (earlier)
-
 - `eval_start` answered "started" and no run began (2026-11-05, b100, twice): Node's detached spawn gives
   PowerShell no console (DETACHED_PROCESS), and Windows PowerShell then exits 0 having run nothing. run-bar.ps1 is now
   opened by `Start-Process` in its own minimized window, everything it says goes to `storage/evals/runs/<tag>/launch.log`
@@ -32,6 +23,12 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 - `eval_start` with no transport is AG-UI for asks sets only (small, heldout) and in-process for every other set; a host
   transport named for a set evals.py refuses on one (bfcl, aider-py, steps) is an error before anything starts. A
   workflow's `eval_start` step no longer adds `ag-ui` itself (2026-11-05: the bfcl flow exited 2 at once).
+
+### Added
+
+- `saved_flows` and `saved_flow_run` on SecondBrain's MCP: the Flows shelf's saved flows with their run state, and Run
+  now on one by id through the shelf's own path (`schedules.cjs runNow`, which `schedules:run` calls too). Bounded and
+  served with the reads, like `eval_start`. Steward is not offered them (his MCP `allowed_tools` name each tool he gets).
 
 ### Removed
 
