@@ -215,3 +215,28 @@ test("the door carries the Estate's four worlds, Neiro retired", () => {
     ['steward', path.join(g, 'worlds', 'steward')],
   ]);
 });
+
+test("the Estate's folders are Settings' estate entry, today's layout by default, for the door and the versions (ADR-0020)", () => {
+  const { DEFAULTS, estateDir } = require('../settings.cjs');
+  const { estateRepos } = require('../agent/workflows.cjs');
+  const g = path.join(os.tmpdir(), 'ground');
+  assert.deepEqual(DEFAULTS.estate, { atlas: 'atlas', jesster: 'worlds/jesster', steward: 'worlds/steward' });
+  assert.deepEqual(door.worldsFor(g, DEFAULTS.estate), door.worldsFor(g), 'the default is the layout of today');
+  const other = path.join(os.tmpdir(), 'elsewhere', 'steward');
+  const layout = { jesster: 'repos/jesster', steward: other };
+  assert.deepEqual(door.worldsFor(g, layout), [
+    ['research', g],
+    ['atlas', path.join(g, 'atlas')],
+    ['secondbrain', path.join(g, 'repos', 'jesster')],
+    ['steward', other],
+  ]);
+  assert.equal(estateDir(g, layout, 'atlas'), path.join(g, 'atlas'), 'a name Settings leaves out keeps its default');
+  assert.deepEqual(estateRepos(g, layout).map((r) => r.dir), [g, other, path.join(g, 'repos', 'jesster'), path.join(g, 'atlas')]);
+  assert.deepEqual(estateRepos(g).map((r) => r.dir), [g, path.join(g, 'worlds', 'steward'), path.join(g, 'worlds', 'jesster'), path.join(g, 'atlas')]);
+  // main.cjs and the door's register hand Settings' estate to both
+  const main = fs.readFileSync(path.join(__dirname, '..', 'main.cjs'), 'utf8');
+  assert.match(main, /workflows\.estateRepos\(atlasGlass\.findGround\([^\n]*\), getSettings\(\)\.get\('estate'\)\)/);
+  const index = fs.readFileSync(path.join(__dirname, 'index.cjs'), 'utf8');
+  assert.match(index, /layout: \(\) => getSettings\(\)\.get\('estate'\)/);
+  assert.match(index, /reg = build\(worldsFor\(g, layout\(\)\)/);
+});

@@ -29,6 +29,7 @@ const { authTools } = require('./auth.cjs');
 const { gitctlTools } = require('./gitctl.cjs');
 const { engines } = require('./engine.cjs');
 const { InnerDoor, forwardedTools } = require('./forward.cjs');
+const { estateDir } = require('../settings.cjs');
 
 /** The Go door's 97 tools, in the order atlas/line/internal/tools/tools.go registers them (`notes` since 2026-10-23). */
 const ORDER = [
@@ -205,14 +206,15 @@ function innerHolds(reg, getInner) {
  * also Steward's own repository, so his git tools reach it through the door under a key of his own,
  * with every write held for the operator. Neiro (the Estate's lock, carried from 2026-11-04) is not
  * carried since 2026-11-05: retired as a gate and archived read-only; the Estate's versions are in
- * estate_status, and each part's own CI is its gate.
+ * estate_status, and each part's own CI is its gate. Each folder is Settings' estate entry (`layout`, settings.cjs
+ * estateDir), today's layout by default (Steward ADR-0020).
  */
-function worldsFor(ground) {
+function worldsFor(ground, layout) {
   return [
     ['research', ground],
-    ['atlas', path.join(ground, 'atlas')],
-    ['secondbrain', path.join(ground, 'worlds', 'jesster')],
-    ['steward', path.join(ground, 'worlds', 'steward')],
+    ['atlas', estateDir(ground, layout, 'atlas')],
+    ['secondbrain', estateDir(ground, layout, 'jesster')],
+    ['steward', estateDir(ground, layout, 'steward')],
   ];
 }
 
@@ -222,7 +224,7 @@ function worldsFor(ground) {
  * so a ground set in Settings is carried without a restart; the hold queue
  * lives as long as the ground does.
  */
-function serve(getGround, opts = {}) {
+function serve(getGround, { layout = () => null, ...opts } = {}) {
   let ground = null;
   let reg = null;
   let inner = null;
@@ -237,7 +239,7 @@ function serve(getGround, opts = {}) {
       if (inner) inner.stop();
       ground = g;
       inner = new InnerDoor(g);
-      reg = build(worldsFor(g), { defaultProject: 'research', coreCmd: `python ${path.join(g, 'manjuel.py')}`, getInner: () => inner, ...opts });
+      reg = build(worldsFor(g, layout()), { defaultProject: 'research', coreCmd: `python ${path.join(g, 'manjuel.py')}`, getInner: () => inner, ...opts });
     }
     return reg;
   };
@@ -317,7 +319,7 @@ async function flowCall(door, name, args) {
 function register({ atlas, ipcMain, guard, getSettings, vaultDir, getAgent, showAgent }) {
   const { findGround } = require('../atlasglass.cjs');
   const extra = [holdStatusTool, ...(getAgent ? agentTools(getAgent, showAgent) : [])];
-  const door = serve(() => findGround((getSettings().get('atlas') || {}).ground, vaultDir()), { extra });
+  const door = serve(() => findGround((getSettings().get('atlas') || {}).ground, vaultDir()), { extra, layout: () => getSettings().get('estate') });
   atlas.useDoor(door);
   process.on('exit', () => door.stop());
   ipcMain.handle('door:holds', async (event, project) => {
