@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const { Registry, core } = require('./tools.cjs');
 const { runTurn, newSessionId, saveSession, messagesFromNote } = require('./agent.cjs');
 const { stewardTransport } = require('../settings.cjs');
+const summary = require('./summary.cjs');
 
 // where a turn to Steward comes from, told to him on its first line (the operator, 2026-11-04: "this is the pc" and
 // "this is the phone"); the phone's channels are kept off the Agent tab's chat list (they are the Phone view's)
@@ -24,6 +25,8 @@ const CARD_TIMEOUT_MS = 600000;
 // watching, so its cards go to the window, the Approvals shelf and Telegram like any other, and unanswered in
 // CARD_TIMEOUT_MS they are answered No. An automation never approves itself.
 const AUTOMATION = 'automation';
+// the sources whose turns end with a summary (summary.cjs): nobody is at the PC to see how they ended
+const SUMMARIZED = [...PHONE, AUTOMATION];
 
 /** The line naming where a turn came from; an automation's names its schedule (schedules.cjs, backend steward). */
 function sourceLine(source, automation) {
@@ -143,6 +146,7 @@ class AgentService {
   refuseCards(s, source, review = false) {
     return (name, args, summary) => {
       s.refused = (s.refused || 0) + 1;
+      if (!review) s.run?.cards.push({ name, answer: 'refused' });
       const tool = review ? 'review' : name;
       const text = review ? `Improvement round: attempt ${name?.attempt ?? '?'}` : summary;
       this.answered({ id: crypto.randomBytes(6).toString('hex'), tool, summary: text, answer: READ_ONLY[source], where: source, time: new Date().toISOString() });
@@ -219,6 +223,8 @@ class AgentService {
     const guidance = typeof text === 'string' && text.trim() ? text.trim() : '';
     const answer = p.kind === 'review' ? (guidance ? 'guidance' : allow ? 'keep' : 'drop') : timeout ? 'timeout' : allow ? (always ? 'always' : 'allow') : 'deny';
     this.answered({ id, tool: p.name, summary: p.summary, answer, where, time: new Date().toISOString(), ...(p.source ? { source: p.source } : {}) });
+    // the turn's run keeps how each of its cards was answered, for its summary (summary.cjs)
+    this.sessions.get(p.sessionId)?.run?.cards.push({ name: p.name, answer });
     if (p.kind === 'review') {
       p.resolve(guidance || (allow ? 'keep' : 'drop'));
       return true;
@@ -294,11 +300,19 @@ class AgentService {
     // a chat-and-research-only channel (READ_ONLY): every approval of this turn is refused, and counted for its reply
     const readOnly = Boolean(READ_ONLY[source]);
     s.refused = 0;
-    const result = (answer, extra = {}) => ({ sessionId: id, answer, ...extra, ...(s.refused ? { refused: s.refused, needsApproval: NEEDS_APPROVAL } : {}) });
+    // what this turn did, for the phone's summary when it ends (Steward's ADR-0016: an away run never ends silently)
+    const run = (s.run = { text, calls: [], cards: [], error: null, stopped: false });
+    const ending = (answer) => {
+      // an automation's run always ends with one (nobody asked it from a chat); a phone turn's when it did something
+      if (!SUMMARIZED.includes(source) || (source !== AUTOMATION && !summary.needed(run))) return {};
+      return { summary: summary.summarize({ ...run, answer }, { cardWaitMs: cardTimeoutMs }) };
+    };
+    const result = (answer, extra = {}) => ({ sessionId: id, answer, ...extra, ...(s.refused ? { refused: s.refused, needsApproval: NEEDS_APPROVAL } : {}), ...ending(answer) });
     s.messages.push({ role: 'user', content: text });
     const { host, model, maxSteps: defaultSteps, backend } = this.getModel();
     const vault = this.getVault();
     const send = (e) => {
+      if (e.type === 'tool') run.calls.push({ name: e.name, args: e.args });
       this.emit('agent:event', { sessionId: id, ...e });
       onEvent?.(e);
     };
@@ -328,6 +342,8 @@ class AgentService {
       return result(answer);
     } catch (e) {
       const msg = e.name === 'AbortError' || e.message === 'stopped' ? 'Stopped.' : e.message;
+      if (msg === 'Stopped.') run.stopped = true;
+      else run.error = msg;
       s.messages.push({ role: 'assistant', content: msg });
       send({ type: 'error', text: msg });
       return result(msg, { error: true });

@@ -300,8 +300,9 @@ test("the phone's exchange is kept for the Phone view (text, reply, card and its
     tg.push({ message: { chat: { id: 42, first_name: 'Kyle' }, text: 'note this' } });
     await until(() => service.cards().length === 1);
     service.answerApproval(service.cards()[0].id, true, false); // answered in the window, as the Phone view does
-    await until(() => log.read('telegram', '42').some((e) => e.kind === 'reply'));
-    assert.deepEqual(log.read('telegram', '42').map((e) => e.kind).reverse(), ['user', 'card', 'answer', 'reply']);
+    // the run had a card, so his reply is followed by Jesster's summary of it (summary.cjs, Steward's ADR-0016)
+    await until(() => log.read('telegram', '42').some((e) => e.kind === 'summary'));
+    assert.deepEqual(log.read('telegram', '42').map((e) => e.kind).reverse(), ['user', 'card', 'answer', 'reply', 'summary']);
     assert.equal(log.list()[0].label, 'Telegram · Kyle');
     assert.match(seen[0].text, /^\[from the phone \(Telegram\) \| [^\]]+ local \(UTC[+-]\d\d:\d\d\) \| [^\]]*\d\d:\d\d UTC\]\nnote this$/);
     const sid = phone.chatSessions(sessionsFile, 'telegram').get('42');
@@ -314,7 +315,8 @@ test("the phone's exchange is kept for the Phone view (text, reply, card and its
     tg.push({ message: { chat: { id: 42, first_name: 'Kyle' }, text: 'and again' } });
     await until(() => service.cards().length === 1);
     service.answerApproval(service.cards()[0].id, false, false);
-    await until(() => log.read('telegram', '42')[0]?.kind === 'reply' && log.read('telegram', '42')[0].text === 'not written');
+    await until(() => log.read('telegram', '42')[0]?.kind === 'summary' && log.read('telegram', '42')[1].text === 'not written');
+    assert.match(log.read('telegram', '42')[0].text, /^Result: stopped at the write_note card: you answered No\.$/m);
     assert.equal(seen[1].previous, 'r1', "Steward's thread continues");
     assert.ok(log.read('telegram', '42').every((e) => e.sessionId === sid));
   } finally {

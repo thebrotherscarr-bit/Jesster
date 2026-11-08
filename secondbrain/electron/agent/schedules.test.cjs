@@ -103,7 +103,10 @@ test('a Steward schedule sends its prompt to Steward as an automation turn; its 
   const t1 = at('2026-11-05T23:00:30');
   // the card's timer is unref'd (it never holds SecondBrain open), so the test holds the event loop while it waits
   const hold = setInterval(() => {}, 1000);
-  const r = await runSchedule(schedules.due(t1)[0], { schedules, agent, vault, now: t1, onCard: (c) => phone.push(c) }).finally(() => clearInterval(hold));
+  // the run's summary reaches Telegram though this schedule delivers only a note (Steward's ADR-0016: never silent)
+  const summaries = [];
+  const deliverers = { telegram: async (text) => summaries.push(text) };
+  const r = await runSchedule(schedules.due(t1)[0], { schedules, agent, vault, now: t1, onCard: (c) => phone.push(c), deliverers }).finally(() => clearInterval(hold));
 
   assert.equal(asked[0].source, 'automation');
   assert.equal(asked[0].automation, 'Overnight evals');
@@ -121,12 +124,16 @@ test('a Steward schedule sends its prompt to Steward as an automation turn; its 
   assert.match(note.content, /daily at 23:00, Steward/);
   assert.match(note.content, /Started aider-py-2026-11-05/);
   assert.equal(schedules.all().find((x) => x.id === s.id).lastResult, 'ok');
+  assert.equal(summaries.length, 1);
+  assert.match(summaries[0], /^Overnight evals: Summary\nAsked: Start the overnight evals/);
+  assert.match(summaries[0], /^Result: stopped at the secondbrain_service_control card: no answer in 1 second \(counted as No\)\.$/m);
 
   // with no Steward set up, the run fails and says why; it never falls back to the local loop
   const none = new AgentService({ getVault: () => vault, getModel: () => ({ backend: 'local' }) });
-  const failed = await runSchedule(schedules.all().find((x) => x.id === s.id), { schedules, agent: none, vault, now: at('2026-11-06T23:00:00') });
+  const failed = await runSchedule(schedules.all().find((x) => x.id === s.id), { schedules, agent: none, vault, now: at('2026-11-06T23:00:00'), deliverers });
   assert.equal(failed.ok, false);
   assert.match(failed.answer, /Steward is not set up/);
+  assert.match(summaries[1], /^Result: failed: Steward is not set up/m, 'a failure reaches the phone too');
 });
 
 test('an automation card answered in time is the answer, and the timer ends with it', async () => {
