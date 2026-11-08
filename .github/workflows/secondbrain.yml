@@ -63,13 +63,9 @@ jobs:
   # The Flows shelf end to end (secondbrain/e2e/, Playwright's Electron support): the built app with a temp settings
   # folder and vault and a local fake for Steward's MCP host; no network. Windows, the operator's platform, on the
   # image windows-latest resolved to (as prove-updater pins it). Like verify, it reports on every pull request.
-  # Run five times in parallel while its stability is measured: a flip is a defect, never retried.
+  # Its stability was measured on Jesster #101: five runs in parallel, all green (15 to 18 s for the suite). A flip is a
+  # defect, never retried. `e2e` is a required check on main.
   e2e:
-    name: e2e (run ${{ matrix.run }})
-    strategy:
-      fail-fast: false
-      matrix:
-        run: [1, 2, 3, 4, 5]
     runs-on: windows-2025-vs2026
     timeout-minutes: 15
     defaults:
