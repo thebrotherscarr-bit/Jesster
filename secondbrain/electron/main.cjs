@@ -498,6 +498,7 @@ function checkStewardTurn({ turn, signal }) {
     chat: integrations.chat,
     config: { key: claude.key, model: claude.model || integrations.PROVIDERS.anthropic.defaultModel },
     charter: charter && charter.content,
+    owner: getSettings().get('owner'),
     turn,
     signal,
   });

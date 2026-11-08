@@ -22,6 +22,24 @@ test("Claude's check gets the Charter, every tool call with its result, and the 
   }
 });
 
+test("the check names the system's owner from Settings' owner, today's name by default (ADR-0020)", async () => {
+  const fs = require('fs');
+  const path = require('path');
+  const { DEFAULTS } = require('../settings.cjs');
+  assert.equal(DEFAULTS.owner, checker.OWNER);
+  assert.equal(checker.SYSTEM, checker.system(DEFAULTS.owner), 'unchanged on this PC');
+  let sent = null;
+  const chat = async (req) => ((sent = req), 'Holds up.');
+  await checker.check({ chat, config: { key: 'k', model: 'm' }, turn: { text: 'q', calls: [], answer: 'a' }, owner: 'Sam' });
+  assert.match(sent.system, /for Sam, who owns the system/);
+  assert.match(sent.system, /Did he do what Sam asked\?/);
+  assert.match(sent.messages[0].content, /^## Sam's message/);
+  assert.ok(!/Kyle/.test(sent.system + sent.messages[0].content), 'no other name is left in what the model reads');
+  // main.cjs hands Settings' owner to the check
+  const main = fs.readFileSync(path.join(__dirname, '..', 'main.cjs'), 'utf8');
+  assert.match(main, /owner: getSettings\(\)\.get\('owner'\),/);
+});
+
 test('a long tool result is clipped, and a missing one says so', () => {
   const t = checker.transcript({ text: 'q', calls: [{ name: 'read', arguments: {}, result: 'x'.repeat(5000) }, { name: 'ls', arguments: {} }], answer: 'a' });
   assert.match(t, /more characters\)/);

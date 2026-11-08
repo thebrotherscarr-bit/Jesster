@@ -7,6 +7,11 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ### Changed
 
+- Claude's check of a Steward turn names the system's owner from Settings' new `owner` (`'Kyle'`, today's, the
+  default), in its instructions and in the turn it reads (`agent/checker.cjs` `system(owner)`, `transcript(turn,
+  owner)`), instead of a name written into the prompt (Steward ADR-0020, ExecPlan 0006 P1, audit B1). Wire:
+  `checker.test.cjs` ("the check names the system's owner from Settings' owner ..."), red with the instructions built
+  without it.
 - The Estate's repositories are Settings' new `estate` entry (`atlas`, `jesster`, `steward`, each relative to the ground
   or absolute), today's layout (`atlas`, `worlds/jesster`, `worlds/steward`) the default, for both the door's worlds
   (`door/index.cjs` `worldsFor`) and the Estate's versions (`agent/workflows.cjs` `estateRepos`) (Steward ADR-0020,
