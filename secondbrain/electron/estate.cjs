@@ -19,7 +19,7 @@
  *                              state and ms (Steward's recipe_status / recipe_runs, the shelf's own reads), the reason
  *
  * The saved_flow* names keep the Flows shelf's tools apart from the door's flow_* (Manjuel's engine flows, forwarded
- * on this same MCP): Steward ADR-0016.
+ * on this same MCP): Steward ADR-0017.
  *
  * A write is served only while the operator allows writes (Settings → Share), as WRITE_TOOLS are, and each says so
  * in its MCP annotations (readOnlyHint false), so Steward's side puts it on the operator's card.
@@ -169,7 +169,7 @@ const ESTATE_TOOLS = [
 const NAMES = ESTATE_TOOLS.map((t) => t.name);
 
 /**
- * Steward ADR-0016: every Flows-shelf action has its tool on this MCP. Each of the shelf's IPC handlers (main.cjs
+ * Steward ADR-0017: every Flows-shelf action has its tool on this MCP. Each of the shelf's IPC handlers (main.cjs
  * `schedules:*`) names the tool that does the same thing here, or says why there is none yet. A handler added to the
  * shelf with no entry here, or an entry naming a tool this MCP does not serve, fails atlas.test.cjs.
  */

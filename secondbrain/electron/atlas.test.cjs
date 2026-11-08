@@ -651,7 +651,7 @@ test("saved_flows and saved_flow_run: the Flows shelf's Run now over MCP, read-o
   assert.match(none.result.content[0].text, /not served here/);
 });
 
-test("saved_flow_run is start-verified and saved_flow_status reads the run: steps, ms and a failed run's reason (ADR-0016)", async () => {
+test("saved_flow_run is start-verified and saved_flow_status reads the run: steps, ms and a failed run's reason (ADR-0017)", async () => {
   const { Schedules, runNow } = require('./agent/schedules.cjs');
   const { registry, ctx } = setup();
   const vault = new Vault(fs.mkdtempSync(path.join(os.tmpdir(), 'flows-status-')));
@@ -727,7 +727,7 @@ test("saved_flow_run is start-verified and saved_flow_status reads the run: step
   assert.match((await call('saved_flow_status', { id: 'nope' })).error, /no flow "nope"/);
 });
 
-test('every Flows-shelf action has its tool on the MCP, or says why not (ADR-0016)', () => {
+test('every Flows-shelf action has its tool on the MCP, or says why not (ADR-0017)', () => {
   const estate = require('./estate.cjs');
   const main = fs.readFileSync(path.join(__dirname, 'main.cjs'), 'utf8');
   const handlers = [...main.matchAll(/ipcMain\.handle\('(schedules:[A-Za-z]+)'/g)].map((m) => m[1]).sort();
