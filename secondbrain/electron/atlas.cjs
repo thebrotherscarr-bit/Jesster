@@ -56,7 +56,7 @@ function withAtlas(configText, entry) {
 // reads for its check; its apply is a write, refused while writes are off.
 // eval_start is an Estate action of the bounded kind, read-class here (served while writes are off, never on a card):
 // it only runs Steward's eval sets, which write only his eval history and throwaway working copies (estate.cjs).
-const ESTATE_READ_TOOLS = ['estate_status', 'estate_logs', 'approvals_history', 'app_update', 'eval_start', 'eval_status', 'saved_flows', 'saved_flow_run'];
+const ESTATE_READ_TOOLS = ['estate_status', 'estate_logs', 'approvals_history', 'app_update', 'eval_start', 'eval_status', 'saved_flows', 'saved_flow_run', 'saved_flow_status'];
 const ESTATE_WRITE_TOOLS = ['service_control', 'ollama_unload'];
 const READ_TOOLS = ['search_notes', 'read_note', 'list_notes', 'search_sessions', 'skills_list', 'skill_view', 'web_search', 'web_fetch', ...ESTATE_READ_TOOLS];
 const WRITE_TOOLS = ['write_note', 'append_to_note', 'todo', 'memory', 'skill_save', ...ESTATE_WRITE_TOOLS];

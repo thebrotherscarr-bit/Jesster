@@ -650,3 +650,94 @@ test("saved_flows and saved_flow_run: the Flows shelf's Run now over MCP, read-o
   const none = await atlas.handleMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'saved_flows', arguments: {} } }, { registry, ctx: { ...ctx, estate } });
   assert.match(none.result.content[0].text, /not served here/);
 });
+
+test("saved_flow_run is start-verified and saved_flow_status reads the run: steps, ms and a failed run's reason (ADR-0016)", async () => {
+  const { Schedules, runNow } = require('./agent/schedules.cjs');
+  const { registry, ctx } = setup();
+  const vault = new Vault(fs.mkdtempSync(path.join(os.tmpdir(), 'flows-status-')));
+  const schedules = new Schedules(() => vault);
+  const drift = schedules.add({ name: 'Repo drift check', when: '', backend: 'steward', steps: ['versions', 'repo_log'] });
+  const bfcl = schedules.add({ name: 'Eval: bfcl', when: '', backend: 'steward', steps: [{ step: 'eval_start', sets: ['bfcl'] }, 'eval_wait'] });
+  const legacy = schedules.add({ name: 'Morning digest', when: '', backend: 'steward', prompt: 'Summarise my day' });
+  const runs = { r1: { run_id: 'r1', state: 'running', steps: [{ id: 'versions', state: 'done', ms: 120 }, { id: 'repo_log', state: 'running', ms: null }] } };
+  let down = false;
+  const asked = [];
+  const steward = {
+    runRecipe: async (recipe) => {
+      if (down) throw new Error("Steward's MCP host is not answering");
+      return { run_id: recipe.name === 'Eval: bfcl' ? 'r2' : 'r1' };
+    },
+    recipeStatus: async (id) => (asked.push(id), runs[id] || { run_id: id, state: 'running', steps: [] }),
+    recipeRuns: async (flow) => (flow === drift.id ? [{ run_id: 'r1', trigger: 'now', state: 'failed', ok: false, error: 'repo_log: git exited 128', steps: [{ id: 'versions', state: 'done', ms: 120 }, { id: 'repo_log', state: 'failed', ms: 40, ok: false }] }] : []),
+  };
+  const agent = { ask: async () => ({ answer: 'Your day: two meetings.' }) };
+  const deps = { schedules, vault, agent, steward, deliverers: {} };
+  const flows = {
+    list: () => schedules.all(),
+    run: async (id) => ({ ...(await runNow(id, deps)), schedules: schedules.all() }),
+    status: (runId) => steward.recipeStatus(runId),
+    runs: (id, limit) => steward.recipeRuns(id, limit),
+  };
+  const { estate } = fakeEstate();
+  const c = { registry, ctx: { ...ctx, estate: { ...estate, flows } } };
+  const call = async (name, args) => {
+    const r = await atlas.handleMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }, c);
+    return r.result.isError ? { error: r.result.content[0].text } : JSON.parse(r.result.content[0].text);
+  };
+  const listed = await atlas.handleMcp({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }, c);
+  const status = listed.result.tools.find((t) => t.name === 'saved_flow_status');
+  assert.ok(status, 'served with the reads, writes off');
+  assert.equal(status.annotations.readOnlyHint, true);
+  assert.ok(!listed.result.tools.some((t) => t.name === 'flow_status' || t.name === 'flow_run'), "the door's flow_* names are not shadowed");
+
+  // a step flow: started is what Steward says, read back once
+  const run = await call('saved_flow_run', { id: drift.id });
+  assert.deepEqual([run.started, run.run_id, run.state], [true, 'r1', 'running']);
+  assert.deepEqual(asked, ['r1'], "Steward's state read back once after the start");
+  assert.deepEqual(run.steps.map((x) => [x.step, x.state, x.ms]), [['versions', 'done', 120], ['repo_log', 'running', null]]);
+  const byFlow = await call('saved_flow_status', { id: drift.id });
+  assert.deepEqual([byFlow.name, byFlow.state, byFlow.run_id, byFlow.reason], ['Repo drift check', 'running', 'r1', null]);
+  runs.r1 = { run_id: 'r1', state: 'done', ok: true, short: 'all current', steps: [{ id: 'versions', state: 'done', ms: 120 }, { id: 'repo_log', state: 'done', ms: 300 }] };
+  const byRun = await call('saved_flow_status', { run_id: 'r1' });
+  assert.deepEqual([byRun.state, byRun.short, byRun.steps[1].ms], ['done', 'all current', 300]);
+
+  // an eval flow starts the same way
+  const ev = await call('saved_flow_run', { id: bfcl.id });
+  assert.deepEqual([ev.started, ev.run_id], [true, 'r2']);
+
+  // the flow's run ended and was filed: its newest run in Steward's history, with the reason
+  schedules.update(drift.id, { pending: null, running: false, lastRun: Date.now(), lastResult: 'Failed: repo_log: git exited 128' });
+  const last = await call('saved_flow_status', { id: drift.id });
+  assert.deepEqual([last.state, last.reason, last.steps[1].state], ['failed', 'repo_log: git exited 128', 'failed']);
+
+  // Steward's host down: not started, and why
+  down = true;
+  schedules.update(drift.id, { pending: null, running: false });
+  const refused = await call('saved_flow_run', { id: drift.id });
+  assert.equal(refused.started, false);
+  assert.match(refused.reason, /not answering/);
+
+  // a legacy prompt flow runs inline: it has ended when the answer comes
+  const lg = await call('saved_flow_run', { id: legacy.id });
+  assert.deepEqual([lg.started, lg.state, lg.run_id], [true, 'done', null]);
+  const lgs = await call('saved_flow_status', { id: legacy.id });
+  assert.deepEqual([lgs.state, lgs.steps], ['done', []]);
+
+  assert.match((await call('saved_flow_status', {})).error, /needs a flow id .* or a run_id/);
+  assert.match((await call('saved_flow_status', { id: 'nope' })).error, /no flow "nope"/);
+});
+
+test('every Flows-shelf action has its tool on the MCP, or says why not (ADR-0016)', () => {
+  const estate = require('./estate.cjs');
+  const main = fs.readFileSync(path.join(__dirname, 'main.cjs'), 'utf8');
+  const handlers = [...main.matchAll(/ipcMain\.handle\('(schedules:[A-Za-z]+)'/g)].map((m) => m[1]).sort();
+  assert.deepEqual(handlers, Object.keys(estate.SHELF_ACTIONS).sort(), 'a shelf action with no entry in estate.SHELF_ACTIONS');
+  for (const [action, tool] of Object.entries(estate.SHELF_ACTIONS)) {
+    if (typeof tool === 'string') {
+      assert.ok(estate.NAMES.includes(tool), `${action}: ${tool} is not served`);
+      assert.ok(atlas.ESTATE_READ_TOOLS.includes(tool) || atlas.WRITE_TOOLS.includes(tool), `${action}: ${tool} is in no tool list`);
+    } else assert.ok((tool.none || tool.pending || '').length > 10, `${action}: says why it has no tool`);
+  }
+  // the door's flow_* (Manjuel's engine flows) are another system on the same MCP: never shadowed here
+  assert.ok(!estate.NAMES.some((n) => n.startsWith('flow_')));
+});
