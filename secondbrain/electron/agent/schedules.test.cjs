@@ -155,7 +155,10 @@ test("main.cjs hands the scheduler Telegram's cards and the Estate Steward's eva
   assert.match(main, /await sched\.resumeSchedules\(scheduleDeps\(\)\)/);
   assert.match(main, /const stewardEvals = \(\) => estate\.evalsApi\(\{ stewardDir: stewardDirNow \}\)/);
   assert.match(main, /evals: stewardEvals\(\),/);
-  assert.match(main, /const stewardRecipes = workflows\.stewardRecipes\(\{ url: `http:\/\/127\.0\.0\.1:\$\{steward\.MCP_PORT\}\/mcp` \}\)/);
+  // Steward's MCP host on its port; SECONDBRAIN_STEWARD_MCP_URL only for the Playwright suite's fake host (e2e/)
+  assert.match(main, /const stewardRecipes = workflows\.stewardRecipes\(\{ url: process\.env\.SECONDBRAIN_STEWARD_MCP_URL \|\| `http:\/\/127\.0\.0\.1:\$\{steward\.MCP_PORT\}\/mcp` \}\)/);
+  assert.match(main, /schedulerTimer = setInterval\(schedulerTick, SCHEDULER_MS\);/);
+  assert.match(main, /const SCHEDULER_MS = Number\(process\.env\.SECONDBRAIN_SCHEDULER_MS\) \|\| 30000;/, 'the tick is 30 s unless the suite sets it');
   assert.ok(main.includes('    steward: stewardRecipes,'), 'the scheduler hands workflows to Steward')
   // the Flows shelf's Set up and Run now (2026-11-05): a change goes through edit, busy is the agent's
   assert.match(main, /ipcMain\.handle\('schedules:edit', \(event, id, spec\) => \{\s+guard\(event\);\s+getSchedules\(\)\.edit\(id, spec \|\| \{\}\);/);

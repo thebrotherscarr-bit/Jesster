@@ -34,6 +34,13 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
   says `started: false` with the reason when Steward did not take the run; a legacy prompt flow, run inline, says
   `started: true` and how it ended. The `saved_flow*` names stay apart from the door's `flow_*` (Manjuel's engine flows
   on the same MCP). Steward is offered all three (Steward's pull request with ADR-0016).
+- End-to-end tests for the Flows shelf (`secondbrain/e2e/`, `@playwright/test` 1.65.0 pinned, Playwright's Electron
+  support): the built app launched with a temp settings folder and vault holding an eval flow, a recipe flow and a
+  legacy prompt flow, and Steward's MCP host replaced by a local fake (`e2e/fake-steward.mjs`). Run now on each one
+  reaches Steward's `run_recipe` with the flow's id and trigger `now` (the legacy prompt runs on the local loop), shows
+  running, then is filed ok or failed with its reason; + New flow builds, wires and saves a 3-block flow; Set up makes
+  an automation of it. The `secondbrain` workflow runs them in an `e2e` job on Windows. Three test-only variables in
+  `main.cjs`, none set in normal use: `SECONDBRAIN_USER_DATA`, `SECONDBRAIN_STEWARD_MCP_URL`, `SECONDBRAIN_SCHEDULER_MS`.
 - `saved_flows` and `saved_flow_run` on SecondBrain's MCP: the Flows shelf's saved flows with their run state, and Run
   now on one by id through the shelf's own path (`schedules.cjs runNow`, which `schedules:run` calls too). Bounded and
   served with the reads, like `eval_start`. Steward is not offered them (his MCP `allowed_tools` name each tool he gets).
