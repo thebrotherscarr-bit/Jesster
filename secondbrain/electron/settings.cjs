@@ -37,6 +37,7 @@ const DEFAULTS = {
   services: {
     ollama: {
       enabled: false,
+      exe: '', // '' finds ollama.exe in %LOCALAPPDATA%\Programs\Ollama, then on PATH (services.cjs findOllama)
       env: { OLLAMA_HOST: '127.0.0.1', OLLAMA_KV_CACHE_TYPE: 'q8_0', OLLAMA_FLASH_ATTENTION: '1', OLLAMA_CONTEXT_LENGTH: '65536', OLLAMA_NUM_PARALLEL: '1', OLLAMA_MAX_LOADED_MODELS: '2', OLLAMA_KEEP_ALIVE: '30m', OLLAMA_NO_CLOUD: '1', OLLAMA_MODELS: '' },
     },
   },
