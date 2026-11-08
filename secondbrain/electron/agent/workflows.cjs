@@ -19,10 +19,10 @@
  * whenever he says (ADR-0009; 2026-11-08, after a busy Steward held every Run now on the shelf and no flow started).
  */
 const http = require('http');
-const path = require('path');
 const { execFile } = require('child_process');
 const estate = require('../estate.cjs');
 const mcpv = require('../mcpversion.cjs');
+const { estateDir } = require('../settings.cjs');
 
 const STEPS = ['repo_log', 'merged_prs', 'releases', 'eval_bars', 'plan_left', 'versions', 'pull_ff', 'eval_start', 'eval_wait'];
 const EVAL_MAX_HOURS = 8;
@@ -185,14 +185,15 @@ function run(cmd, args, cwd, timeout = 60000) {
 /**
  * The Estate's repositories from the ground (Desktop\Research); `releases` marks the two whose releases are read.
  * Neiro is not one since 2026-11-05: retired as a gate and archived read-only, each part's own CI is its gate.
+ * Each folder is Settings' estate entry (`layout`, settings.cjs estateDir), today's layout by default (Steward ADR-0020).
  */
-function estateRepos(ground) {
+function estateRepos(ground, layout) {
   if (!ground) return [];
   return [
     { name: 'research', dir: ground, ground: true },
-    { name: 'steward', dir: path.join(ground, 'worlds', 'steward') },
-    { name: 'jesster', dir: path.join(ground, 'worlds', 'jesster'), releases: true },
-    { name: 'atlas', dir: path.join(ground, 'atlas'), releases: true },
+    { name: 'steward', dir: estateDir(ground, layout, 'steward') },
+    { name: 'jesster', dir: estateDir(ground, layout, 'jesster'), releases: true },
+    { name: 'atlas', dir: estateDir(ground, layout, 'atlas'), releases: true },
   ];
 }
 

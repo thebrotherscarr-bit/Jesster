@@ -63,3 +63,12 @@ test('settings keep defaults, merge sections, and never show the bot token', () 
   assert.deepEqual(again.get('telegram').allowedChats, []);
   assert.equal(again.public().telegram.token, '••••••abcd');
 });
+
+test("the inbox's bridge repository is Settings' inbox.repo, today's by default (ADR-0020)", () => {
+  const { REPO } = require('./inbox.cjs');
+  const { DEFAULTS } = require('./settings.cjs');
+  assert.equal(DEFAULTS.inbox.repo, REPO, 'unchanged on this PC');
+  assert.equal(DEFAULTS.inbox.clone, null, 'and off until connected');
+  const main = fs.readFileSync(path.join(__dirname, 'main.cjs'), 'utf8');
+  assert.match(main, /inbox\.connect\(r\.filePaths\[0\], getSettings\(\)\.get\('inbox'\)\.repo\)/, 'Connect clones the one Settings names');
+});

@@ -29,11 +29,33 @@ const QUICK_DEATHS = 5;
 // a ROCm override from another card's setup: it makes Ollama pick the wrong kernels for this one
 const DROPPED = ['HSA_OVERRIDE_GFX_VERSION'];
 
-/** ollama.exe where its installer puts it (%LOCALAPPDATA%\Programs\Ollama), or '' when it is not there. */
-function findOllama(env = process.env) {
-  if (!env.LOCALAPPDATA) return '';
-  const exe = path.join(env.LOCALAPPDATA, 'Programs', 'Ollama', 'ollama.exe');
-  return fs.existsSync(exe) ? exe : '';
+/**
+ * ollama.exe, first match wins (Steward ADR-0020): `configured` (Settings' services.ollama.exe) when it is a file, else
+ * where its installer puts it (%LOCALAPPDATA%\Programs\Ollama, today's and the default), else the first ollama on PATH;
+ * '' when none is there.
+ */
+function findOllama(env = process.env, configured = '') {
+  const isFile = (p) => {
+    try {
+      return Boolean(p) && fs.statSync(p).isFile();
+    } catch {
+      return false;
+    }
+  };
+  if (isFile(configured)) return configured;
+  if (env.LOCALAPPDATA) {
+    const exe = path.join(env.LOCALAPPDATA, 'Programs', 'Ollama', 'ollama.exe');
+    if (isFile(exe)) return exe;
+  }
+  // a copy of the environment is case-sensitive where Windows' own is not: PATH may be spelled Path
+  const key = Object.keys(env || {}).find((k) => k.toUpperCase() === 'PATH');
+  for (const dir of String((key && env[key]) || '').split(path.delimiter)) {
+    for (const name of ['ollama.exe', 'ollama']) {
+      const exe = dir && path.join(dir.replace(/^"|"$/g, ''), name);
+      if (isFile(exe)) return exe;
+    }
+  }
+  return '';
 }
 
 /**
@@ -78,13 +100,13 @@ function ollamaServer({ getConfig, logDir, start = startOwned, probe = answering
   async function blocked() {
     if (!enabled() && !ours()) return OLLAMA_EXTERNAL; // switched off: one it started can still be stopped
     if (!ours() && (await probe(OLLAMA_PORT))) return enabled() ? OLLAMA_APP : OLLAMA_EXTERNAL;
-    if (!find(base)) return 'Ollama was not found in %LOCALAPPDATA%\\Programs\\Ollama.';
+    if (!find(base, cfg().exe)) return 'Ollama was not found: not in Settings (services.ollama.exe), in %LOCALAPPDATA%\\Programs\\Ollama or on PATH.';
     return '';
   }
   function launch() {
     fs.mkdirSync(logs(), { recursive: true });
     const began = now();
-    const c = start(find(base), ['serve'], logs(), ollamaEnv(cfg().env, base), ['ollama.log', 'ollama.log']);
+    const c = start(find(base, cfg().exe), ['serve'], logs(), ollamaEnv(cfg().env, base), ['ollama.log', 'ollama.log']);
     child = c;
     startedAt = new Date(began).toISOString();
     if (c && typeof c.once === 'function') c.once('exit', () => died(c, began));

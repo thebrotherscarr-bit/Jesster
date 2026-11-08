@@ -7,6 +7,35 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ### Changed
 
+- The notes folder is Settings' `vaultDir`, else the environment variable `JESSTER_VAULT` (the one the notes kernel and
+  `start-secondbrain.ps1` already read), else `Documents\SecondBrain`, today's default (`settings.cjs` `vaultDirOf`,
+  `main.cjs` `vaultDir`), so the app and the kernel can be pointed at one vault by one variable (Steward ADR-0020,
+  ExecPlan 0006 P1, audit A11). This PC names its vault in Settings, so it is unchanged. Wire: `settings.test.cjs`
+  ("the notes folder is Settings' vaultDir, else JESSTER_VAULT ..."), red with JESSTER_VAULT unread.
+- The inbox's bridge repository is Settings' new `inbox.repo` (today's `secondbrain-bridge` URL the default; empty
+  means the default): Connect clones the one Settings names (`inbox.cjs` `connect`, `main.cjs`). The inbox stays off
+  until connected (Steward ADR-0020, ExecPlan 0006 P1, audit B3). Wire: `inbox.test.cjs` ("the inbox's bridge
+  repository is Settings' inbox.repo ..."), red with Connect cloning the constant.
+- The updater reads its releases from Settings' new `update.repo` (owner/name; `thebrotherscarr-bit/Jesster`, today's,
+  the default), at every check, and holds downloads to that repository's release assets (`updater.cjs` `useRepo`,
+  `repo`, `downloadPrefix`; `main.cjs` hands Settings' value over); a value that is not owner/name is not used (Steward
+  ADR-0020, ExecPlan 0006 P1, audit B2). Wire: `settings.test.cjs` ("the updater's repository is Settings'
+  update.repo ..."), red with `repo()` ignoring Settings.
+- Claude's check of a Steward turn names the system's owner from Settings' new `owner` (`'Kyle'`, today's, the
+  default), in its instructions and in the turn it reads (`agent/checker.cjs` `system(owner)`, `transcript(turn,
+  owner)`), instead of a name written into the prompt (Steward ADR-0020, ExecPlan 0006 P1, audit B1). Wire:
+  `checker.test.cjs` ("the check names the system's owner from Settings' owner ..."), red with the instructions built
+  without it.
+- The Estate's repositories are Settings' new `estate` entry (`atlas`, `jesster`, `steward`, each relative to the ground
+  or absolute), today's layout (`atlas`, `worlds/jesster`, `worlds/steward`) the default, for both the door's worlds
+  (`door/index.cjs` `worldsFor`) and the Estate's versions (`agent/workflows.cjs` `estateRepos`) (Steward ADR-0020,
+  ExecPlan 0006 P1, audit A4). A name Settings leaves out keeps its default; the door reads it when it builds its
+  worlds. Wire: `door/index.test.cjs` ("the Estate's folders are Settings' estate entry ..."), red with the door
+  ignoring the layout.
+- `ollama.exe` is found in Settings' `services.ollama.exe` (new, `''` by default), then `%LOCALAPPDATA%\Programs\Ollama`
+  (today's, unchanged here), then the first `ollama` on PATH; when none has it, the Servers shelf says all three places
+  (Steward ADR-0020, ExecPlan 0006 P1, audit A13). Wire: `services.test.cjs` ("ollama.exe is Settings'
+  services.ollama.exe, else ..."), red with the Settings lookup taken out.
 - Every Steward process SecondBrain starts (his service, his MCP door, his AG-UI host) is handed SecondBrain's MCP URL
   and share key in its environment, `SECONDBRAIN_SHARE_URL` and `SECONDBRAIN_SHARE_KEY`, only while sharing is on, so a
   new install needs no key pasted into Steward's `.env` by hand (Steward ADR-0020, ExecPlan 0006 P1, audit D9 and E2).

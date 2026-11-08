@@ -202,6 +202,8 @@ let settings = null;
 function getSettings() {
   return settings || (settings = new Settings(app.getPath('userData')));
 }
+// the updater reads its repository from Settings' update.repo at every check (Steward ADR-0020)
+updater.useRepo(() => (getSettings().get('update') || {}).repo);
 
 // ---- notes as files ----------------------------------------------------
 // The notes folder (Settings' vaultDir, else JESSTER_VAULT, else Documents\SecondBrain: settings.cjs vaultDirOf) is
@@ -383,7 +385,7 @@ ipcMain.handle('inbox:connect', async (event) => {
     properties: ['openDirectory', 'createDirectory'],
   });
   if (r.canceled || !r.filePaths[0]) return inboxStatus();
-  const { dir } = await inbox.connect(r.filePaths[0]);
+  const { dir } = await inbox.connect(r.filePaths[0], getSettings().get('inbox').repo);
   getSettings().set('inbox', { clone: dir });
   scheduleInbox();
   await syncInbox();
@@ -498,6 +500,7 @@ function checkStewardTurn({ turn, signal }) {
     chat: integrations.chat,
     config: { key: claude.key, model: claude.model || integrations.PROVIDERS.anthropic.defaultModel },
     charter: charter && charter.content,
+    owner: getSettings().get('owner'),
     turn,
     signal,
   });
@@ -1149,7 +1152,7 @@ ipcMain.handle('services:log', (event, id, lines) => {
 // ---- the Estate for Steward (estate.cjs): the same registry, updater and history, as MCP tools on /mcp ----------
 // the Estate's versions on estate_status and the workflows' versions step: the ground's repositories, cached 60 s
 const estateVersions = estate.versionsApi({
-  repos: () => workflows.estateRepos(atlasGlass.findGround((getSettings().get('atlas') || {}).ground, vaultDir())),
+  repos: () => workflows.estateRepos(atlasGlass.findGround((getSettings().get('atlas') || {}).ground, vaultDir()), getSettings().get('estate')),
   run: workflows.run,
 });
 const stewardDirNow = () => steward.findSteward((getSettings().get('agent').steward || {}).dir, vaultDir());
