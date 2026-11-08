@@ -19,10 +19,23 @@ const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 
+// The repository whose releases this copy updates from: Settings' update.repo (main.cjs hands it over with useRepo,
+// read at every check), else this default, today's (Steward ADR-0020). A value that is not owner/name is not used.
 const REPO = 'thebrotherscarr-bit/Jesster';
 const TAG = /^secondbrain-b(\d+)$/;
 const ASSET = 'SecondBrain-win32-x64.zip';
-const DOWNLOAD_PREFIX = `https://github.com/${REPO}/releases/download/`;
+let getRepo = () => REPO;
+/** `fn()` names the repository (Settings' update.repo); read at every check. */
+function useRepo(fn) {
+  getRepo = typeof fn === 'function' ? fn : () => REPO;
+}
+/** The repository updates come from now: owner/name, else the default. */
+function repo() {
+  const r = String(getRepo() || '').trim();
+  return /^[A-Za-z0-9-]+\/[A-Za-z0-9._-]+$/.test(r) ? r : REPO;
+}
+/** A download is refused unless it is a release asset of that repository. */
+const downloadPrefix = () => `https://github.com/${repo()}/releases/download/`;
 
 const LOG = path.join(os.tmpdir(), 'secondbrain-update.log');
 
@@ -128,7 +141,7 @@ function get(url, { json = false, file = null, redirects = 5 } = {}) {
 /** What this copy is, and whether GitHub has a newer build. */
 async function check() {
   const current = buildInfo();
-  const releases = await get(`https://api.github.com/repos/${REPO}/releases?per_page=30`, { json: true });
+  const releases = await get(`https://api.github.com/repos/${repo()}/releases?per_page=30`, { json: true });
   let latest = null;
   for (const r of releases) {
     const m = TAG.exec(r.tag_name || '');
@@ -175,7 +188,7 @@ async function applySteps() {
   log(`latest on GitHub: ${state.latest ? `build ${state.latest.build}` : 'none'}; this is build ${state.current.build}`);
   if (!state.available) return { updated: false, detail: 'already up to date' };
   if (!state.canApply) return { updated: false, detail: 'self-update only runs in the packaged Windows app' };
-  if (!state.latest.url.startsWith(DOWNLOAD_PREFIX)) throw new Error('refusing a download from outside the app repository');
+  if (!state.latest.url.startsWith(downloadPrefix())) throw new Error('refusing a download from outside the app repository');
 
   const work = fs.mkdtempSync(path.join(os.tmpdir(), 'secondbrain-update-'));
   const zip = path.join(work, ASSET);
@@ -217,4 +230,4 @@ async function applySteps() {
   return { updated: true, to: state.latest.build };
 }
 
-module.exports = { buildInfo, check, apply, unzip, LOG };
+module.exports = { buildInfo, check, apply, unzip, useRepo, repo, downloadPrefix, REPO, LOG };

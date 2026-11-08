@@ -28,8 +28,12 @@ function isClone(dir) {
   return Boolean(dir) && fs.existsSync(path.join(dir, '.git'));
 }
 
-/** Clone the bridge repo into `parent` (or use the clone already there). */
+/**
+ * Clone the bridge repo into `parent` (or use the clone already there). `repo` is Settings' inbox.repo; empty, the
+ * default, today's (Steward ADR-0020).
+ */
 async function connect(parent, repo = REPO) {
+  repo = repo || REPO;
   const dir = path.basename(parent).toLowerCase() === 'secondbrain-bridge' && isClone(parent)
     ? parent
     : path.join(parent, 'secondbrain-bridge');
