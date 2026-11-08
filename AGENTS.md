@@ -53,6 +53,14 @@ cd secondbrain && timeout 300 npm run lint && timeout 900 npm test && timeout 60
 
 `npm run verify` is lint, test and build in one; the `secondbrain` workflow runs the same steps on every pull request.
 
+The Flows shelf end to end (`secondbrain/e2e/`, Playwright's Electron support): the built app with a temp settings
+folder and vault, and a local fake for Steward's MCP host; no network, no model, no Steward. It runs in the
+`secondbrain` workflow's `e2e` job on Windows. Never point it at the operator's running app or his settings.
+
+```bash
+cd secondbrain && timeout 600 npm run build && timeout 300 npm run e2e
+```
+
 ## Rules
 
 - `notes/` stays standard-library Python. A plugin is a module with `NAME`

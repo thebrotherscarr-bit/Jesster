@@ -40,6 +40,13 @@ const { ComputerRuntime } = require('./computer/desktop.cjs');
 const isDev = process.env.NODE_ENV === 'development';
 const distDir = path.join(__dirname, '..', 'dist');
 
+// Test-only, for the Playwright suite (e2e/, AGENTS.md); none is set in normal use. SECONDBRAIN_USER_DATA: a settings
+// folder of its own, so a test instance never reads the operator's settings or takes his single-instance lock.
+// SECONDBRAIN_STEWARD_MCP_URL: Steward's MCP host for the flows (a local fake in the suite). SECONDBRAIN_SCHEDULER_MS:
+// the scheduler's tick, so a parked run is filed in seconds, not half a minute.
+if (process.env.SECONDBRAIN_USER_DATA) app.setPath('userData', process.env.SECONDBRAIN_USER_DATA);
+const SCHEDULER_MS = Number(process.env.SECONDBRAIN_SCHEDULER_MS) || 30000;
+
 // A stable origin is required for localStorage persistence. Chromium keys
 // localStorage by full origin (including port), so an ephemeral port would
 // give the app a brand-new, empty storage bucket on every launch.
@@ -656,7 +663,7 @@ let schedulerBusy = false;
 // what a schedule runs with: a Steward schedule's cards go to Telegram too (phoneCard); a workflow's recipe is run by
 // Steward as a MAF workflow on his MCP host (agent/workflows.cjs stewardRecipes), and one that starts an eval waits for
 // any conversation mid-turn (busy)
-const stewardRecipes = workflows.stewardRecipes({ url: `http://127.0.0.1:${steward.MCP_PORT}/mcp` });
+const stewardRecipes = workflows.stewardRecipes({ url: process.env.SECONDBRAIN_STEWARD_MCP_URL || `http://127.0.0.1:${steward.MCP_PORT}/mcp` });
 function scheduleDeps() {
   return {
     schedules: getSchedules(),
@@ -1228,11 +1235,11 @@ if (!gotSingleInstanceLock) {
     } catch (e) {
       console.error('[SecondBrain] scheduler:', e);
     }
-    schedulerTimer = setInterval(schedulerTick, 30000);
+    schedulerTimer = setInterval(schedulerTick, SCHEDULER_MS);
     setTimeout(() => getTelegram().start(), 2000);
     if (channelOn('discord')) setTimeout(() => getDiscord().start(), 2000);
     if (channelOn('whatsapp')) setTimeout(() => getWhatsApp().start(), 2000);
-    setTimeout(schedulerTick, 15000);
+    setTimeout(schedulerTick, Math.min(15000, SCHEDULER_MS));
     // Steward warms up with the app, so the Agent tab's first message does not wait for his start
     if (getSettings().get('agent').backend === 'steward') stewardService.ensure().catch((e) => console.error('[SecondBrain] steward:', e.message));
     // and his MCP door, for Manjuel

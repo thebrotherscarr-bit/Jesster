@@ -10,3 +10,5 @@ coverage/
 .env*
 !.env.example
 electron/build.json
+test-results/
+playwright-report/
