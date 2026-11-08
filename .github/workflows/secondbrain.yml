@@ -59,3 +59,51 @@ jobs:
         run: npm test
       - if: steps.changed.outputs.app == 'true'
         run: npm run build
+
+  # The Flows shelf end to end (secondbrain/e2e/, Playwright's Electron support): the built app with a temp settings
+  # folder and vault and a local fake for Steward's MCP host; no network. Windows, the operator's platform, on the
+  # image windows-latest resolved to (as prove-updater pins it). Like verify, it reports on every pull request.
+  # Its stability was measured on Jesster #101: five runs in parallel, all green (15 to 18 s for the suite). A flip is a
+  # defect, never retried. `e2e` is a required check on main.
+  e2e:
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: secondbrain
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+      - name: what changed
+        id: changed
+        working-directory: .
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "app=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files="$(git diff --name-only HEAD^1 HEAD)"
+          echo "$files"
+          if echo "$files" | grep -qE '^(secondbrain/|\.github/workflows/secondbrain\.yml$)'; then
+            echo "app=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "app=false" >> "$GITHUB_OUTPUT"
+            echo "Nothing under secondbrain/ changed: e2e passes without building."
+          fi
+      - if: steps.changed.outputs.app == 'true'
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: secondbrain/.nvmrc
+      - if: steps.changed.outputs.app == 'true'
+        run: npm ci --legacy-peer-deps --ignore-scripts
+      # scripts are off, so Electron's runtime is fetched explicitly (as secondbrain-release does)
+      - if: steps.changed.outputs.app == 'true'
+        run: node node_modules/electron/install.js
+      - if: steps.changed.outputs.app == 'true'
+        run: npm run build
+      - if: steps.changed.outputs.app == 'true'
+        timeout-minutes: 5
+        run: npm run e2e
