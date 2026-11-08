@@ -7,6 +7,10 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ### Changed
 
+- `ollama.exe` is found in Settings' `services.ollama.exe` (new, `''` by default), then `%LOCALAPPDATA%\Programs\Ollama`
+  (today's, unchanged here), then the first `ollama` on PATH; when none has it, the Servers shelf says all three places
+  (Steward ADR-0020, ExecPlan 0006 P1, audit A13). Wire: `services.test.cjs` ("ollama.exe is Settings'
+  services.ollama.exe, else ..."), red with the Settings lookup taken out.
 - Every Steward process SecondBrain starts (his service, his MCP door, his AG-UI host) is handed SecondBrain's MCP URL
   and share key in its environment, `SECONDBRAIN_SHARE_URL` and `SECONDBRAIN_SHARE_KEY`, only while sharing is on, so a
   new install needs no key pasted into Steward's `.env` by hand (Steward ADR-0020, ExecPlan 0006 P1, audit D9 and E2).
