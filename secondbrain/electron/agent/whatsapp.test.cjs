@@ -212,6 +212,9 @@ test("WhatsApp with Steward as the agent: the source line, chat and research onl
     wa.message(ME, 'do one', { fromMe: true });
     await until(() => texts().includes('not written\n\nThat needs approval — ask from the PC or Telegram.'));
     assert.deepEqual(decided, [false]);
+    // then the run's summary, in this chat (WhatsApp is chat only; it is never sent to Telegram)
+    await until(() => texts().some((t) => t.startsWith('Summary\n')));
+    assert.match(texts().find((t) => t.startsWith('Summary\n')),/^Result: stopped at the write_note card: refused here: it needs approval from the PC or Telegram\.$/m);
     assert.equal(windowCards.length, 0, 'no card in the window');
     assert.equal(service.cards().length, 0);
     assert.ok(!texts().some((t) => /Reply 1|wants to use|Allowed|Denied/.test(t)), 'no card sent to the chat');

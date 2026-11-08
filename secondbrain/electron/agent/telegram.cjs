@@ -300,12 +300,18 @@ class Telegram {
     const sessionId = this.sessions.get(key) || newSessionId();
     if (this.sessions.get(key) !== sessionId) this.sessions.set(key, sessionId);
     this.record(chatId, { kind: 'user', text });
-    const reply = (r) => {
-      this.record(chatId, { kind: 'reply', text: r.answer });
-      return this.send(chatId, r.answer).catch((e) => {
+    // Steward's answer, then, when the run used a tool or a card or failed, Jesster's summary of how it ended (service.cjs
+    // `summary`, Steward's ADR-0016): never silent, a No, a timeout and a failure included
+    const reply = async (r) => {
+      const failed = (e) => {
         this.error = e.message;
         this.emit();
-      });
+      };
+      this.record(chatId, { kind: 'reply', text: r.answer });
+      await this.send(chatId, r.answer).catch(failed);
+      if (!r.summary) return;
+      this.record(chatId, { kind: 'summary', text: r.summary });
+      await this.send(chatId, r.summary).catch(failed);
     };
     let r;
     try {
@@ -316,6 +322,7 @@ class Telegram {
         approve: this.approver(chatId), // the local loop's risky tools
         onCard: this.cardSender(chatId), // Steward's cards
         onAnswer: reply, // the answer to a message that waited behind a card
+        cardTimeoutMs: this.cardTimeout, // the card wait, named in the summary when a card timed out
       });
     } catch (e) {
       await this.send(chatId, e.message); // e.g. still working on the last message

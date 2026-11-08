@@ -28,6 +28,15 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ### Added
 
+- The away loop's summary (Steward ADR-0016, ExecPlan 0005 M1, capabilities N1 to N4): when a turn from the phone or
+  an automation ends, Jesster sends one short summary after Steward's answer: what was asked, what ran, what it changed
+  (the path, file, flow or service a changing call named), and how it ended: done, stopped at a card answered No,
+  stopped at a card nobody answered in the card wait, refused (WhatsApp), stopped by /stop, or failed with the error.
+  Telegram turns get it on Telegram, WhatsApp turns in the WhatsApp chat (never Telegram), and a Steward automation's
+  run always gets it on Telegram, whatever the flow delivers. A plain chat answer with no tool, card or error gets none.
+  `electron/agent/summary.cjs`; the turn's run is recorded in `service.cjs` (`ask`). `away.test.cjs` runs the loop with
+  no phone: a fake Telegram Bot API, the real bridge and service, and the real AG-UI client against a fake Steward
+  host, for Yes (the same thread resumed from the card's checkpoint), No, no answer, and a failed run.
 - `saved_flow_status` on SecondBrain's MCP (Steward ADR-0017: every Flows-shelf action has its tool on Jesster's MCP):
   one saved flow's run by the flow's id (its waiting run, else its newest in Steward's history) or Steward's run id:
   running, done or failed, each step's state and ms, and a failed run's reason, through the shelf's own reads

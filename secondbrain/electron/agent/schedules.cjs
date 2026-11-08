@@ -22,6 +22,7 @@ const fs = require('fs');
 const path = require('path');
 
 const workflows = require('./workflows.cjs');
+const { summarize } = require('./summary.cjs');
 
 const DAYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const BACKENDS = ['local', 'steward'];
@@ -296,6 +297,7 @@ async function runSchedule(s, deps) {
   }
   let answer;
   let ok = true;
+  let told = null; // the run's summary for the phone (service.cjs), a Steward automation's only
   try {
     const r =
       s.backend === 'steward'
@@ -308,11 +310,23 @@ async function runSchedule(s, deps) {
           });
     answer = r.answer;
     ok = !r.error;
+    told = r.summary || null;
   } catch (e) {
     answer = `Failed: ${e.message}`;
     ok = false;
+    if (s.backend === 'steward') told = summarize({ text: s.prompt, calls: [], cards: [], error: e.message });
   }
-  return finish(s, { ...deps, now }, { ok, answer });
+  const filed = await finish(s, { ...deps, now }, { ok, answer });
+  // a Steward automation's run ends with its summary on Telegram whatever it delivers (Steward's ADR-0016: an
+  // unattended run never ends silently, failures included); a phone that is not set up is not an error here
+  if (told && deps.deliverers?.telegram) {
+    try {
+      await deps.deliverers.telegram(`${s.name}: ${told}`);
+    } catch {
+      /* Telegram not set up: the note and lastResult still carry the run */
+    }
+  }
+  return filed;
 }
 
 /**

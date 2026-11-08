@@ -377,10 +377,16 @@ class WhatsApp {
     // something needed approval and was refused: he is told plainly where to ask
     const answer = r.refused ? `${r.answer}\n\n${r.needsApproval}` : r.answer;
     this.record(chatId, { kind: 'reply', text: answer });
-    await this.send(remote, answer).catch((e) => {
+    const failed = (e) => {
       this.error = e.message;
       this.emit();
-    });
+    };
+    await this.send(remote, answer).catch(failed);
+    // the run's summary when it used a tool, was refused a card or failed (service.cjs `summary`, Steward's ADR-0016),
+    // here in the chat it came from: WhatsApp is chat only, so it is never sent to Telegram
+    if (!r.summary) return;
+    this.record(chatId, { kind: 'summary', text: r.summary });
+    await this.send(remote, r.summary).catch(failed);
   }
 
   /** To his own chat (when it is answered) and every approved one: the Phone view's test message. */
