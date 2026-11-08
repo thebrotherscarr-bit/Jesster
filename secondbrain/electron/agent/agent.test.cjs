@@ -207,6 +207,8 @@ test("Steward's folder is Settings' first, then STEWARD_DIR, then worlds\\stewar
   assert.equal(steward.findSteward('', vault, undefined, {}), beside, 'then the folder beside the notes (today on this PC)');
   assert.equal(steward.findSteward('', null, undefined, { STEWARD_DIR: fromEnv }), fromEnv, 'a clone anywhere, with no vault layout');
   assert.equal(steward.findSteward('', null, undefined, { STEWARD_DIR: path.join(worlds, 'nothing') }), null, 'a STEWARD_DIR without Steward in it is passed over');
+});
+
 test("Steward's Python is the venv's Scripts\\python.exe, else its bin/python (a venv built off Windows; ADR-0020)", () => {
   const steward = require('./steward.cjs');
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'steward-'));
