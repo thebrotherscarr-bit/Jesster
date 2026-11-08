@@ -271,3 +271,35 @@ test('each entry says the pid SecondBrain runs it as and since when; a log named
   assert.match(r.error, /keys file/);
   assert.ok(!JSON.stringify(r).includes('SECRET'));
 });
+
+test("ollama.exe is Settings' services.ollama.exe, else %LOCALAPPDATA%\\Programs\\Ollama, else the first on PATH (ADR-0020)", async () => {
+  const { findOllama } = require('./services.cjs');
+  const exe = (dir, name = 'ollama.exe') => {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, name), '');
+    return path.join(dir, name);
+  };
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'ollama-'));
+  const local = path.join(root, 'local');
+  const installed = exe(path.join(local, 'Programs', 'Ollama'));
+  const onPath = exe(path.join(root, 'bin'));
+  const chosen = exe(path.join(root, 'chosen'));
+  const env = { LOCALAPPDATA: local, Path: [path.join(root, 'none'), path.join(root, 'bin')].join(path.delimiter) };
+  assert.equal(findOllama(env, chosen), chosen, 'Settings wins');
+  assert.equal(findOllama(env, ''), installed, "then the installer's folder (today on this PC)");
+  assert.equal(findOllama(env, path.join(root, 'missing.exe')), installed, 'a Settings path that is not there is passed over');
+  assert.equal(findOllama({ LOCALAPPDATA: path.join(root, 'empty'), Path: env.Path }), onPath, 'then PATH, however it is spelled');
+  assert.equal(findOllama({}), '', 'none: empty');
+  // the server asks with Settings' value, and names all three places when none has it
+  const asked = [];
+  const server = ollamaServer({
+    getConfig: () => ({ ...DEFAULTS.services.ollama, enabled: true, exe: chosen }),
+    logDir: root,
+    probe: async () => false,
+    find: (base, configured) => (asked.push(configured), ''),
+    base: {},
+  });
+  const why = await server.blocked();
+  assert.equal(asked[0], chosen);
+  assert.equal(why, 'Ollama was not found: not in Settings (services.ollama.exe), in %LOCALAPPDATA%\\Programs\\Ollama or on PATH.');
+});

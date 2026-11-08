@@ -13,8 +13,11 @@
  *   - shows Steward's tool calls as tool lines, and his approval requests as the Agent tab's
  *     Allow/Deny cards, sending each answer back as an mcp_approval_response.
  *
- * No key crosses here: the service is loopback only, and Steward reaches SecondBrain with the
- * share key in his own .env.
+ * No key crosses the Agent tab's wire: the service is loopback only. Steward reaches SecondBrain with the share key
+ * in his own .env (SECONDBRAIN_MCP_KEY), or, since Steward ADR-0020, with the one SecondBrain hands every Steward
+ * process it starts in that process's environment (shareEnv: SECONDBRAIN_SHARE_URL and SECONDBRAIN_SHARE_KEY, only
+ * while sharing is on), so a new install needs no key pasted by hand. Other names than his .env's, so his .env's
+ * values, where set, still win (python-dotenv never overrides the process environment).
  */
 const fs = require('fs');
 const path = require('path');
@@ -40,6 +43,15 @@ function findSteward(settingsDir, vaultDir, script = SCRIPT, env = process.env) 
     if (d && fs.existsSync(path.join(d, ...script))) return d;
   }
   return null;
+}
+
+/**
+ * What a Steward process SecondBrain starts is given to reach SecondBrain's MCP: `share` is Settings' share section,
+ * `url` SecondBrain's /mcp. Nothing while sharing is off or has no key. Never logged or put on a command line.
+ */
+function shareEnv(share, url) {
+  if (!share || !share.enabled || !share.key) return {};
+  return { SECONDBRAIN_SHARE_URL: url, SECONDBRAIN_SHARE_KEY: share.key };
 }
 
 /**
@@ -253,7 +265,7 @@ async function turn({ base, text, previous, approve, review, metadata, onEvent =
  * `held` until Start or Restart, so `keepUp` does not bring it back behind the user's back. `up()` says whether
  * something answers on the port now, starting nothing.
  */
-function service({ getConfig, vaultDir, answering, waitFor, startOwned, wait = 90000, startLimit = 180000, script = SCRIPT, port: fixedPort = 0, log = 'steward.log', portEnv = 'STEWARD_PORT', portOwner = () => null, killTree = () => {} }) {
+function service({ getConfig, vaultDir, answering, waitFor, startOwned, wait = 90000, startLimit = 180000, script = SCRIPT, port: fixedPort = 0, log = 'steward.log', portEnv = 'STEWARD_PORT', portOwner = () => null, killTree = () => {}, childEnv = () => ({}) }) {
   let starting = null;
   let child = null;
   let held = false;
@@ -281,7 +293,7 @@ function service({ getConfig, vaultDir, answering, waitFor, startOwned, wait = 9
         const python = venvPython(dir);
         if (!fs.existsSync(python)) throw new Error(`Steward's Python was not found at ${python}.`);
         // the port in the variable the script reads (ag_ui_app.py: STEWARD_AG_UI_PORT)
-        child = startOwned(python, [path.join(...script)], dir, { ...process.env, [portEnv]: String(port) }, [log, log]);
+        child = startOwned(python, [path.join(...script)], dir, { ...process.env, ...childEnv(), [portEnv]: String(port) }, [log, log]);
         startedAt = new Date().toISOString();
         startedMs = Date.now();
         if (!(await waitFor(port, wait))) throw new Error(`Steward's ${script[script.length - 1]} did not answer on port ${port}; its log is ${path.join(dir, log)}.`);
@@ -399,4 +411,4 @@ function threads(file) {
   };
 }
 
-module.exports = { turn, service, keepUp, keepUpEvery, stopOnQuit, findSteward, venvPython, postJson, postStream, threads, PORT, MCP_PORT, MCP_SCRIPT };
+module.exports = { turn, service, keepUp, keepUpEvery, stopOnQuit, findSteward, venvPython, shareEnv, postJson, postStream, threads, PORT, MCP_PORT, MCP_SCRIPT };
