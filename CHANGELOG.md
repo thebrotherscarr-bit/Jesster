@@ -7,6 +7,10 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ### Changed
 
+- The inbox's bridge repository is Settings' new `inbox.repo` (today's `secondbrain-bridge` URL the default; empty
+  means the default): Connect clones the one Settings names (`inbox.cjs` `connect`, `main.cjs`). The inbox stays off
+  until connected (Steward ADR-0020, ExecPlan 0006 P1, audit B3). Wire: `inbox.test.cjs` ("the inbox's bridge
+  repository is Settings' inbox.repo ..."), red with Connect cloning the constant.
 - The updater reads its releases from Settings' new `update.repo` (owner/name; `thebrotherscarr-bit/Jesster`, today's,
   the default), at every check, and holds downloads to that repository's release assets (`updater.cjs` `useRepo`,
   `repo`, `downloadPrefix`; `main.cjs` hands Settings' value over); a value that is not owner/name is not used (Steward
