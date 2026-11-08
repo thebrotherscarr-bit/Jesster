@@ -8,6 +8,7 @@ const path = require('path');
 
 const DEFAULTS = {
   vaultDir: null, // null: Documents\SecondBrain
+  update: { repo: 'thebrotherscarr-bit/Jesster' }, // owner/name whose releases the updater reads (updater.cjs); ADR-0020
   inbox: { clone: null, every: 5, reportOnUpdate: false, reportedBuild: 0 }, // minutes between pulls; report back after updates
   // backend 'steward': the Agent tab talks to Steward (agent/steward.cjs); 'ollama': the local loop
   // check: Claude checks each Steward turn in the Agent tab (agent/checker.cjs), on the Integrations key

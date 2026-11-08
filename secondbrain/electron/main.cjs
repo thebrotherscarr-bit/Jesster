@@ -202,6 +202,8 @@ let settings = null;
 function getSettings() {
   return settings || (settings = new Settings(app.getPath('userData')));
 }
+// the updater reads its repository from Settings' update.repo at every check (Steward ADR-0020)
+updater.useRepo(() => (getSettings().get('update') || {}).repo);
 
 // ---- notes as files ----------------------------------------------------
 // The notes folder (default Documents\SecondBrain) is remembered in the
