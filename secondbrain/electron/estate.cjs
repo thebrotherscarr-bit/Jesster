@@ -12,6 +12,8 @@
  *   approvals_history   read   the answered cards, newest first (at most 200)
  *   eval_start          bounded  Steward's eval sets, by run-bar.ps1 in its own minimized window (served with the reads)
  *   eval_status         read   one eval_start run's progress file
+ *   saved_flows         read   the Flows shelf's saved flows: id, name, steps, running or waiting, the last result
+ *   saved_flow_run      bounded  Run now on one saved flow, by id: the shelf's own path (main.cjs runFlowNow)
  *
  * A write is served only while the operator allows writes (Settings → Share), as WRITE_TOOLS are, and each says so
  * in its MCP annotations (readOnlyHint false), so Steward's side puts it on the operator's card.
@@ -121,6 +123,20 @@ const ESTATE_TOOLS = [
       required: ['sets'],
     },
     annotations: { title: 'Start eval sets', ...bounded },
+  },
+  {
+    name: 'saved_flows',
+    description:
+      "The Flows shelf's saved flows: each one's id, name, steps, when, whether it is running or waiting on its run (and Steward's run id), and its last run's time and result (a failed run's reason). Read it after saved_flow_run until the flow's run has ended.",
+    inputSchema: { type: 'object', properties: {} },
+    annotations: { title: 'Saved flows', ...read },
+  },
+  {
+    name: 'saved_flow_run',
+    description:
+      "Run one saved flow now, by its id from saved_flows: exactly the Flows shelf's Run now (the same path in SecondBrain). Refused while that flow runs. A bounded action, served with the reads: it runs only a flow the operator saved, as his schedule would. Returns whether it started and Steward's run id; read saved_flows for the result.",
+    inputSchema: { type: 'object', properties: { id: { type: 'string', description: 'a flow id from saved_flows' } }, required: ['id'] },
+    annotations: { title: 'Run a saved flow now', ...bounded },
   },
   {
     name: 'eval_status',
@@ -439,6 +455,20 @@ async function status({ servers, buildInfo, sitting, ollama: api = ollama, versi
   return { services, secondbrain: { build: buildInfo(), pid: process.pid }, ollama: o, sitting: n ? { open: true, n } : { open: false }, ...(versions ? { repos } : {}) };
 }
 
+/** One saved flow as saved_flows shows it: what it runs, and its run's state in plain fields. */
+function flowView(s) {
+  return {
+    id: s.id,
+    name: s.name,
+    steps: s.steps || null,
+    when: s.whenLabel || s.whenText || '',
+    running: Boolean(s.running),
+    waiting: s.pending ? { run_id: s.pending.run_id || null, label: s.pending.label || '' } : null,
+    lastRun: s.lastRun ? new Date(s.lastRun).toISOString() : null,
+    lastResult: s.lastResult || null,
+  };
+}
+
 /**
  * One estate tool's call → the text of its result, or { error }. `deps`: { servers (services.cjs registry), buildInfo,
  * check, apply (updater.cjs), sitting() (the open sitting's number on the ground, or ''), history ({ read }), ollama }.
@@ -478,6 +508,15 @@ async function estateCall(name, args, deps, { writes = false } = {}) {
       return { error: 'app_update action is check or apply' };
     }
     if (name === 'approvals_history') return JSON.stringify(deps.history.read(Math.min(MAX_HISTORY, Number(args.limit) || 50)));
+    if (name === 'saved_flows' || name === 'saved_flow_run') {
+      if (!deps.flows) return { error: 'the Flows shelf is not served here' };
+      if (name === 'saved_flows') return JSON.stringify(deps.flows.list().map(flowView));
+      const id = String(args.id || '').trim();
+      if (!id) return { error: 'saved_flow_run needs the flow id (from saved_flows)' };
+      const r = await deps.flows.run(id);
+      const s = (r.schedules || []).find((x) => x.id === id);
+      return JSON.stringify({ id, started: Boolean(r.run_id), run_id: r.run_id || null, ok: r.ok, ...(r.skipped ? { skipped: r.skipped } : {}), flow: s ? flowView(s) : null });
+    }
     if (name === 'eval_start' || name === 'eval_status') {
       if (!deps.evals) return { error: "Steward's evals are not served here" };
       return name === 'eval_start' ? await evalStart(args, deps.evals) : evalStatus(args, deps.evals);
@@ -488,4 +527,4 @@ async function estateCall(name, args, deps, { writes = false } = {}) {
   return { error: `no tool ${name}` };
 }
 
-module.exports = { ESTATE_TOOLS, NAMES, estateCall, isWrite, ollama, ollamaApi, status, versionsApi, repoVersion, VERSIONS_TTL_MS, evalsApi, evalSets, evalSetNames, TRANSPORTS, evalStart, evalStatus, launchScript, defaultTransport, START_WAIT_MS, LAUNCH_LOG, RUNNING_QUERY, MAX_LOG_LINES, MAX_HISTORY, MAX_RUNS };
+module.exports = { flowView, ESTATE_TOOLS, NAMES, estateCall, isWrite, ollama, ollamaApi, status, versionsApi, repoVersion, VERSIONS_TTL_MS, evalsApi, evalSets, evalSetNames, TRANSPORTS, evalStart, evalStatus, launchScript, defaultTransport, START_WAIT_MS, LAUNCH_LOG, RUNNING_QUERY, MAX_LOG_LINES, MAX_HISTORY, MAX_RUNS };

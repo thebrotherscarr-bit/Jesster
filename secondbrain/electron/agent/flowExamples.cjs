@@ -97,4 +97,57 @@ function seedExamples({ schedules, vaultDir, sets }) {
   return { added };
 }
 
-module.exports = { RECIPES, evalExample, examples, seedExamples, seededFile, readSeeded };
+// ---- one-time fixes to saved flows ----------------------------------------------------------------------------------
+
+/**
+ * 2026-11-08: the eval examples seeded while AG-UI was the default carry `transport: 'ag-ui'` in their eval_start step,
+ * and SecondBrain's eval_start refuses a host transport for any set that is not an asks set (2026-11-06: "Eval: bfcl",
+ * "Eval: steps" and "Eval: direct" failed at once). Once per vault, the `transport` is taken off every eval_start step
+ * whose sets are not all asks sets; nothing else on any flow changes, and a transport put back after it is his.
+ */
+const STALE_TRANSPORT = 'eval-transport-2026-11-08';
+
+function migrationsFile(vaultDir) {
+  return path.join(vaultDir, '.secondbrain', 'flow-migrations.json');
+}
+
+function readMigrations(vaultDir) {
+  try {
+    const j = JSON.parse(fs.readFileSync(migrationsFile(vaultDir), 'utf8'));
+    return Array.isArray(j.done) ? j.done.map(String) : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Drop the stale transports ({ changed: [flow names] }). `sets` are estate.evalSets ({ name, runner }); with none (Steward's
+ * folder not found) the runners are unknown, so nothing is touched and it is tried again on the next read.
+ */
+function dropStaleTransports({ schedules, vaultDir, sets }) {
+  if (!Array.isArray(sets) || !sets.length) return { changed: [] };
+  const done = readMigrations(vaultDir);
+  if (done.includes(STALE_TRANSPORT)) return { changed: [] };
+  const asks = new Set(sets.filter((s) => s.runner === 'asks').map((s) => s.name));
+  const changed = [];
+  for (const s of schedules.all()) {
+    if (!Array.isArray(s.steps)) continue;
+    let touched = false;
+    const steps = s.steps.map((x) => {
+      if (!x || typeof x !== 'object' || x.step !== 'eval_start' || x.transport === undefined || x.transport === 'in-process') return x;
+      if (Array.isArray(x.sets) && x.sets.length && x.sets.every((n) => asks.has(String(n)))) return x;
+      touched = true;
+      const { transport, ...rest } = x; // eslint-disable-line no-unused-vars
+      return rest;
+    });
+    if (touched) {
+      schedules.update(s.id, { steps });
+      changed.push(s.name);
+    }
+  }
+  fs.mkdirSync(path.dirname(migrationsFile(vaultDir)), { recursive: true });
+  fs.writeFileSync(migrationsFile(vaultDir), JSON.stringify({ done: [...done, STALE_TRANSPORT].sort() }, null, 2));
+  return { changed };
+}
+
+module.exports = { RECIPES, evalExample, examples, seedExamples, seededFile, readSeeded, dropStaleTransports, migrationsFile, STALE_TRANSPORT };

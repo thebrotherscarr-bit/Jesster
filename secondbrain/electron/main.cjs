@@ -698,7 +698,11 @@ function seedFlowExamples() {
   if (examplesSeeded === vdir) return;
   const dir = steward.findSteward((getSettings().get('agent').steward || {}).dir, vaultDir());
   try {
-    flowExamples.seedExamples({ schedules: getSchedules(), vaultDir: vdir, sets: dir ? estate.evalSets(dir) : [] });
+    const sets = dir ? estate.evalSets(dir) : [];
+    flowExamples.seedExamples({ schedules: getSchedules(), vaultDir: vdir, sets });
+    // once per vault: the stale ag-ui on eval flows whose sets are not asks sets (2026-11-08)
+    const { changed } = flowExamples.dropStaleTransports({ schedules: getSchedules(), vaultDir: vdir, sets });
+    if (changed.length) console.log(`[SecondBrain] flows: a stale transport taken off ${changed.join(', ')}`);
     if (dir) examplesSeeded = vdir; // without Steward's folder, looked for again on the next read
   } catch (e) {
     console.error('[SecondBrain] flow examples:', e);
@@ -739,13 +743,16 @@ ipcMain.handle('schedules:remove', (event, id) => {
   getSchedules().remove(id);
   return schedulesView();
 });
+// Run now: the shelf's button (schedules:run) and the Estate's saved_flow_run take this one path. A flow already
+// running or waiting on its run is refused with that reason; nothing else holds it (ADR-0009: whenever he says).
+async function runFlowNow(id) {
+  const r = await sched.runNow(id, scheduleDeps());
+  if (mainWindow) mainWindow.webContents.send('vault:changed');
+  return { ...r, schedules: schedulesView() };
+}
 ipcMain.handle('schedules:run', async (event, id) => {
   guard(event);
-  const s = getSchedules().all().find((x) => x.id === id);
-  if (!s) throw new Error('no such schedule');
-  const r = await sched.runSchedule(s, { ...scheduleDeps(), trigger: 'now' });
-  if (mainWindow) mainWindow.webContents.send('vault:changed');
-  return { note: r.id, ok: r.ok, schedules: schedulesView() };
+  return runFlowNow(id);
 });
 // the Flows shelf (ADR-0008): a flow's graph as Steward builds it (MAF's to_dict), its runs, and one run's live steps;
 // all read from Steward's MCP host, and an error when it is down (the shelf then draws the flow locally)
@@ -1144,6 +1151,8 @@ function estateDeps() {
     history: getApprovalsHistory(),
     // Steward's eval sets (eval_start, eval_status): run-bar.ps1 in his folder, in its own minimized window
     evals: stewardEvals(),
+    // the Flows shelf's saved flows (saved_flows, saved_flow_run): Run now's own path, runFlowNow
+    flows: { list: () => schedulesView(), run: (id) => runFlowNow(id) },
     versions: estateVersions,
     sitting: () => {
       const g = atlasGlass.findGround((getSettings().get('atlas') || {}).ground, vaultDir());
@@ -1212,7 +1221,13 @@ if (!gotSingleInstanceLock) {
       const b = updater.buildInfo().build;
       if (ib.reportOnUpdate && ib.clone && b && b !== ib.reportedBuild) sendReport('(sent automatically after the update)').catch((e) => console.error('[SecondBrain] report:', e.message));
     }, 45000);
-    // automations: check every 30s; missed runs catch up shortly after start
+    // automations: check every 30s; missed runs catch up shortly after start. No run is in flight as the app starts,
+    // so a `running` left on a flow by a quit mid-start is cleared (it would hold that flow's Run now for good).
+    try {
+      getSchedules().clearStale();
+    } catch (e) {
+      console.error('[SecondBrain] scheduler:', e);
+    }
     schedulerTimer = setInterval(schedulerTick, 30000);
     setTimeout(() => getTelegram().start(), 2000);
     if (channelOn('discord')) setTimeout(() => getDiscord().start(), 2000);

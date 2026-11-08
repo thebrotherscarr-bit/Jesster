@@ -22,6 +22,7 @@ import {
   whenText,
 } from './flowSetup.ts';
 import { FlowsShelfView } from '../components/FlowsShelf.tsx';
+import { failedReason } from './flowGraph.ts';
 import { AutomationsSection } from '../components/settings/AutomationsSection.tsx';
 import type { ScheduleView, SchedulesBridge } from '../types/desktop.ts';
 
@@ -157,16 +158,18 @@ test('one create button for flows: + New flow; Set up builds none', () => {
   assert.match(html, /data-delete-flow="a"/, 'a flow is deleted on the shelf');
 });
 
-test('Run now calls the run path, and is held with the reason while it runs or Steward is busy', async () => {
+test('Run now calls the run path, and is held with the reason only while that flow runs', async () => {
   const { bridge, calls } = fakeBridge();
   const r = await runFlow(bridge, 's1');
   assert.deepEqual(calls, [['run', 's1']], 'schedules:run, the path the scheduler takes');
   assert.equal(r.ok, true);
-  assert.equal(runBlocked(schedule({}), false), null);
-  assert.match(runBlocked(schedule({ running: true }), false)!, /running now/);
-  assert.match(runBlocked(schedule({ pending: { label: "Steward's run r1", until: 0 } }), false)!, /waiting on Steward's run r1/);
-  assert.match(runBlocked(schedule({}), true)!, /Steward is busy/);
-  assert.match(runBlocked(null, false)!, /Pick a flow/);
+  assert.equal(runBlocked(schedule({})), null);
+  assert.match(runBlocked(schedule({ running: true }))!, /running now/);
+  assert.match(runBlocked(schedule({ pending: { label: "Steward's run r1", until: 0 } }))!, /waiting on Steward's run r1/);
+  assert.match(runBlocked(null)!, /Pick a flow/);
+  // 2026-11-08: a conversation with Steward held every Run now, and no flow started; nothing but its own run holds it
+  assert.equal(runBlocked.length, 1, 'no busy argument');
+  assert.doesNotMatch(readFileSync(new URL('../components/FlowsShelf.tsx', import.meta.url), 'utf8'), /stewardBusy|schedules\.busy/);
   // the shelf's Run now is wired to it
   assert.match(readFileSync(new URL('../components/FlowsShelf.tsx', import.meta.url), 'utf8'), /await runFlow\(schedules, id\)/);
 });
@@ -177,8 +180,8 @@ test('the shelf shows Run now, the last run and the cards running, done or faile
     schedule({ id: 'b', name: 'Night', prompt: 'x', backend: 'steward', running: true }),
     schedule({ id: 'c', name: 'Broken', prompt: 'x', backend: 'steward', lastRun: 1, lastResult: 'Failed: down' }),
   ];
-  const view = (selectedId: string, busy = false) =>
-    renderToStaticMarkup(<FlowsShelfView flows={flows} selectedId={selectedId} onSelect={() => {}} stewardOpen={false} onStewardOpen={() => {}} onRun={() => {}} stewardBusy={busy} />);
+  const view = (selectedId: string) =>
+    renderToStaticMarkup(<FlowsShelfView flows={flows} selectedId={selectedId} onSelect={() => {}} stewardOpen={false} onStewardOpen={() => {}} onRun={() => {}} />);
   const a = view('a');
   assert.match(a, /data-run="a"/);
   assert.ok(!/data-run="a"[^>]* disabled=""/.test(a), 'Run now is ready');
@@ -188,8 +191,22 @@ test('the shelf shows Run now, the last run and the cards running, done or faile
   assert.match(b, /data-run="b"[^>]* disabled=""/, 'held while it runs');
   assert.match(b, /It is running now/);
   assert.deepEqual([...new Set([...b.matchAll(/data-state="([a-z]+)"/g)].map((m) => m[1]))], ['running']);
-  assert.deepEqual([...new Set([...view('c').matchAll(/data-state="([a-z]+)"/g)].map((m) => m[1]))], ['failed']);
-  assert.match(view('a', true), /Steward is busy/);
+  const c = view('c');
+  assert.deepEqual([...new Set([...c.matchAll(/data-state="([a-z]+)"/g)].map((m) => m[1]))], ['failed']);
+  // a failed run says why on the flow, in plain words: the first line of its error
+  assert.match(c, /data-failed="c"[^>]*>Last run failed: (<!-- -->)?down</);
+  assert.match(c, /failed: down · /);
+  assert.ok(!/data-run="c"[^>]* disabled=""/.test(c), 'a failed run does not hold Run now');
+  assert.ok(!/data-failed/.test(a), 'nothing failed on a flow that ran ok');
+});
+
+test("a failed run's reason is the first line of its error, without the Failed: prefix", () => {
+  const failed = schedule({ lastRun: 1, lastResult: 'Failed: eval_start: evals.py --transport: a host transport runs an asks set (small, heldout) only; bfcl must run in-process.\nmore' });
+  assert.equal(failedReason(failed), 'eval_start: evals.py --transport: a host transport runs an asks set (small, heldout) only; bfcl must run in-process.');
+  assert.equal(failedReason(schedule({ lastRun: 1, lastResult: 'ok' })), null);
+  assert.equal(failedReason(schedule({ lastRun: 1, lastResult: 'skipped: Steward busy' })), 'skipped: Steward busy');
+  assert.equal(failedReason(schedule({ lastRun: 1, lastResult: 'Failed: x', running: true })), null, 'a run going now has no failure yet');
+  assert.equal(failedReason(schedule({})), null, 'never run');
 });
 
 test('Set up folds out on the shelf like the Phone view, holds the automations, and shows what was refused', () => {

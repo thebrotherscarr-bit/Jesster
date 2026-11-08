@@ -617,3 +617,36 @@ test("POST /mcp checks Origin first (streamable-http 'Security & Endpoint'): non
   const serve = main.slice(main.indexOf('async function serveMcp(req, res) {'));
   assert.match(serve.split('\n').slice(1, 4).join('\n'), /if \(!atlas\.originOk\(req\.headers\.origin\)\) return res\.status\(403\)\.json\(atlas\.FORBIDDEN_ORIGIN\);/, 'before the share, host and key checks');
 });
+
+test("saved_flows and saved_flow_run: the Flows shelf's Run now over MCP, read-only but for starting that one run", async () => {
+  const fsx = fs;
+  const osx = os;
+  const { Schedules, runNow } = require('./agent/schedules.cjs');
+  const { registry, ctx } = setup();
+  const vault = new Vault(fsx.mkdtempSync(path.join(osx.tmpdir(), 'flows-mcp-')));
+  const schedules = new Schedules(() => vault);
+  const drift = schedules.add({ name: 'Repo drift check', when: '', backend: 'steward', steps: ['versions', 'repo_log'] });
+  const started = [];
+  const steward = { runRecipe: async (recipe, since, extra) => (started.push([recipe.name, extra.trigger]), { run_id: 'r1' }), recipeStatus: async () => ({ state: 'done', ok: true, text: 'Steward: main, clean', short: 'all current' }) };
+  // as main.cjs estateDeps hands it in: the list, and Run now's own function
+  const flows = { list: () => schedules.all(), run: async (id) => ({ ...(await runNow(id, { schedules, vault, agent: {}, steward, deliverers: {} })), schedules: schedules.all() }) };
+  const { estate } = fakeEstate();
+  const call = (name, args) => atlas.handleMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name, arguments: args } }, { registry, ctx: { ...ctx, estate: { ...estate, flows } } });
+  const listed = await atlas.handleMcp({ jsonrpc: '2.0', id: 1, method: 'tools/list', params: {} }, { registry, ctx: { ...ctx, estate: { ...estate, flows } } });
+  const byName = Object.fromEntries(listed.result.tools.map((t) => [t.name, t]));
+  assert.equal(byName.saved_flows.annotations.readOnlyHint, true);
+  assert.equal(byName.saved_flow_run.annotations.readOnlyHint, false, 'it starts a run, so not a read');
+  assert.ok(byName.saved_flow_run, 'served with the reads: writes are not needed');
+
+  const [flow] = JSON.parse((await call('saved_flows', {})).result.content[0].text);
+  assert.deepEqual([flow.id, flow.name, flow.running, flow.waiting, flow.lastRun], [drift.id, 'Repo drift check', false, null, null]);
+  const run = JSON.parse((await call('saved_flow_run', { id: drift.id })).result.content[0].text);
+  assert.deepEqual([run.started, run.run_id, run.flow.waiting.run_id], [true, 'r1', 'r1']);
+  assert.deepEqual(started, [['Repo drift check', 'now']], 'run_recipe, kept as Run now');
+  const again = await call('saved_flow_run', { id: drift.id });
+  assert.equal(again.result.isError, true);
+  assert.match(again.result.content[0].text, /is running now: waiting on Steward's run r1/);
+  assert.match((await call('saved_flow_run', {})).result.content[0].text, /needs the flow id/);
+  const none = await atlas.handleMcp({ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'saved_flows', arguments: {} } }, { registry, ctx: { ...ctx, estate } });
+  assert.match(none.result.content[0].text, /not served here/);
+});

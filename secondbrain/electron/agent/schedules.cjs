@@ -205,10 +205,26 @@ class Schedules {
     this.write(keep);
   }
 
+  /** As the app starts no run is in flight: a `running` left on a flow (a quit mid-start) is cleared. Not `pending`:
+   * a parked run is Steward's, and the next tick reads it on (or files it failed). Returns the names cleared. */
+  clearStale() {
+    const list = this.all();
+    const stale = list.filter((s) => s.running);
+    if (!stale.length) return [];
+    for (const s of stale) s.running = false;
+    this.write(list);
+    return stale.map((s) => s.name);
+  }
+
   /** Schedules due at `now` (including ones missed while the app was closed). */
   due(now = Date.now()) {
     return this.all().filter((s) => s.enabled && s.next && s.next <= now);
   }
+}
+
+/** What a running flow is doing, in plain words (Run now's refusal). */
+function runningLine(s) {
+  return s.pending ? `waiting on ${s.pending.label || s.pending.tag || 'its run'}` : 'it is starting';
 }
 
 /** File one run's result: the note (when the schedule delivers one) and the other deliveries (Telegram's `short`). */
@@ -299,6 +315,19 @@ async function runSchedule(s, deps) {
   return finish(s, { ...deps, now }, { ok, answer });
 }
 
+/**
+ * Run now on one flow by id (the shelf's button through schedules:run, and the Estate's saved_flow_run): runSchedule
+ * with trigger 'now'. Refused, with the reason, only while that flow runs or waits on its run; nothing else holds it
+ * (ADR-0009). → { note, ok, run_id (Steward's, when it started), skipped }.
+ */
+async function runNow(id, deps) {
+  const s = deps.schedules.all().find((x) => x.id === id);
+  if (!s) throw new Error(`no flow "${id}"`);
+  if (s.running || s.pending) throw new Error(`${s.name} is running now: ${runningLine(s)}`);
+  const r = await runSchedule(s, { ...deps, trigger: 'now' });
+  return { note: r.id, ok: r.ok, ...(r.parked ? { run_id: r.parked.run_id } : {}), ...(r.skipped ? { skipped: r.answer } : {}) };
+}
+
 /** Every parked workflow read once (each scheduler tick): a finished one runs its last steps and is filed. */
 async function resumeSchedules(deps) {
   const now = deps.now ?? Date.now();
@@ -354,4 +383,4 @@ function tools(getSchedules) {
   ];
 }
 
-module.exports = { Schedules, parseWhen, whenOf, MANUAL, describeWhen, nextRun, runSchedule, resumeSchedules, fileResult, tools, BACKENDS };
+module.exports = { Schedules, parseWhen, whenOf, MANUAL, describeWhen, nextRun, runSchedule, resumeSchedules, fileResult, tools, BACKENDS, runningLine, runNow };
