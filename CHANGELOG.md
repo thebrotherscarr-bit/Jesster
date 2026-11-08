@@ -7,6 +7,13 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ### Changed
 
+- Every Steward process SecondBrain starts (his service, his MCP door, his AG-UI host) is handed SecondBrain's MCP URL
+  and share key in its environment, `SECONDBRAIN_SHARE_URL` and `SECONDBRAIN_SHARE_KEY`, only while sharing is on, so a
+  new install needs no key pasted into Steward's `.env` by hand (Steward ADR-0020, ExecPlan 0006 P1, audit D9 and E2).
+  Other names than his `.env`'s `SECONDBRAIN_MCP_URL` and `SECONDBRAIN_MCP_KEY`, so where his `.env` sets those they
+  still win (python-dotenv never overrides the process environment): this PC is unchanged. Steward reads the new names
+  once his side lands (Lane A). Wire: `agent.test.cjs` ("every Steward process SecondBrain starts is handed the share
+  URL and key ..."), red with `childEnv()` left out of the child's environment.
 - Steward's Python is his venv's `Scripts\python.exe` (today's, and first), else its `bin/python`, so a venv built
   off Windows starts too (Steward ADR-0020, ExecPlan 0006 P1, audit D3). Wire: `agent.test.cjs` ("Steward's Python is
   the venv's Scripts\python.exe, else its bin/python"), red when `venvPython` returns only the Windows path.
