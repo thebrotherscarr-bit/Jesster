@@ -1143,7 +1143,7 @@ ipcMain.handle('services:log', (event, id, lines) => {
 // ---- the Estate for Steward (estate.cjs): the same registry, updater and history, as MCP tools on /mcp ----------
 // the Estate's versions on estate_status and the workflows' versions step: the ground's repositories, cached 60 s
 const estateVersions = estate.versionsApi({
-  repos: () => workflows.estateRepos(atlasGlass.findGround((getSettings().get('atlas') || {}).ground, vaultDir())),
+  repos: () => workflows.estateRepos(atlasGlass.findGround((getSettings().get('atlas') || {}).ground, vaultDir()), getSettings().get('estate')),
   run: workflows.run,
 });
 const stewardDirNow = () => steward.findSteward((getSettings().get('agent').steward || {}).dir, vaultDir());

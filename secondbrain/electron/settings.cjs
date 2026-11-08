@@ -28,6 +28,10 @@ const DEFAULTS = {
   computer: { enabled: false, askEachAction: true, model: 'qwen3-vl:8b', maxSteps: 25 }, // screen, mouse and keyboard
   share: { enabled: false, writes: false, key: '' }, // the notes over MCP for Atlas/Manjuel
   atlas: { exe: '', ground: '', python: 'python', engine: true, trusted: false, all: false }, // Settings → Atlas & Manjuel, remembered
+  // the Estate's repositories, each relative to the ground (or absolute): read by the door's worlds (door/index.cjs
+  // worldsFor) and the Estate's versions (agent/workflows.cjs estateRepos). Today's layout is the default (Steward
+  // ADR-0020); a ground laid out otherwise names its folders here
+  estate: { atlas: 'atlas', jesster: 'worlds/jesster', steward: 'worlds/steward' },
   // archive: the archive digger's settings, retired 2026-11-05 (ADR-0010); a stored one is left unread
   // the Servers shelf (services.cjs): SecondBrain runs `ollama serve` only when this is on, with this environment
   // pinned over its own; OLLAMA_MODELS '' keeps the one SecondBrain was started with (his User variable).
@@ -143,4 +147,13 @@ function stewardTransport(agent) {
   return a.transport === 'responses' && a.transportChosen ? 'responses' : 'ag-ui';
 }
 
-module.exports = { Settings, DEFAULTS, merge, telegramEffective, stewardTransport };
+/**
+ * The folder of the Estate's repository `name` ('atlas', 'jesster', 'steward') under `ground`: Settings' estate entry
+ * (`layout`), relative to the ground or absolute, else today's default.
+ */
+function estateDir(ground, layout, name) {
+  const rel = (layout && typeof layout[name] === 'string' && layout[name]) || DEFAULTS.estate[name];
+  return path.isAbsolute(rel) ? rel : path.join(ground, rel);
+}
+
+module.exports = { Settings, DEFAULTS, merge, telegramEffective, stewardTransport, estateDir };
