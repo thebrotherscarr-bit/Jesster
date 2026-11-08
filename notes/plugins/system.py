@@ -17,6 +17,7 @@ update is refused and says why. Nothing here touches the vault.
 """
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -28,8 +29,26 @@ NAME = "system"
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 UI = os.path.join(REPO, "secondbrain")
 GIT_TIMEOUT = 120
-RELEASES = "https://api.github.com/repos/thebrotherscarr-bit/Jesster/releases?per_page=30"
-DOWNLOAD_PREFIX = "https://github.com/thebrotherscarr-bit/Jesster/releases/download/"
+# The repository whose releases install_desktop and desktop_build read: the environment variable
+# JESSTER_UPDATE_REPO (owner/name), else today's (Steward ADR-0020). A value that is not owner/name is not used.
+UPDATE_REPO = "thebrotherscarr-bit/Jesster"
+_OWNER_NAME = re.compile(r"[A-Za-z0-9-]+/[A-Za-z0-9._-]+")
+
+
+def update_repo():
+    r = os.environ.get("JESSTER_UPDATE_REPO", "").strip()
+    return r if _OWNER_NAME.fullmatch(r) else UPDATE_REPO
+
+
+def releases_url():
+    return "https://api.github.com/repos/%s/releases?per_page=30" % update_repo()
+
+
+def download_prefix():
+    """A download is refused unless it is a release asset of that repository."""
+    return "https://github.com/%s/releases/download/" % update_repo()
+
+
 ASSET = "SecondBrain-win32-x64.zip"
 BUILD_TIMEOUT = 900
 
@@ -140,7 +159,7 @@ def _http(url, timeout=300):
 
 def latest_desktop_build():
     """The newest secondbrain-b<N> release that carries the Windows zip."""
-    with _http(RELEASES, 60) as r:
+    with _http(releases_url(), 60) as r:
         releases = json.loads(r.read().decode("utf-8"))
     best = None
     for rel in releases:
@@ -189,7 +208,7 @@ def install_desktop():
         raise KernelError("offline", "could not reach GitHub: %s" % e)
     if not build:
         raise KernelError("no_build", "no desktop build has been published yet")
-    if not build["url"].startswith(DOWNLOAD_PREFIX):
+    if not build["url"].startswith(download_prefix()):
         raise KernelError("refused", "refusing a download from outside the app repository")
     work = tempfile.mkdtemp(prefix="secondbrain-install-")
     try:

@@ -7,6 +7,11 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ### Changed
 
+- The notes kernel's desktop install (`system.install_desktop`, `system.desktop_build`) reads its releases from the
+  environment variable `JESSTER_UPDATE_REPO` (owner/name), else `thebrotherscarr-bit/Jesster`, today's, and holds
+  downloads to that repository's release assets (`notes/plugins/system.py` `update_repo`, `releases_url`,
+  `download_prefix`); a value that is not owner/name is not used (Steward ADR-0020, ExecPlan 0006 P1, audit B2).
+  Wire: `prove_notes.py` ("update repository"), red with JESSTER_UPDATE_REPO unread.
 - The notes folder is Settings' `vaultDir`, else the environment variable `JESSTER_VAULT` (the one the notes kernel and
   `start-secondbrain.ps1` already read), else `Documents\SecondBrain`, today's default (`settings.cjs` `vaultDirOf`,
   `main.cjs` `vaultDir`), so the app and the kernel can be pointed at one vault by one variable (Steward ADR-0020,
