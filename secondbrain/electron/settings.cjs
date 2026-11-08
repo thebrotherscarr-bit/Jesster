@@ -7,7 +7,7 @@ const fs = require('fs');
 const path = require('path');
 
 const DEFAULTS = {
-  vaultDir: null, // null: Documents\SecondBrain
+  vaultDir: null, // null: JESSTER_VAULT, else Documents\SecondBrain (vaultDirOf)
   inbox: { clone: null, every: 5, reportOnUpdate: false, reportedBuild: 0 }, // minutes between pulls; report back after updates
   // backend 'steward': the Agent tab talks to Steward (agent/steward.cjs); 'ollama': the local loop
   // check: Claude checks each Steward turn in the Agent tab (agent/checker.cjs), on the Integrations key
@@ -143,4 +143,12 @@ function stewardTransport(agent) {
   return a.transport === 'responses' && a.transportChosen ? 'responses' : 'ag-ui';
 }
 
-module.exports = { Settings, DEFAULTS, merge, telegramEffective, stewardTransport };
+/**
+ * The notes folder: Settings' vaultDir, else the environment variable JESSTER_VAULT (the one the notes kernel and
+ * start-secondbrain.ps1 read), else Documents\SecondBrain, today's default (Steward ADR-0020).
+ */
+function vaultDirOf(setting, env, documents) {
+  return setting || (env && env.JESSTER_VAULT) || path.join(documents, 'SecondBrain');
+}
+
+module.exports = { Settings, DEFAULTS, merge, telegramEffective, stewardTransport, vaultDirOf };

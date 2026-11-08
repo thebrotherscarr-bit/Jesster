@@ -6,7 +6,7 @@ const express = require('express');
 const updater = require('./updater.cjs');
 const fs = require('fs');
 const { Vault, importFile, SUPPORTED } = require('./vaultfs.cjs');
-const { Settings, telegramEffective, stewardTransport } = require('./settings.cjs');
+const { Settings, telegramEffective, stewardTransport, vaultDirOf } = require('./settings.cjs');
 const inbox = require('./inbox.cjs');
 const report = require('./report.cjs');
 const atlas = require('./atlas.cjs');
@@ -204,15 +204,15 @@ function getSettings() {
 }
 
 // ---- notes as files ----------------------------------------------------
-// The notes folder (default Documents\SecondBrain) is remembered in the
-// settings. Changes other programs make there are announced to the window,
+// The notes folder (Settings' vaultDir, else JESSTER_VAULT, else Documents\SecondBrain: settings.cjs vaultDirOf) is
+// remembered in the settings. Changes other programs make there are announced to the window,
 // which reloads them.
 let vault = null;
 let watcher = null;
 let changeTimer = null;
 
 function vaultDir() {
-  return getSettings().get('vaultDir') || path.join(app.getPath('documents'), 'SecondBrain');
+  return vaultDirOf(getSettings().get('vaultDir'), process.env, app.getPath('documents'));
 }
 
 function openVault(dir) {
