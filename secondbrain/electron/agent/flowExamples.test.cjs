@@ -126,3 +126,49 @@ test('a flow with no when runs on Run now and stays unscheduled; edit can give i
   assert.deepEqual(tagged.tags, ['example']);
   assert.deepEqual(schedules.edit(s.id, { name: 'Mine 2' }).tags, ['example']);
 });
+
+test('the stale ag-ui is taken off saved eval flows once: only eval_start steps whose sets are not all asks sets, nothing else', () => {
+  const vault = new Vault(fs.mkdtempSync(path.join(os.tmpdir(), 'stale-')));
+  const schedules = new Schedules(() => vault);
+  const sets = estate.evalSets(stewardWith([...SETS, ['t0-direct.yaml', 'direct', 'T0', 'plans']]));
+  // as the vault held them on 2026-11-06: examples seeded while AG-UI was the default, and one of his own
+  const stale = (set, extra = {}) => schedules.add({ name: `Eval: ${set}`, when: '', backend: 'steward', tags: ['example', 'eval'], steps: [{ step: 'eval_start', sets: [set], runs: 1, transport: 'ag-ui' }, { step: 'eval_wait', hours: 8 }, 'eval_bars'], summarize: 'Say it.', ...extra });
+  for (const set of ['bfcl', 'steps', 'direct', 'aider-py', 'small', 'heldout']) stale(set);
+  const mine = schedules.add({ name: 'Mine', when: 'daily 23:00', backend: 'steward', steps: [{ step: 'eval_start', sets: ['small', 'bfcl'], runs: 2, transport: 'responses' }, 'eval_wait'], summarize: 'Mine.' });
+  const inproc = schedules.add({ name: 'In', when: '', steps: [{ step: 'eval_start', sets: ['bfcl'], transport: 'in-process' }] });
+  const before = schedules.all();
+
+  const { changed } = ex.dropStaleTransports({ schedules, vaultDir: vault.dir, sets });
+  assert.deepEqual(changed, ['Eval: bfcl', 'Eval: steps', 'Eval: direct', 'Eval: aider-py', 'Mine']);
+  const after = Object.fromEntries(schedules.all().map((s) => [s.name, s]));
+  for (const set of ['bfcl', 'steps', 'direct', 'aider-py']) assert.deepEqual(after[`Eval: ${set}`].steps[0], { step: 'eval_start', sets: [set], runs: 1 }, set);
+  for (const set of ['small', 'heldout']) assert.equal(after[`Eval: ${set}`].steps[0].transport, 'ag-ui', `${set} is an asks set: ag-ui is valid there`);
+  assert.deepEqual(after.Mine.steps[0], { step: 'eval_start', sets: ['small', 'bfcl'], runs: 2 }, 'his own: only the transport goes');
+  assert.equal(after.In.steps[0].transport, 'in-process', 'in-process is never stale');
+  // nothing else on any flow changed: id, name, when, tags, summarize, the other steps, the run log
+  for (const b of before) {
+    const a = schedules.all().find((x) => x.id === b.id);
+    const strip = (s) => ({ ...s, steps: s.steps.map((x) => (x && x.step === 'eval_start' ? { ...x, transport: undefined } : x)) });
+    assert.deepEqual(JSON.parse(JSON.stringify(strip(a))), JSON.parse(JSON.stringify(strip(b))), b.name);
+  }
+  assert.equal(mine.id, after.Mine.id);
+  assert.equal(inproc.id, after.In.id);
+
+  // once: a transport he puts back afterwards is his
+  schedules.update(after['Eval: bfcl'].id, { steps: [{ step: 'eval_start', sets: ['bfcl'], transport: 'ag-ui' }] });
+  assert.deepEqual(ex.dropStaleTransports({ schedules, vaultDir: vault.dir, sets }).changed, []);
+  assert.equal(schedules.all().find((x) => x.name === 'Eval: bfcl').steps[0].transport, 'ag-ui');
+  assert.deepEqual(JSON.parse(fs.readFileSync(ex.migrationsFile(vault.dir), 'utf8')).done, [ex.STALE_TRANSPORT]);
+});
+
+test('with no Steward folder (no runners known) nothing is touched and the fix waits; the seeded examples carry no transport', () => {
+  const vault = new Vault(fs.mkdtempSync(path.join(os.tmpdir(), 'stale-')));
+  const schedules = new Schedules(() => vault);
+  schedules.add({ name: 'Eval: bfcl', when: '', steps: [{ step: 'eval_start', sets: ['bfcl'], transport: 'ag-ui' }] });
+  assert.deepEqual(ex.dropStaleTransports({ schedules, vaultDir: vault.dir, sets: [] }).changed, []);
+  assert.equal(schedules.all()[0].steps[0].transport, 'ag-ui');
+  assert.equal(fs.existsSync(ex.migrationsFile(vault.dir)), false, 'tried again on the next read');
+  for (const e of ex.examples(estate.evalSets(stewardWith(SETS)))) {
+    for (const s of e.steps) assert.ok(typeof s === 'string' || !('transport' in s), `${e.name} seeds no transport`);
+  }
+});

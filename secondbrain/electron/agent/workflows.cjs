@@ -12,10 +12,11 @@
  *     steps: ['pull_ff', 'versions', 'repo_log', 'merged_prs', 'releases', 'eval_bars', 'plan_left'],   // STEPS only
  *     summarize: 'Write the daily what-happened from this ...' }                                         // optional
  *
- * A step is a name, or { step, ...its arguments } (eval_start { sets, runs, transport }: with no
- * transport, SecondBrain's eval_start picks it: AG-UI for asks sets only, in-process for the rest),
- * eval_wait { hours }). A recipe that starts an eval is skipped while any conversation is mid-turn ("skipped: Steward
- * busy"): his personal use comes first.
+ * A step is a name, or { step, ...its arguments } (eval_start { sets, runs, transport }: Steward's step chooses the
+ * transport by set, AG-UI for asks sets only, in-process for the rest, and sets aside a stored host transport on any
+ * other set), eval_wait { hours }). A SCHEDULED recipe that starts an eval is skipped while any conversation is
+ * mid-turn ("skipped: Steward busy"): his personal use comes first. Run now is never skipped or held for that: it runs
+ * whenever he says (ADR-0009; 2026-11-08, after a busy Steward held every Run now on the shelf and no flow started).
  */
 const http = require('http');
 const path = require('path');
@@ -142,16 +143,18 @@ const READ_MS = 5000;
 // ---- the scheduler's side ------------------------------------------------------------------------------------------
 
 /**
- * A workflow's run at its time: skipped while a conversation is mid-turn if it starts an eval; else run_recipe, and
+ * A workflow's run at its time: a scheduled one is skipped while a conversation is mid-turn if it starts an eval (Run
+ * now never is); else run_recipe, and
  * the run parked on the schedule (`pending`) for the ticks to read. deps: { steward (stewardRecipes), busy, now,
  * trigger ('now' from Run now; 'schedule' otherwise) }. The flow's id and the trigger go with it, for the run history.
  */
 async function startWorkflow(s, deps) {
   const recipe = recipeOf(s);
-  if (recipe.steps.some((x) => stepOf(x).step === 'eval_start') && deps.busy && deps.busy()) return { skipped: 'skipped: Steward busy' };
+  const now_ = deps.trigger === 'now';
+  if (!now_ && recipe.steps.some((x) => stepOf(x).step === 'eval_start') && deps.busy && deps.busy()) return { skipped: 'skipped: Steward busy' };
   const now = deps.now ?? Date.now();
   const since = (s.lastRun || now - DAY_MS) / 1000;
-  const r = await deps.steward.runRecipe(recipe, since, { flow: s.id, trigger: deps.trigger === 'now' ? 'now' : 'schedule' });
+  const r = await deps.steward.runRecipe(recipe, since, { flow: s.id, trigger: now_ ? 'now' : 'schedule' });
   return { parked: { run_id: r.run_id, label: `Steward's run ${r.run_id}`, started: now, until: now + RUN_MAX_MS } };
 }
 

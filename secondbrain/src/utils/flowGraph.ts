@@ -214,6 +214,13 @@ export function flowRunState(s: Pick<ScheduleView, 'lastRun' | 'lastResult' | 'r
   return s.lastResult === 'ok' ? 'done' : 'failed';
 }
 
+/** Why a flow's last run failed, in plain words: the first line of its error, or null when it did not fail. */
+export function failedReason(s: Pick<ScheduleView, 'lastRun' | 'lastResult' | 'running' | 'pending'>): string | null {
+  if (s.running || s.pending || !s.lastRun || s.lastResult === 'ok') return null;
+  const first = String(s.lastResult || '').split(/\r?\n/).find((line) => line.trim()) || 'no result';
+  return first.replace(/^Failed:\s*/, '').trim() || 'no result';
+}
+
 /** A flow's last result in the list, in plain words: never run, running, waiting, ok or what went wrong. */
 export function lastResultLine(s: Pick<ScheduleView, 'lastRun' | 'lastResult' | 'running' | 'pending'>): string {
   if (s.running) return 'running now';
@@ -221,5 +228,6 @@ export function lastResultLine(s: Pick<ScheduleView, 'lastRun' | 'lastResult' | 
   if (!s.lastRun) return 'not run yet';
   const when = new Date(s.lastRun);
   const t = Number.isNaN(when.getTime()) ? '' : when.toLocaleString();
-  return `${s.lastResult === 'ok' ? 'ok' : s.lastResult || 'no result'}${t ? ` · ${t}` : ''}`;
+  const failed = failedReason(s);
+  return `${failed ? `failed: ${failed}` : 'ok'}${t ? ` · ${t}` : ''}`;
 }

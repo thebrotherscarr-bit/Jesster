@@ -143,7 +143,12 @@ test('an automation card answered in time is the answer, and the timer ends with
 test("main.cjs hands the scheduler Telegram's cards and the Estate Steward's evals", () => {
   const main = fs.readFileSync(path.join(__dirname, '..', 'main.cjs'), 'utf8');
   assert.equal(main.match(/sched\.runSchedule\(s, scheduleDeps\(\)\)/g).length, 1, 'the tick');
-  assert.equal(main.match(/sched\.runSchedule\(s, \{ \.\.\.scheduleDeps\(\), trigger: 'now' \}\)/g).length, 1, 'Run now, kept as such in the run history');
+  // Run now (2026-11-08): the shelf's schedules:run and the Estate's saved_flow_run are one function, sched.runNow
+  assert.match(main, /async function runFlowNow\(id\) \{\s+const r = await sched\.runNow\(id, scheduleDeps\(\)\);/);
+  assert.match(main, /ipcMain\.handle\('schedules:run', async \(event, id\) => \{\s+guard\(event\);\s+return runFlowNow\(id\);/);
+  assert.match(main, /flows: \{ list: \(\) => schedulesView\(\), run: \(id\) => runFlowNow\(id\) \},/);
+  assert.match(main, /getSchedules\(\)\.clearStale\(\);/, 'a running left by a quit is cleared at start');
+  assert.match(main, /flowExamples\.dropStaleTransports\(\{ schedules: getSchedules\(\), vaultDir: vdir, sets \}\)/);
   assert.match(main, /onCard: phoneCard,/);
   assert.match(main, /busy: \(\) => getAgent\(\)\.busy\(\),/);
   assert.match(main, /await sched\.resumeSchedules\(scheduleDeps\(\)\)/);
@@ -366,4 +371,78 @@ test("the Flows shelf's reads: recipe_graph with the flow's recipe, recipe_runs 
   const { steward, seen } = fakeSteward([]);
   await runSchedule(f, { schedules, vault, agent: {}, steward, deliverers: {}, trigger: 'now' });
   assert.deepEqual(seen.started[0].extra, { flow: f.id, trigger: 'now' });
+});
+
+// ---- Run now, 2026-11-08 ----------------------------------------------------------------------------------------------
+// The operator: "NONE of the flows started". Every press after the first three never reached schedules:run (their
+// lastRun stayed null): the shelf held Run now on every flow while any Steward conversation was mid-turn or a card
+// waited (steward-mcp.log: the shelf read at 11-07 05:23:51 while the Agent tab's card waited, 05:22:56 to 05:24:06),
+// and the reason was a grey word at the end of the bar. Run now is now held only by that flow's own run.
+
+const { runNow, runningLine } = require('./schedules.cjs');
+
+function evalFlows() {
+  const vault = new Vault(fs.mkdtempSync(path.join(os.tmpdir(), 'runnow-')));
+  const schedules = new Schedules(() => vault);
+  const evalFlow = (set) => schedules.add({ name: `Eval: ${set}`, when: '', backend: 'steward', steps: [{ step: 'eval_start', sets: [set], runs: 1 }, 'eval_wait', 'eval_bars'], summarize: 'Say it.' });
+  return { vault, schedules, bfcl: evalFlow('bfcl'), small: evalFlow('small'), drift: schedules.add({ name: 'Repo drift check', when: '', backend: 'steward', steps: ['versions', 'repo_log'] }) };
+}
+
+test('Run now reaches Steward for every flow, eval or not, even while a conversation is mid-turn; a scheduled eval still waits', async () => {
+  const { vault, schedules, bfcl, small, drift } = evalFlows();
+  const { steward, seen } = fakeSteward([]);
+  const deps = { schedules, vault, agent: {}, steward, deliverers: {}, busy: () => true };
+  for (const f of [bfcl, small, drift]) {
+    const r = await runNow(f.id, deps);
+    assert.equal(r.run_id, `run${seen.started.length}`, `${f.name} reached run_recipe`);
+    assert.equal(r.skipped, undefined);
+  }
+  assert.deepEqual(seen.started.map((x) => [x.recipe.name, x.extra.trigger]), [['Eval: bfcl', 'now'], ['Eval: small', 'now'], ['Repo drift check', 'now']]);
+  // the scheduler's own run of an eval still gives way to his conversation
+  const t = at('2026-11-09T23:00:00');
+  const night = schedules.add({ name: 'Nightly', when: 'daily 23:00', steps: [{ step: 'eval_start', sets: ['bfcl'] }, 'eval_wait'] }, t - 3600000);
+  const skipped = await runSchedule(schedules.all().find((x) => x.id === night.id), { ...deps, now: t });
+  assert.equal(skipped.skipped, true);
+  assert.equal(seen.started.length, 3);
+});
+
+test('a failed eval run clears its running and pending, says why on the flow, and the next flow\'s Run now reaches Steward', async () => {
+  const { vault, schedules, bfcl, small } = evalFlows();
+  const why = 'eval_start: evals.py --transport: a host transport runs an asks set (small, heldout) only; bfcl must run in-process. Nothing was started.';
+  const { steward, seen } = fakeSteward([{ state: 'failed', error: why }]);
+  const deps = { schedules, vault, agent: {}, steward, deliverers: {}, busy: () => false };
+  const t = at('2026-11-06T16:39:52');
+  const r = await runNow(bfcl.id, { ...deps, now: t });
+  assert.equal(r.run_id, 'run1');
+  const parked = schedules.all().find((x) => x.id === bfcl.id);
+  assert.equal(parked.running, false);
+  assert.equal(parked.pending.run_id, 'run1');
+  await assert.rejects(runNow(bfcl.id, deps), /Eval: bfcl is running now: waiting on Steward's run run1/, 'a flow already running is refused with why');
+  const [filed] = await resumeSchedules({ ...deps, now: t + 30000 });
+  assert.equal(filed.ok, false);
+  const after = schedules.all().find((x) => x.id === bfcl.id);
+  assert.deepEqual([after.running, after.pending], [false, null], 'nothing left running or pending');
+  assert.equal(after.lastResult, `Failed: ${why}`.slice(0, 200));
+  // the same flow runs again, and so does another
+  assert.equal((await runNow(bfcl.id, deps)).run_id, 'run2');
+  assert.equal((await runNow(small.id, deps)).run_id, 'run3');
+  assert.deepEqual(seen.started.map((x) => x.recipe.name), ['Eval: bfcl', 'Eval: bfcl', 'Eval: small']);
+});
+
+test('a run that throws before Steward answers is filed failed and leaves nothing running; a running left by a quit is cleared at start', async () => {
+  const { vault, schedules, drift } = evalFlows();
+  const down = { runRecipe: async () => { throw new Error("Steward's MCP host did not answer in time"); }, recipeStatus: async () => ({ state: 'running' }) };
+  const r = await runNow(drift.id, { schedules, vault, agent: {}, steward: down, deliverers: {} });
+  assert.equal(r.ok, false);
+  const s = schedules.all().find((x) => x.id === drift.id);
+  assert.deepEqual([s.running, s.pending], [false, null]);
+  assert.match(s.lastResult, /^Failed: Steward's MCP host did not answer in time/);
+  // a quit between the claim and Steward's answer leaves running: true; the app's start clears it
+  schedules.update(drift.id, { running: true });
+  await assert.rejects(runNow(drift.id, { schedules, vault, agent: {}, steward: down, deliverers: {} }), /is running now: it is starting/);
+  assert.deepEqual(schedules.clearStale(), ['Repo drift check']);
+  assert.equal(schedules.all().find((x) => x.id === drift.id).running, false);
+  assert.deepEqual(schedules.clearStale(), [], 'nothing to clear twice');
+  assert.equal(runningLine({ pending: { label: 'x' } }), 'waiting on x');
+  await assert.rejects(runNow('nope', { schedules }), /no flow "nope"/);
 });

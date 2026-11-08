@@ -108,11 +108,14 @@ export const setFlowEnabled = (bridge: SchedulesBridge, id: string, enabled: boo
 /** Run now: the same path the scheduler takes (schedules:run → runSchedule). */
 export const runFlow = (bridge: SchedulesBridge, id: string) => bridge.run(id);
 
-/** Why Run now is held, in plain words, or null when it can run. */
-export function runBlocked(s: Pick<ScheduleView, 'running' | 'pending'> | null, busy: boolean): string | null {
+/**
+ * Why Run now is held, in plain words, or null when it can run: only while this flow itself runs. A conversation with
+ * Steward never holds it (2026-11-08: a held Run now, its reason a grey word at the bar's end, read as "no flow
+ * starts"); Run now runs whenever he says (ADR-0009), and what the run did is its last result.
+ */
+export function runBlocked(s: Pick<ScheduleView, 'running' | 'pending'> | null): string | null {
   if (!s) return 'Pick a flow first';
   if (s.running) return 'It is running now';
   if (s.pending) return `It is waiting on ${s.pending.label || s.pending.tag || 'its run'}`;
-  if (busy) return 'Steward is busy with a conversation; try when he is done';
   return null;
 }

@@ -107,7 +107,7 @@ test("the list says each flow's last result", () => {
   assert.equal(lastResultLine(schedule({ running: true })), 'running now');
   assert.equal(lastResultLine(schedule({ pending: { tag: 'bar-1', until: 0 } })), 'waiting on bar-1');
   assert.match(lastResultLine(schedule({ lastRun: Date.UTC(2026, 10, 5), lastResult: 'ok' })), /^ok · /);
-  assert.match(lastResultLine(schedule({ lastRun: Date.UTC(2026, 10, 5), lastResult: 'Steward is down' })), /^Steward is down · /);
+  assert.match(lastResultLine(schedule({ lastRun: Date.UTC(2026, 10, 5), lastResult: 'Steward is down' })), /^failed: Steward is down · /, 'a failed run says so');
 });
 
 test("Steward's card on the shelf is folded until opened, and remembered", () => {

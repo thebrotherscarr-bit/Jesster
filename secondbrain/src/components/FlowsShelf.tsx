@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ReactFlow, ReactFlowProvider, Background, Controls, Handle, Position, type Edge, type Node, type NodeProps } from '@xyflow/react';
 import { Workflow, Bot, Send, Boxes, PanelRight, X, Play, Settings2, Plus, PenLine, Copy, Trash2 } from 'lucide-react';
 import type { FlowRun, MafWorkflowDict, ScheduleSpec, ScheduleView, SchedulesBridge } from '../types/desktop.ts';
-import { CARD, FlowNodeKind, FlowRunState, flowGraph, flowGraphFromMaf, flowRunState, keepPolling, lastResultLine, msLabel, runLine, stepFor } from '../utils/flowGraph.ts';
+import { CARD, FlowNodeKind, FlowRunState, failedReason, flowGraph, flowGraphFromMaf, flowRunState, keepPolling, lastResultLine, msLabel, runLine, stepFor } from '../utils/flowGraph.ts';
 import { LEGACY_LABEL, cleanError, isLegacy, removeFlow, runBlocked, runFlow } from '../utils/flowSetup.ts';
 import { FLOWS_STEWARD_OPEN_KEY, keepPanel, panelOpen } from '../utils/agentConsole.ts';
 import { AutomationsSection } from './settings/AutomationsSection.tsx';
@@ -180,9 +180,8 @@ export interface FlowsShelfViewProps {
   error?: string | null;
   stewardOpen: boolean;
   onStewardOpen: (on: boolean) => void;
-  /** Run now on the open flow; held, with the reason shown, while it runs or Steward is busy */
+  /** Run now on the open flow; held, with the reason shown, only while that flow runs */
   onRun?: (id: string) => void;
-  stewardBusy?: boolean;
   runError?: string | null;
   /** the Set up panel (the automations), folded under the bar as the Phone view's Setup is */
   setupOpen?: boolean;
@@ -246,7 +245,6 @@ export const FlowsShelfView: React.FC<FlowsShelfViewProps> = ({
   stewardOpen,
   onStewardOpen,
   onRun,
-  stewardBusy = false,
   runError,
   setupOpen = false,
   onSetupOpen,
@@ -271,7 +269,7 @@ export const FlowsShelfView: React.FC<FlowsShelfViewProps> = ({
   // the canvas shows the run clicked; else the run going now (until the schedule files it); else the flow's last state
   const shown = clicked || liveRun;
   const maf = graph && graph !== 'offline' ? graph.workflow : null;
-  const hold = runBlocked(open, stewardBusy);
+  const hold = runBlocked(open);
   // any flow runs whenever the operator says (ADR-0009): no night badge, no daytime question
   const run = (id: string) => onRun?.(id);
   // our blocks draw their own card: drop React Flow's default node box
@@ -315,7 +313,7 @@ export const FlowsShelfView: React.FC<FlowsShelfViewProps> = ({
                   {f.whenLabel}
                   {f.enabled ? '' : ' · off'}
                 </span>
-                <span className="block text-[11px] text-neutral-500 truncate" title={f.lastResult || undefined}>
+                <span className={`block text-[11px] truncate ${failedReason(f) ? 'text-rose-400' : 'text-neutral-500'}`} title={f.lastResult || undefined}>
                   {lastResultLine(f)}
                 </span>
               </button>
@@ -419,6 +417,11 @@ export const FlowsShelfView: React.FC<FlowsShelfViewProps> = ({
             {hold && onRun && <span className="ml-auto shrink-0 text-neutral-400">{hold}</span>}
           </div>
         )}
+        {open && !clicked && failedReason(open) && (
+          <p data-failed={open.id} role="status" className="px-4 py-1 text-[11px] text-rose-300 break-words border-b border-neutral-900">
+            Last run failed: {failedReason(open)}
+          </p>
+        )}
         {runError && <p role="alert" className="px-4 py-1 text-[11px] text-amber-300 break-words border-b border-neutral-900">{runError}</p>}
         {setupOpen && bridge && onFlowsChange && (
           <div className="border-b border-neutral-800 max-h-[50%] overflow-y-auto" aria-label="Set up">
@@ -457,7 +460,6 @@ export const FlowsShelf: React.FC<{ active: boolean }> = ({ active }) => {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
-  const [stewardBusy, setStewardBusy] = useState(false);
   const [setupOpen, setSetupOpen] = useState(false);
   const [editor, setEditor] = useState<EditorOpen | null>(null);
   const [stewardOpen, setStewardOpen] = useState(() => panelOpen(store(), FLOWS_STEWARD_OPEN_KEY, false));
@@ -476,10 +478,9 @@ export const FlowsShelf: React.FC<{ active: boolean }> = ({ active }) => {
         .list()
         .then((list) => live && take(list))
         .catch((e) => live && setError(cleanError(e)));
-      schedules.busy?.().then((b) => live && setStewardBusy(Boolean(b))).catch(() => {});
     };
     read();
-    // while a flow runs its state is read again until it ends; otherwise now and then, for Steward's busy
+    // while a flow runs its state is read again until it ends; otherwise now and then, for a scheduled run's result
     const timer = setInterval(read, anyRunning ? POLL_MS : POLL_MS * 5);
     return () => {
       live = false;
@@ -604,7 +605,6 @@ export const FlowsShelf: React.FC<{ active: boolean }> = ({ active }) => {
         keepPanel(store(), FLOWS_STEWARD_OPEN_KEY, on);
       }}
       onRun={onRun}
-      stewardBusy={stewardBusy}
       runError={runError}
       setupOpen={setupOpen}
       onSetupOpen={setSetupOpen}
