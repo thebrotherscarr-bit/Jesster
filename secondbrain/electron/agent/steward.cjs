@@ -26,6 +26,8 @@ const SCRIPT = ['harness', 'steward', 'step04_production_ready', 'hosted.py'];
 const MCP_PORT = 43121;
 const MCP_SCRIPT = ['harness', 'steward', 'step04_production_ready', 'mcp_app.py'];
 const PYTHON = ['.venv', 'Scripts', 'python.exe'];
+// a venv built on Linux or macOS keeps its Python in bin (Steward ADR-0020)
+const PYTHON_POSIX = ['.venv', 'bin', 'python'];
 const MAX_ROUNDS = 20; // approval round-trips in one turn
 
 /**
@@ -38,6 +40,17 @@ function findSteward(settingsDir, vaultDir, script = SCRIPT, env = process.env) 
     if (d && fs.existsSync(path.join(d, ...script))) return d;
   }
   return null;
+}
+
+/**
+ * The Python of Steward's venv in `dir`: .venv\Scripts\python.exe (Windows, today's and the default), else
+ * .venv/bin/python when only that one is there. The Windows path is returned when neither is, for the error.
+ */
+function venvPython(dir) {
+  const win = path.join(dir, ...PYTHON);
+  if (fs.existsSync(win)) return win;
+  const posix = path.join(dir, ...PYTHON_POSIX);
+  return fs.existsSync(posix) ? posix : win;
 }
 
 /** POST over node:http: fetch gives up when no headers come within 300 s, and a turn takes longer. */
@@ -265,7 +278,7 @@ function service({ getConfig, vaultDir, answering, waitFor, startOwned, wait = 9
         }
         const dir = findSteward(cfg.dir, vaultDir(), script);
         if (!dir) throw new Error('Steward was not found: Jesster looks in the folder in Settings (agent.steward.dir), then STEWARD_DIR, then worlds\\steward beside the notes folder.');
-        const python = path.join(dir, ...PYTHON);
+        const python = venvPython(dir);
         if (!fs.existsSync(python)) throw new Error(`Steward's Python was not found at ${python}.`);
         // the port in the variable the script reads (ag_ui_app.py: STEWARD_AG_UI_PORT)
         child = startOwned(python, [path.join(...script)], dir, { ...process.env, [portEnv]: String(port) }, [log, log]);
@@ -386,4 +399,4 @@ function threads(file) {
   };
 }
 
-module.exports = { turn, service, keepUp, keepUpEvery, stopOnQuit, findSteward, postJson, postStream, threads, PORT, MCP_PORT, MCP_SCRIPT };
+module.exports = { turn, service, keepUp, keepUpEvery, stopOnQuit, findSteward, venvPython, postJson, postStream, threads, PORT, MCP_PORT, MCP_SCRIPT };

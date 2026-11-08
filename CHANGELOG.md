@@ -7,6 +7,9 @@ The format follows [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/
 
 ### Changed
 
+- Steward's Python is his venv's `Scripts\python.exe` (today's, and first), else its `bin/python`, so a venv built
+  off Windows starts too (Steward ADR-0020, ExecPlan 0006 P1, audit D3). Wire: `agent.test.cjs` ("Steward's Python is
+  the venv's Scripts\python.exe, else its bin/python"), red when `venvPython` returns only the Windows path.
 - Steward's folder is found in the folder Settings names (`agent.steward.dir`), then the environment variable
   `STEWARD_DIR`, then `worlds\steward` beside the notes folder, today's layout and the default (Steward ADR-0020,
   ExecPlan 0006 P1, audit A2). It was Settings or the vault's sibling only, so a clone anywhere else was "not found".
